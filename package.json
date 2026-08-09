@@ -1,0 +1,34 @@
+{
+  "name": "duga-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "De Ultimate Glory Academy — digital platform (marketing site + school portal) monorepo",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n web,portal -c blue,magenta \"npm run dev -w @duga/web\" \"npm run dev -w @duga/portal\"",
+    "dev:web": "npm run dev -w @duga/web",
+    "dev:portal": "npm run dev -w @duga/portal",
+    "build": "npm run build -w @duga/db && npm run build -w @duga/core && npm run build -w @duga/ui && npm run build -w @duga/web && npm run build -w @duga/portal",
+    "build:web": "npm run build -w @duga/web",
+    "build:portal": "npm run build -w @duga/portal",
+    "typecheck": "npm run typecheck -w @duga/web && npm run typecheck -w @duga/portal && npm run typecheck -w @duga/core && npm run typecheck -w @duga/ui",
+    "lint": "npm run lint -w @duga/web && npm run lint -w @duga/portal",
+    "db:generate": "npm run generate -w @duga/db",
+    "db:migrate": "npm run migrate -w @duga/db",
+    "db:seed": "npm run seed -w @duga/db",
+    "db:reset": "npm run reset -w @duga/db",
+    "db:studio": "npm run studio -w @duga/db"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^15.5.22",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

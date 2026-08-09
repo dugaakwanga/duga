@@ -1,0 +1,613 @@
+@import "@duga/ui/styles.css";
+
+/* ==========================================================================
+   DUGA Portal — navy + white + silver
+   ========================================================================== */
+
+.portal-body {
+  background: var(--duga-surface);
+  color: var(--duga-ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-synthesis: none;
+}
+
+.portal-shell {
+  display: grid;
+  grid-template-columns: 258px 1fr;
+  min-height: 100vh;
+}
+
+/* ---------- Sidebar ---------- */
+.portal-sidebar {
+  background: linear-gradient(180deg, var(--duga-primary-dark), var(--duga-primary-ink));
+  color: rgba(255, 255, 255, 0.78);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  z-index: 30;
+}
+.portal-sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.portal-sidebar__brand img { height: 40px; width: auto; border-radius: 8px; }
+.portal-sidebar__logo {
+  width: 38px; height: 38px;
+  border-radius: 10px;
+  background: #fff;
+  color: var(--duga-primary);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800;
+}
+.portal-sidebar__name {
+  color: #fff;
+  font-family: var(--duga-font-display);
+  font-size: 15px;
+  font-weight: 560;
+  line-height: 1.2;
+}
+.portal-sidebar__sub {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-top: 2px;
+}
+
+.portal-nav { flex: 1; padding: 14px 12px; }
+.portal-nav__section {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: rgba(255, 255, 255, 0.4);
+  padding: 16px 12px 7px;
+  font-weight: 700;
+}
+.portal-nav a {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 650;
+  color: rgba(255, 255, 255, 0.86);
+  margin-bottom: 2px;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+.portal-nav a:hover { background: rgba(255, 255, 255, 0.08); color: #fff; transform: translateX(2px); }
+.portal-nav a.active {
+  background: var(--duga-primary-light);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 6px 16px -8px rgba(0, 0, 0, 0.5);
+}
+
+.portal-sidebar__foot {
+  padding: 14px 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* ---------- Main column ---------- */
+.portal-main { display: flex; flex-direction: column; min-width: 0; }
+
+.portal-topbar {
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--duga-border);
+  padding: 0 26px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+.portal-topbar__title {
+  font-family: var(--duga-font-display);
+  font-size: 17px;
+  font-weight: 560;
+  color: var(--duga-primary-ink);
+}
+.portal-topbar__actions { display: flex; align-items: center; gap: 8px; }
+.portal-topbar__user { display: flex; align-items: center; gap: 11px; }
+.portal-topbar__user-details { line-height: 1.3; }
+.portal-topbar__user-name { font-size: 13.5px; font-weight: 600; color: var(--duga-primary-ink); }
+.portal-topbar__user-role { font-size: 11.5px; color: var(--duga-muted); text-transform: capitalize; }
+@media (max-width: 620px) {
+  .portal-topbar__user-details { display: none; }
+}
+
+.portal-content { padding: 28px; max-width: 1240px; width: 100%; }
+
+/* ---------- Notifications ---------- */
+.portal-bell { position: relative; }
+.portal-bell__dot {
+  position: absolute;
+  top: 2px; right: 2px;
+  width: 8px; height: 8px;
+  border-radius: 999px;
+  background: var(--duga-danger);
+  border: 2px solid #fff;
+  animation: portal-ping 1.6s ease-in-out infinite;
+}
+@keyframes portal-ping {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.35); opacity: 0.75; }
+}
+
+.portal-notif {
+  position: absolute;
+  top: 46px; right: 0;
+  width: 350px; max-width: 92vw;
+  background: #fff;
+  border: 1px solid var(--duga-border);
+  border-radius: 16px;
+  box-shadow: var(--duga-shadow-xl);
+  z-index: 200;
+  max-height: 440px;
+  overflow-y: auto;
+  animation: portal-pop 0.2s ease;
+}
+@keyframes portal-pop {
+  from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.portal-notif-item { padding: 13px 16px; border-bottom: 1px solid var(--duga-border); cursor: pointer; transition: background 0.15s ease; }
+.portal-notif-item:hover { background: var(--duga-surface); }
+.portal-notif-item.unread { background: var(--duga-info-soft); border-left: 3px solid var(--duga-primary); }
+
+/* ---------- Score / entry grid ---------- */
+.duga-score-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+
+/* ---------- Chat ---------- */
+.chat-thread { display: flex; flex-direction: column; gap: 10px; max-height: 480px; overflow-y: auto; padding: 4px; }
+.chat-bubble { max-width: 72%; padding: 10px 14px; border-radius: 14px; font-size: 14px; white-space: pre-wrap; font-weight: 600; }
+.chat-bubble--me { align-self: flex-end; background: var(--duga-primary); color: #fff; border-bottom-right-radius: 4px; }
+.chat-bubble--them { align-self: flex-start; background: #fff; border: 1px solid var(--duga-border); border-bottom-left-radius: 4px; }
+.chat-meta { font-size: 11px; opacity: 0.7; margin-top: 4px; }
+
+/* ---------- Timetable ---------- */
+.tt-grid { display: grid; gap: 8px; }
+.tt-cell { background: #fff; border: 1px solid var(--duga-border); border-radius: 10px; padding: 10px; font-size: 12.5px; font-weight: 600; min-height: 64px; transition: border-color 0.15s ease, box-shadow 0.15s ease; }
+.tt-cell:hover { border-color: var(--duga-primary-pale); box-shadow: var(--duga-shadow-sm); }
+.tt-cell strong { display: block; font-size: 13px; color: var(--duga-primary); font-weight: 700; }
+.tt-cell span { color: var(--duga-muted); font-weight: 600; }
+
+/* ==========================================================================
+   Login — editorial split
+   ========================================================================== */
+.login-wrap {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1fr 480px;
+  background: var(--duga-surface);
+}
+.login-visual {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(150deg, var(--duga-primary-dark), var(--duga-primary));
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 56px;
+}
+.login-visual::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
+  opacity: 0.12;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ---------- Login Carousel styles ---------- */
+.login-carousel-container {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--duga-primary-dark);
+}
+.login-carousel-media {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  opacity: 0;
+  transition: opacity 1s ease;
+  filter: saturate(0.85);
+}
+.login-carousel-media.active {
+  opacity: 0.35;
+}
+.login-carousel-media.is-logo {
+  object-fit: contain;
+  width: 60%;
+  height: 60%;
+  margin: auto;
+  opacity: 0;
+  filter: none;
+}
+.login-carousel-media.is-logo.active {
+  opacity: 0.95;
+}
+
+.login-visual .login-visual-content { position: relative; z-index: 2; }
+.login-visual h2 {
+  font-family: var(--duga-font-display);
+  font-weight: 800;
+  font-size: clamp(28px, 3vw, 42px);
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  max-width: 520px;
+  color: var(--duga-gold);
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.45);
+}
+.login-visual h2 em { font-style: italic; color: #ffe9a8; text-shadow: 0 2px 14px rgba(0, 0, 0, 0.5); }
+.login-visual p { color: #ffffff; margin-top: 16px; max-width: 460px; line-height: 1.7; font-weight: 700; font-size: 17px; text-shadow: 0 1px 10px rgba(0, 0, 0, 0.4); }
+
+.login-panel {
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+.login-card { width: 100%; max-width: 400px; }
+
+.login-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin-bottom: 30px;
+}
+.login-brand img { height: 64px; width: auto; margin-bottom: 14px; }
+.login-brand h1 {
+  font-family: var(--duga-font-display);
+  font-size: 24px;
+  font-weight: 560;
+  color: var(--duga-primary-ink);
+  letter-spacing: -0.01em;
+}
+.login-brand p { color: var(--duga-muted); font-size: 13.5px; margin-top: 6px; }
+
+.role-picker { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 20px; }
+.role-picker button {
+  border: 1.5px solid var(--duga-border);
+  background: #fff;
+  border-radius: 12px;
+  padding: 10px 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--duga-ink-2);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.role-picker button:hover { border-color: var(--duga-primary-pale); transform: translateY(-1px); }
+.role-picker button.active {
+  border-color: var(--duga-primary);
+  background: var(--duga-primary-soft);
+  color: var(--duga-primary);
+  box-shadow: 0 4px 12px -6px rgba(30, 58, 95, 0.35);
+}
+
+/* Super admin console */
+.sa-shell { min-height: 100vh; background: var(--duga-surface); display: flex; flex-direction: column; }
+
+@media (max-width: 940px) {
+  .login-wrap { grid-template-columns: 1fr; }
+  .login-visual { display: none; }
+}
+
+/* ==========================================================================
+   Role selection landing (/)
+   ========================================================================== */
+.role-landing {
+  position: relative;
+  min-height: 100vh;
+  background: #0a1524;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 440px;
+}
+
+/* Left column — auto-playing carousel, full height, more space */
+.role-stage {
+  position: relative;
+  overflow: hidden;
+  min-height: 100vh;
+}
+.role-stage-slide {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  opacity: 0;
+  transition: opacity 0.9s ease;
+}
+.role-stage-slide.active { opacity: 1; }
+.role-stage-scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(1200px 600px at 50% 50%, rgba(10, 21, 36, 0.2) 0%, rgba(10, 21, 36, 0.7) 75%),
+    linear-gradient(180deg, rgba(10, 21, 36, 0.35) 0%, rgba(10, 21, 36, 0.45) 100%);
+}
+.role-stage-caption {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: #ffffff;
+  pointer-events: none;
+}
+.role-stage-caption span {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.78);
+}
+.role-stage-caption p {
+  margin: 12px 0 0;
+  font-family: var(--duga-font-display);
+  font-size: 38px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: rgba(255, 255, 255, 0.96);
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.45);
+}
+.role-stage-dots {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: 26px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+}
+.role-stage-dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.4);
+  transition: all 0.25s ease;
+}
+.role-stage-dots span.active { width: 26px; background: #fff; }
+
+/* Right column — the role / form panel running top to bottom */
+.role-card {
+  position: relative;
+  z-index: 4;
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: stretch;
+  background: linear-gradient(165deg, #ffffff 0%, #f4f4f2 100%);
+  border-left: 1px solid var(--duga-border);
+  padding: 64px 40px 40px;
+  overflow-y: auto;
+}
+.role-card-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin-bottom: 40px;
+}
+.role-card-head img {
+  height: 84px;
+  width: auto;
+  display: block;
+  margin: 0 auto 20px;
+}
+.role-card-head h1 {
+  font-family: var(--duga-font-display);
+  font-size: 28px;
+  font-weight: 560;
+  color: var(--duga-ink);
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  margin: 0;
+}
+.role-card-head p {
+  color: var(--duga-muted);
+  margin: 12px auto 0;
+  max-width: 340px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.role-drop-field { margin-bottom: 4px; }
+.role-drop-select {
+  width: 100%;
+  padding: 14px 16px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--duga-ink);
+  background: #ffffff;
+  border: 1.5px solid var(--duga-border-strong);
+  border-radius: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.role-drop-select:hover { background: var(--duga-primary-soft); }
+.role-drop-select:focus {
+  outline: none;
+  border-color: var(--duga-primary);
+  box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.15);
+}
+
+.role-card-selected {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--duga-border);
+  text-align: center;
+}
+.role-card-selected strong { display: block; font-size: 18px; font-weight: 700; color: var(--duga-ink); }
+.role-card-selected span { display: block; margin-top: 4px; font-size: 13px; color: var(--duga-muted); }
+.role-card-selected .duga-btn {
+  width: 100%;
+  margin-top: 18px;
+  justify-content: center;
+}
+
+@media (max-width: 980px) {
+  .role-landing { grid-template-columns: 1fr; }
+  .role-stage { min-height: 45vh; order: -1; }
+  .role-card {
+    min-height: auto;
+    border-left: none;
+    padding: 40px 28px 32px;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 600px) {
+  .role-stage { min-height: 38vh; }
+  .role-card { padding: 28px 20px 28px; }
+  .role-card-head h1 { font-size: 24px; }
+  .role-stage-caption p { font-size: 28px; }
+}
+
+/* Login — student primary/secondary picker on the visual */
+.login-section-picker {
+  display: inline-flex;
+  gap: 8px;
+  margin: 18px 0 14px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  padding: 5px;
+}
+.login-section-picker button {
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+.login-section-picker button.active {
+  background: #fff;
+  color: var(--duga-primary);
+}
+
+@media (max-width: 900px) {
+  .portal-shell { grid-template-columns: 1fr; }
+  .portal-sidebar {
+    position: fixed;
+    left: 0; top: 0; bottom: 0;
+    z-index: 300;
+    transform: translateX(-100%);
+    transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+    width: 264px;
+    box-shadow: var(--duga-shadow-xl);
+  }
+  .portal-sidebar.open { transform: translateX(0); }
+  .portal-mobile-toggle { display: inline-flex; }
+}
+
+/* ==========================================================================
+   Portal text — bolder, larger, more legible
+   ========================================================================== */
+html,
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-synthesis: none;
+}
+
+/* Sidebar */
+.portal-sidebar__name { font-weight: 800; font-size: 16.5px; }
+.portal-sidebar__sub { font-size: 12px; color: rgba(255, 255, 255, 0.78); font-weight: 700; }
+.portal-sidebar__foot { font-size: 14px; color: rgba(255, 255, 255, 0.66); }
+.portal-nav__section { font-size: 12px; color: rgba(255, 255, 255, 0.6); }
+.portal-nav a { font-size: 15px; font-weight: 700; }
+
+/* Topbar */
+.portal-topbar__title { font-size: 20px; font-weight: 800; }
+.portal-topbar__user-name { font-size: 15.5px; font-weight: 700; }
+.portal-topbar__user-role { font-size: 14px; font-weight: 700; color: var(--duga-ink-2); }
+
+/* Notifications */
+.portal-notif-item { font-size: 15px; font-weight: 650; }
+
+/* Chat */
+.chat-bubble { font-size: 16px; font-weight: 700; }
+.chat-meta { font-size: 14px; font-weight: 600; opacity: 0.9; }
+
+/* Timetable */
+.tt-cell { font-size: 14.5px; font-weight: 700; }
+.tt-cell strong { font-size: 15px; font-weight: 800; }
+.tt-cell span { font-size: 14px; font-weight: 700; }
+
+/* Score grid */
+.duga-score-grid input, .duga-score-grid select {
+  font-size: 16px;
+}
+
+/* Login / role picker */
+.login-brand h1 { font-size: 28px; font-weight: 800; }
+.login-brand p { font-size: 16px; font-weight: 650; color: var(--duga-ink-2); }
+.role-card-head h1 { font-size: 32px; font-weight: 800; }
+.role-card-head p { font-size: 16px; font-weight: 650; color: var(--duga-ink-2); }
+.role-card-selected strong { font-size: 21px; font-weight: 800; }
+.role-card-selected span { font-size: 16px; font-weight: 650; }
+.role-picker button { font-size: 14.5px; font-weight: 700; }
+.role-drop-select { font-size: 17px; font-weight: 700; }
+.login-section-picker button { font-size: 15.5px; font-weight: 700; }
+.role-stage-caption p { font-size: 42px; font-weight: 800; }
+.role-stage-caption span { font-size: 14px; font-weight: 700; }
+
+/* Shared UI kit — bigger, bolder body and label text */
+.duga-page-head h1 { font-size: 27px; font-weight: 800; }
+.duga-page-head p { font-size: 16.5px; font-weight: 650; color: var(--duga-ink-2); }
+.duga-card__title { font-size: 18px; font-weight: 800; }
+.duga-card__pad, .duga-card__body { font-size: 15.5px; font-weight: 650; }
+.duga-stat__label { font-size: 15.5px; font-weight: 700; color: var(--duga-ink-2); }
+.duga-stat__value { font-size: 32px; font-weight: 800; }
+.duga-stat__hint { font-size: 14.5px; font-weight: 650; }
+.duga-field__label { font-size: 16px; font-weight: 700; }
+.duga-field__hint { font-size: 14.5px; font-weight: 650; color: var(--duga-ink-2); }
+.duga-field__error { font-size: 14.5px; font-weight: 700; }
+.duga-input, .duga-select, .duga-textarea { font-size: 16px; font-weight: 650; }
+.duga-btn { font-size: 15.5px; font-weight: 700; }
+.duga-table th { font-size: 14px; font-weight: 800; color: var(--duga-ink-2); }
+.duga-table td { font-size: 15px; font-weight: 650; }
+.duga-badge { font-size: 13.5px; font-weight: 800; }
+.duga-alert { font-size: 15.5px; font-weight: 650; }
+.duga-empty { font-size: 15px; font-weight: 650; }
+.duga-nav-link { font-size: 15.5px; font-weight: 650; }
+.duga-nav-link--active { font-weight: 800; }

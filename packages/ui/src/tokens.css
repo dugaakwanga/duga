@@ -1,0 +1,63 @@
+/* DUGA Design Tokens — Navy & Silver Editorial */
+:root {
+  /* Brand — navy */
+  --duga-primary: #1e3a5f;
+  --duga-primary-dark: #14263f;
+  --duga-primary-ink: #0f1b2e;
+  --duga-primary-light: #2c5484;
+  --duga-primary-pale: #3d6c9e;
+  --duga-primary-soft: #eaf0f7;
+
+  /* Accent — warm silver / steel */
+  --duga-accent: #808080;
+  --duga-accent-dark: #6e6e6e;
+  --duga-accent-soft: #f0f0ef;
+
+  /* Luxury — gold */
+  --duga-gold: #c8a448;
+  --duga-gold-dark: #a9852a;
+  --duga-gold-soft: #f4edda;
+  --duga-gold-glow: 0 10px 24px -8px rgba(200, 164, 72, 0.5);
+
+  /* Surfaces */
+  --duga-bg: #ffffff;
+  --duga-surface: #f4f4f2;
+  --duga-surface-2: #eae9e6;
+
+  /* Ink */
+  --duga-ink: #0f1b2e;
+  --duga-ink-2: #222c3a;
+  --duga-muted: #4f5a66;
+  --duga-faint: #b0b0b0;
+
+  /* Lines */
+  --duga-border: #dedede;
+  --duga-border-strong: #b0b0b0;
+
+  /* Status */
+  --duga-success: #1e7a55;
+  --duga-success-soft: #e9f5ef;
+  --duga-warning: #9a6a12;
+  --duga-warning-soft: #fbf3df;
+  --duga-danger: #c0392b;
+  --duga-danger-soft: #fceeec;
+  --duga-info: #2c5484;
+  --duga-info-soft: #edf3fa;
+
+  /* Typography */
+  --duga-font-sans: var(--font-montserrat, "Montserrat"), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --duga-font-display: Cambria, Georgia, "Times New Roman", serif;
+
+  /* Radii */
+  --duga-radius-sm: 6px;
+  --duga-radius: 10px;
+  --duga-radius-lg: 18px;
+  --duga-radius-xl: 28px;
+
+  /* Shadows */
+  --duga-shadow-sm: 0 1px 2px rgba(15, 27, 46, 0.08);
+  --duga-shadow: 0 1px 3px rgba(15, 27, 46, 0.1), 0 1px 2px rgba(15, 27, 46, 0.06);
+  --duga-shadow-md: 0 10px 24px -6px rgba(15, 27, 46, 0.18);
+  --duga-shadow-lg: 0 28px 54px -14px rgba(15, 27, 46, 0.28);
+  --duga-shadow-xl: 0 48px 90px -28px rgba(15, 27, 46, 0.36);
+}

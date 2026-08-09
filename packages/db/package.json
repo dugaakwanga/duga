@@ -1,0 +1,27 @@
+{
+  "name": "@duga/db",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "scripts": {
+    "build": "prisma generate",
+    "generate": "prisma generate",
+    "migrate": "prisma migrate dev",
+    "deploy": "prisma migrate deploy",
+    "reset": "prisma migrate reset --force",
+    "studio": "prisma studio",
+    "seed": "node scripts/seed.mjs",
+    "db:sqlite": "node scripts/switch-provider.mjs sqlite",
+    "db:postgres": "node scripts/switch-provider.mjs postgres"
+  },
+  "prisma": {
+    "seed": "node scripts/seed.mjs"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.2.1"
+  },
+  "devDependencies": {
+    "prisma": "^6.2.1"
+  }
+}

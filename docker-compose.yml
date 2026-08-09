@@ -1,0 +1,51 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: duga-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: duga
+      POSTGRES_PASSWORD: duga
+      POSTGRES_DB: duga
+    ports:
+      - "5432:5432"
+    volumes:
+      - duga_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U duga -d duga"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: duga-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - duga_minio:/data
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5;
+      mc alias set local http://minio:9000 minioadmin minioadmin;
+      mc mb --ignore-existing local/duga-assets;
+      mc anonymous set download local/duga-assets;
+      exit 0;
+      "
+
+volumes:
+  duga_pgdata:
+  duga_minio:
