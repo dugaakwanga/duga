@@ -129,6 +129,28 @@ button {
 .duga-input--error, .duga-select--error { border-color: var(--duga-danger); }
 .duga-field__error { font-size: 12px; color: var(--duga-danger); }
 
+/* ---------- Password field (show/hide eye) ---------- */
+.duga-password { position: relative; width: 100%; }
+.duga-password .duga-input { padding-right: 44px; }
+.duga-password__toggle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--duga-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.duga-password__toggle:hover { color: var(--duga-primary); background: var(--duga-surface-2, #f2f5f8); }
+
 /* ---------- Badge ---------- */
 .duga-badge {
   display: inline-flex;
@@ -232,4 +254,11 @@ button {
 }
 @media (max-width: 560px) {
   .duga-grid--4, .duga-grid--3, .duga-grid--2 { grid-template-columns: 1fr; }
+  .duga-table th { white-space: normal; }
+}
+
+/* Two-column form grid inside modals/cards — collapses on phones */
+.duga-form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 14px; }
+@media (max-width: 560px) {
+  .duga-form-grid { grid-template-columns: 1fr; gap: 0; }
 }

@@ -111,7 +111,7 @@ export default function ContentPage() {
         <Card title="Hero stats" pad={false}>
           <div style={{ padding: 16 }}>
             {content.stats.map((s, i) => (
-              <div key={i} style={{ display: "grid", gridTemplateColumns: "70px 60px 1fr", gap: 8, marginBottom: 10 }}>
+              <div key={i} className="duga-hero-stat-row">
                 <Input
                   value={String(s.value)}
                   placeholder="Value"

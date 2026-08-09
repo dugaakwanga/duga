@@ -130,7 +130,29 @@
   .portal-topbar__user-details { display: none; }
 }
 
+.portal-topbar__signout span { display: inline; }
+@media (max-width: 560px) {
+  .portal-topbar { padding: 0 14px; gap: 10px; height: 58px; }
+  .portal-topbar__signout span { display: none; }
+  .portal-topbar__title { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}
+
+.portal-sidebar-scrim {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 290;
+  background: rgba(10, 15, 30, 0.55);
+  backdrop-filter: blur(2px);
+}
+@media (max-width: 900px) {
+  .portal-sidebar-scrim { display: block; }
+}
+
 .portal-content { padding: 28px; max-width: 1240px; width: 100%; }
+@media (max-width: 480px) {
+  .portal-content { padding: 16px; }
+}
 
 /* ---------- Notifications ---------- */
 .portal-bell { position: relative; }
@@ -151,7 +173,7 @@
 .portal-notif {
   position: absolute;
   top: 46px; right: 0;
-  width: 350px; max-width: 92vw;
+  width: 350px; max-width: calc(100vw - 24px);
   background: #fff;
   border: 1px solid var(--duga-border);
   border-radius: 16px;
@@ -160,6 +182,9 @@
   max-height: 440px;
   overflow-y: auto;
   animation: portal-pop 0.2s ease;
+}
+@media (max-width: 480px) {
+  .portal-notif { position: fixed; top: 64px; right: 12px; left: 12px; width: auto; }
 }
 @keyframes portal-pop {
   from { opacity: 0; transform: translateY(-6px) scale(0.98); }
@@ -173,6 +198,27 @@
 .duga-score-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
 
 /* ---------- Chat ---------- */
+.duga-chat-grid { display: grid; grid-template-columns: 280px 1fr; gap: 16px; align-items: start; }
+@media (max-width: 700px) {
+  .duga-chat-grid { grid-template-columns: 1fr; }
+  .duga-chat-grid .duga-card { height: auto !important; max-height: 40vh; }
+}
+
+/* Two-column content split (dashboards etc.) — stacks on phones */
+.duga-split-2 { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 640px) { .duga-split-2 { grid-template-columns: 1fr; } }
+
+/* Attendance picker controls — wrap on phones */
+.duga-attend-controls { display: grid; grid-template-columns: minmax(0, 1.4fr) 180px auto; gap: 10px; align-items: center; }
+@media (max-width: 640px) { .duga-attend-controls { grid-template-columns: 1fr; } }
+
+/* CBT question options + score — 3-up on desktop, stacked on phones */
+.duga-opt-grid { display: grid; grid-template-columns: 1.5fr 1.5fr 0.4fr; gap: 8px; margin-top: 8px; align-items: end; }
+@media (max-width: 640px) { .duga-opt-grid { grid-template-columns: 1fr; } }
+
+/* Hero-stat edit row — value/suffix/label, stacks on phones */
+.duga-hero-stat-row { display: grid; grid-template-columns: 70px 60px 1fr; gap: 8px; margin-bottom: 10px; align-items: center; }
+@media (max-width: 560px) { .duga-hero-stat-row { grid-template-columns: 1fr; } }
 .chat-thread { display: flex; flex-direction: column; gap: 10px; max-height: 480px; overflow-y: auto; padding: 4px; }
 .chat-bubble { max-width: 72%; padding: 10px 14px; border-radius: 14px; font-size: 14px; white-space: pre-wrap; font-weight: 600; }
 .chat-bubble--me { align-self: flex-end; background: var(--duga-primary); color: #fff; border-bottom-right-radius: 4px; }
@@ -181,6 +227,9 @@
 
 /* ---------- Timetable ---------- */
 .tt-grid { display: grid; gap: 8px; }
+@media (max-width: 700px) {
+  .tt-grid { overflow-x: auto; padding-bottom: 6px; }
+}
 .tt-cell { background: #fff; border: 1px solid var(--duga-border); border-radius: 10px; padding: 10px; font-size: 12.5px; font-weight: 600; min-height: 64px; transition: border-color 0.15s ease, box-shadow 0.15s ease; }
 .tt-cell:hover { border-color: var(--duga-primary-pale); box-shadow: var(--duga-shadow-sm); }
 .tt-cell strong { display: block; font-size: 13px; color: var(--duga-primary); font-weight: 700; }
@@ -271,6 +320,9 @@
   padding: 40px;
 }
 .login-card { width: 100%; max-width: 400px; }
+@media (max-width: 480px) {
+  .login-panel { padding: 24px; }
+}
 
 .login-brand {
   display: flex;
@@ -531,11 +583,14 @@
     z-index: 300;
     transform: translateX(-100%);
     transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
-    width: 264px;
+    width: min(264px, 85vw);
     box-shadow: var(--duga-shadow-xl);
   }
   .portal-sidebar.open { transform: translateX(0); }
   .portal-mobile-toggle { display: inline-flex; }
+}
+@media (min-width: 901px) {
+  .portal-mobile-toggle { display: none !important; }
 }
 
 /* ==========================================================================

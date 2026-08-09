@@ -49,7 +49,7 @@ export default function ApplyPage() {
                     need it to track your application.
                   </span>
                 </div>
-                <div style={{ marginTop: 24, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                <div className="mkt-grid mkt-grid--2" style={{ marginTop: 24, gap: 16 }}>
                   <Photo src="/images/primarypupil.png" alt="A primary pupil" ratio="wide" caption="Primary" />
                   <Photo src="/images/single sec girl.png" alt="A secondary student" ratio="wide" caption="Secondary" />
                 </div>

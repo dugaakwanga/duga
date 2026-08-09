@@ -170,7 +170,7 @@ export function HeroHeadline({ lines, accent }: { lines: string[]; accent?: stri
               return (
                 <span key={wi} className={`hero-word${isAccent ? " is-accent" : ""}`}>
                   {word}
-                  {wi < words.length - 1 ? "\u00A0" : ""}
+                  {wi < words.length - 1 ? " " : ""}
                 </span>
               );
             })}

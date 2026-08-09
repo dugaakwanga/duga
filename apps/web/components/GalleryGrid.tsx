@@ -81,7 +81,7 @@ export default function GalleryGrid() {
           </div>
         </Reveal>
       ) : (
-        <div className="mkt-grid" style={{ gridTemplateColumns: "repeat(3, 1fr)", gridAutoRows: "260px", gap: 20 }}>
+        <div className="mkt-grid mkt-gallery-grid">
           {items.map((g, i) => (
             <Reveal key={g.id} delay={(i % 3) * 80} style={{ gridRow: i % 3 === 1 ? "span 2" : undefined }} variant="zoom">
               <Photo src={g.url} alt={g.alt ?? g.title} ratio="wide" caption={g.title} className="mkt-photo--hover-caption" />

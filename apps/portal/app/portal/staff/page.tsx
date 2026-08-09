@@ -84,7 +84,7 @@ export default function StaffPage() {
 
       <Modal open={open} onClose={() => setOpen(false)} title="Add staff member">
         <Alert tone="info" >Any one of email, phone or staff number works. The staff member signs in with that identifier and sets their own password on first login.</Alert>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 14 }}>
+        <div className="duga-form-grid" style={{ marginTop: 14 }}>
           <Field label="Role" required>
             <Select value={form.role ?? ""} onChange={(e) => setForm({ ...form, role: e.target.value })}>
               <option value="">Select…</option>

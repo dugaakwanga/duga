@@ -36,7 +36,7 @@ export function BarChart({
               title={format(p.value)}
             />
           </div>
-          <div style={{ fontSize: 11, color: "var(--duga-muted)", whiteSpace: "nowrap" }}>{p.label}</div>
+          <div style={{ fontSize: 11, color: "var(--duga-muted)", textAlign: "center", lineHeight: 1.2, overflowWrap: "anywhere" }}>{p.label}</div>
           <div style={{ fontSize: 11.5, fontWeight: 700 }}>{format(p.value)}</div>
         </div>
       ))}

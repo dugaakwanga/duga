@@ -170,6 +170,12 @@ export default function SuperAdminDashboard() {
   const [statusBusy, setStatusBusy] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
 
+  // Add school modal
+  const [schoolOpen, setSchoolOpen] = useState(false);
+  const [schoolForm, setSchoolForm] = useState<Record<string, string>>({});
+  const [schoolBusy, setSchoolBusy] = useState(false);
+  const [schoolError, setSchoolError] = useState<string | null>(null);
+
   // Owners
   const [ownerOpen, setOwnerOpen] = useState(false);
   const [ownerForm, setOwnerForm] = useState<Record<string, string>>({});
@@ -270,9 +276,30 @@ export default function SuperAdminDashboard() {
     }
   }
 
+  // ---- Schools — add
+  function openAddSchool() {
+    setSchoolForm({ name: "", shortName: "", domain: "", address: "", phone: "", email: "" });
+    setSchoolError(null);
+    setSchoolOpen(true);
+  }
+
+  async function saveSchool() {
+    setSchoolBusy(true);
+    setSchoolError(null);
+    try {
+      await saApi("schools/create", { method: "POST", body: schoolForm });
+      setSchoolOpen(false);
+      await load();
+    } catch (e) {
+      setSchoolError((e as Error).message);
+    } finally {
+      setSchoolBusy(false);
+    }
+  }
+
   // ---- Owners
   function openAddOwner() {
-    setOwnerForm({ schoolId: schools[0]?.id ?? "", firstName: "", lastName: "", email: "", phone: "", tempPassword: "" });
+    setOwnerForm({ schoolId: "", schoolName: "", schoolShortName: "", firstName: "", lastName: "", email: "", phone: "", tempPassword: "" });
     setOwnerError(null);
     setOwnerOpen(true);
   }
@@ -438,6 +465,10 @@ export default function SuperAdminDashboard() {
                 <Stat label="Total students" value={schools.reduce((a, s) => a + s.stats.students, 0)} />
                 <Stat label="Collected" value={naira(schools.reduce((a, s) => a + Number(s.stats.paid), 0))} tone="success" />
                 <Stat label="Outstanding" value={naira(schools.reduce((a, s) => a + Number(s.stats.outstanding), 0))} tone="danger" />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
+                <Button variant="primary" size="sm" onClick={openAddSchool}>+ Add school</Button>
               </div>
 
               {schools.length === 0 ? (
@@ -724,13 +755,24 @@ export default function SuperAdminDashboard() {
 
       {/* Add owner modal */}
       <Modal open={ownerOpen} onClose={() => setOwnerOpen(false)} title="Add owner">
-        <Field label="School" hint="The owner account will be attached to this school.">
+        <Field label="School" hint="Pick an existing school, or leave blank to create a new one below.">
           <Select value={ownerForm.schoolId ?? ""} onChange={(e) => setOwnerForm({ ...ownerForm, schoolId: e.target.value })}>
+            <option value="">— Create a new school —</option>
             {schools.map((s) => (
               <option key={s.id} value={s.id}>{s.name}</option>
             ))}
           </Select>
         </Field>
+        {!ownerForm.schoolId && (
+          <>
+            <Field label="New school name" hint="e.g. De Ultimate Glory Academy">
+              <Input value={ownerForm.schoolName ?? ""} onChange={(e) => setOwnerForm({ ...ownerForm, schoolName: e.target.value })} />
+            </Field>
+            <Field label="Short name" hint="e.g. DUGA">
+              <Input value={ownerForm.schoolShortName ?? ""} onChange={(e) => setOwnerForm({ ...ownerForm, schoolShortName: e.target.value })} />
+            </Field>
+          </>
+        )}
         <Field label="First name">
           <Input value={ownerForm.firstName ?? ""} onChange={(e) => setOwnerForm({ ...ownerForm, firstName: e.target.value })} />
         </Field>
@@ -750,6 +792,33 @@ export default function SuperAdminDashboard() {
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <Button variant="ghost" onClick={() => setOwnerOpen(false)}>Cancel</Button>
           <Button onClick={saveOwner} disabled={ownerBusy}>{ownerBusy ? "Creating…" : "Create owner"}</Button>
+        </div>
+      </Modal>
+
+      {/* Add school modal */}
+      <Modal open={schoolOpen} onClose={() => setSchoolOpen(false)} title="Add school">
+        <Field label="School name">
+          <Input value={schoolForm.name ?? ""} onChange={(e) => setSchoolForm({ ...schoolForm, name: e.target.value })} placeholder="e.g. De Ultimate Glory Academy" />
+        </Field>
+        <Field label="Short name">
+          <Input value={schoolForm.shortName ?? ""} onChange={(e) => setSchoolForm({ ...schoolForm, shortName: e.target.value })} placeholder="e.g. DUGA" />
+        </Field>
+        <Field label="Domain" hint="Optional — a unique one is generated if left blank.">
+          <Input value={schoolForm.domain ?? ""} onChange={(e) => setSchoolForm({ ...schoolForm, domain: e.target.value })} placeholder="school.example.com" />
+        </Field>
+        <Field label="Address">
+          <Input value={schoolForm.address ?? ""} onChange={(e) => setSchoolForm({ ...schoolForm, address: e.target.value })} />
+        </Field>
+        <Field label="Phone">
+          <Input value={schoolForm.phone ?? ""} onChange={(e) => setSchoolForm({ ...schoolForm, phone: e.target.value })} />
+        </Field>
+        <Field label="Email">
+          <Input type="email" value={schoolForm.email ?? ""} onChange={(e) => setSchoolForm({ ...schoolForm, email: e.target.value })} />
+        </Field>
+        {schoolError && <Alert tone="danger">{schoolError}</Alert>}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+          <Button variant="ghost" onClick={() => setSchoolOpen(false)}>Cancel</Button>
+          <Button onClick={saveSchool} disabled={schoolBusy}>{schoolBusy ? "Creating…" : "Create school"}</Button>
         </div>
       </Modal>
 

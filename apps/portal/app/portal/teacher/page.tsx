@@ -92,7 +92,7 @@ export default function TeacherHomePage() {
             <Link href="/portal/games" className="duga-btn duga-btn--outline duga-btn--md"><Icon name="quiz" size={16} /> Educational games</Link>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.4fr) minmax(0,1fr)", gap: 16, alignItems: "start" }}>
+          <div className="duga-split-2">
             <Card title="My subjects & classes">
               {subjects.length === 0 ? (
                 <EmptyState title="No class subjects assigned" hint="Ask the school admin to assign you to classes and subjects." />

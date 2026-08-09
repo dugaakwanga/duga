@@ -213,7 +213,7 @@ export default function TeacherAssignmentsPage() {
           <Field label="Instructions">
             <Textarea rows={4} value={form.instructions ?? ""} onChange={(e) => setForm({ ...form, instructions: e.target.value })} />
           </Field>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div className="duga-form-grid">
             <Field label="Submission time" hint="When it must be submitted by">
               <Input type="datetime-local" value={form.dueAt ?? ""} onChange={(e) => setForm({ ...form, dueAt: e.target.value })} />
             </Field>

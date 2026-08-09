@@ -238,6 +238,7 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
 
   return (
     <div className="portal-shell">
+      {sidebarOpen && <div className="portal-sidebar-scrim" onClick={() => setSidebarOpen(false)} />}
       <aside className={`portal-sidebar${sidebarOpen ? " open" : ""}`}>
         <div className="portal-sidebar__brand">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -276,8 +277,8 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
       <div className="portal-main">
         <header className="portal-topbar">
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <button className="duga-btn duga-btn--ghost duga-btn--sm portal-mobile-toggle" onClick={() => setSidebarOpen((v) => !v)}>
-              <Icon name="back" size={18} />
+            <button className="duga-btn duga-btn--ghost duga-btn--sm portal-mobile-toggle" onClick={() => setSidebarOpen((v) => !v)} aria-label="Toggle menu">
+              <Icon name="menu" size={18} />
             </button>
             <div className="portal-topbar__title">{pageTitle}</div>
           </div>
@@ -322,7 +323,7 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
                 </div>
               )}
             </div>
-            <button className="duga-btn duga-btn--ghost duga-btn--sm" onClick={logout} title="Sign out" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <button className="duga-btn duga-btn--ghost duga-btn--sm portal-topbar__signout" onClick={logout} title="Sign out" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
               <Icon name="logout" size={18} />
               <span>Sign out</span>
             </button>

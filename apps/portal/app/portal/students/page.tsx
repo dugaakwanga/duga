@@ -97,7 +97,7 @@ export default function StudentsPage() {
       )}
 
       <Modal open={open} onClose={() => setOpen(false)} title="Enroll new student" wide>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        <div className="duga-form-grid">
           <Field label="First name" required>
             <Input value={form.firstName ?? ""} onChange={(e) => setForm({ ...form, firstName: e.target.value })} placeholder="First name" />
           </Field>

@@ -130,7 +130,7 @@ export default function NewsAdminPage() {
 
       {(editing || form.title) && (
         <Card title={editing ? "Edit post" : "New post"} style={{ marginBottom: 28 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div className="duga-form-grid">
             <Field label="Title" required>
               <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. BECE 2025 results are out" />
             </Field>

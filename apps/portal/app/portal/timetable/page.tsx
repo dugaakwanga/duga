@@ -68,9 +68,9 @@ export default function TimetablePage() {
         subtitle="Weekly class schedule."
         actions={<Button onClick={() => setOpen(true)}>Add period</Button>}
       />
-      <div className="tt-grid" style={{ gridTemplateColumns: `repeat(${DAYS.length}, 1fr)` }}>
+      <div className="tt-grid" style={{ gridTemplateColumns: `repeat(${DAYS.length}, minmax(140px, 1fr))`, minWidth: "max-content" }}>
         {data.grid.map((day) => (
-          <div key={day.day} className="duga-card" style={{ padding: 12, minWidth: 120 }}>
+          <div key={day.day} className="duga-card" style={{ padding: 12 }}>
             <div style={{ fontWeight: 700, marginBottom: 8, fontSize: 13 }}>{day.day}</div>
             {day.entries.length === 0 ? (
               <div style={{ fontSize: 12, color: "var(--duga-muted)" }}>No classes</div>
@@ -95,20 +95,22 @@ export default function TimetablePage() {
         {data.examTimetable.length === 0 ? (
           <EmptyState title="No exam timetable yet" />
         ) : (
-          <table className="duga-table">
-            <thead><tr><th>Date</th><th>Time</th><th>Subject</th><th>Class</th><th>Venue</th></tr></thead>
-            <tbody>
-              {data.examTimetable.map((e) => (
-                <tr key={e.id}>
-                  <td>{new Date(e.date).toLocaleDateString()}</td>
-                  <td>{e.startTime}–{e.endTime}</td>
-                  <td>{e.subject?.name}</td>
-                  <td>{e.classGroup ? `${e.classGroup.level.name} ${e.classGroup.name}` : "—"}</td>
-                  <td>{e.venue ?? "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="duga-table-wrap">
+            <table className="duga-table">
+              <thead><tr><th>Date</th><th>Time</th><th>Subject</th><th>Class</th><th>Venue</th></tr></thead>
+              <tbody>
+                {data.examTimetable.map((e) => (
+                  <tr key={e.id}>
+                    <td>{new Date(e.date).toLocaleDateString()}</td>
+                    <td>{e.startTime}–{e.endTime}</td>
+                    <td>{e.subject?.name}</td>
+                    <td>{e.classGroup ? `${e.classGroup.level.name} ${e.classGroup.name}` : "—"}</td>
+                    <td>{e.venue ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
 

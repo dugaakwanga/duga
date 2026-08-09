@@ -388,7 +388,7 @@ body {
 .mkt-hero h1 {
   font-family: var(--duga-font-display);
   font-weight: 700;
-  font-size: clamp(48px, 5.8vw, 82px);
+  font-size: clamp(32px, 7vw, 82px);
   line-height: 1.02;
   letter-spacing: -0.015em;
   color: var(--duga-primary-ink);
@@ -528,6 +528,9 @@ body {
 
 /* hero word reveal */
 .mkt-hero .hero-line { display: block; overflow: hidden; padding-bottom: 0.12em; margin-bottom: -0.12em; }
+@media (max-width: 560px) {
+  .mkt-hero .hero-line { overflow: visible; }
+}
 .mkt-hero .hero-word {
   display: inline-block;
   transform: translateY(112%);
@@ -653,6 +656,21 @@ body {
 .mkt-grid--3 { grid-template-columns: repeat(3, 1fr); }
 .mkt-grid--4 { grid-template-columns: repeat(4, 1fr); }
 
+/* Gallery masonry-ish grid: 3-up with tall middle, collapses to 2 then 1 */
+.mkt-gallery-grid { grid-template-columns: repeat(3, 1fr); grid-auto-rows: 260px; gap: 20px; }
+@media (max-width: 900px) { .mkt-gallery-grid { grid-auto-rows: 220px; } }
+@media (max-width: 600px) { .mkt-gallery-grid { grid-template-columns: repeat(2, 1fr); grid-auto-rows: 190px; } }
+@media (max-width: 400px) { .mkt-gallery-grid { grid-template-columns: 1fr; grid-auto-rows: 240px; } }
+
+/* Home gallery preview: 4-up with one wide, one tall */
+.mkt-gallery-preview { grid-template-columns: repeat(4, 1fr); grid-auto-rows: 200px; gap: 18px; }
+@media (max-width: 900px) { .mkt-gallery-preview { grid-template-columns: repeat(2, 1fr); grid-auto-rows: 180px; } }
+@media (max-width: 520px) { .mkt-gallery-preview { grid-template-columns: 1fr; grid-auto-rows: 220px; } }
+
+/* Two-up form field rows — stack on phones */
+.duga-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+@media (max-width: 560px) { .duga-form-row { grid-template-columns: 1fr; gap: 0; } }
+
 .mkt-grid--editorial {
   grid-template-columns: 1.2fr 0.8fr;
   gap: 64px;
@@ -663,7 +681,7 @@ body {
 @media (max-width: 900px) {
   .mkt-grid--4 { grid-template-columns: repeat(2, 1fr); }
   .mkt-grid--3 { grid-template-columns: repeat(2, 1fr); }
-  .mkt-grid--editorial, .mkt-grid--editorial-flip { grid-template-columns: 1fr; }
+  .mkt-grid--editorial, .mkt-grid--editorial-flip { grid-template-columns: 1fr; gap: 40px; }
 }
 @media (max-width: 600px) {
   .mkt-grid--4, .mkt-grid--3, .mkt-grid--2 { grid-template-columns: 1fr; }
@@ -764,7 +782,7 @@ body {
 .mkt-stat-band strong {
   display: block;
   font-family: var(--duga-font-display);
-  font-size: clamp(38px, 4vw, 56px);
+  font-size: clamp(28px, 4vw, 56px);
   font-weight: 800;
   letter-spacing: -0.01em;
   color: #fff;
@@ -1017,7 +1035,7 @@ body {
 .mkt-page-hero h1 {
   font-family: var(--duga-font-display);
   font-weight: 700;
-  font-size: clamp(38px, 4.8vw, 60px);
+  font-size: clamp(30px, 6vw, 60px);
   letter-spacing: -0.014em;
   line-height: 1.04;
   color: var(--duga-primary-ink);
@@ -1337,3 +1355,32 @@ body {
 .duga-field__label { font-size: 18px; }
 .duga-input, .duga-select, .duga-textarea { font-size: 19px; }
 .duga-btn { font-size: 19px; }
+
+/* ==========================================================================
+   Mobile — phone-safe sizes (after the desktop boost block above)
+   ========================================================================== */
+@media (max-width: 560px) {
+  .mkt-hero p.lead { font-size: 19px; }
+  .mkt-page-hero p { font-size: 19px; }
+  .mkt-section-head p,
+  .mkt-section-head--center p { font-size: 18.5px; }
+  .mkt-card p,
+  .mkt-feature-body p,
+  .mkt-check-list li,
+  .mkt-graduate-ach,
+  .mkt-offer-sub { font-size: 17px; }
+  .mkt-quote p { font-size: 20px; }
+  .mkt-hero-stats div span { font-size: 13px; }
+  .mkt-hero-stats div strong { font-size: 26px; }
+  .duga-btn { font-size: 16px; }
+  .mkt-page-hero h1 { font-size: clamp(28px, 6vw, 60px); }
+  .mkt-h2 { font-size: clamp(26px, 6vw, 52px); }
+  .mkt-logo--brand .mkt-logo-name,
+  .mkt-footer .mkt-logo-name { white-space: normal; }
+}
+
+@media (max-width: 360px) {
+  .mkt-hero-stats { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .mkt-logo--brand .mkt-logo-name { font-size: 16px; line-height: 1.15; }
+  .mkt-header-top { padding-right: 44px; }
+}

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { postForm } from "@/lib/client/api";
 import { ArrowRight } from "@/components/icons";
 import LoginCarousel from "@/components/LoginCarousel";
+import { PasswordInput } from "@/components/PasswordInput";
 import { siteHomeUrl } from "@/lib/client/site";
 
 const DEMO_ACCOUNTS: Record<string, { email: string; password: string; label: string }> = {
@@ -25,17 +26,16 @@ function AdminLogin() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialRole = (searchParams.get("role") ?? "ADMIN").toUpperCase();
-  const initial = DEMO_ACCOUNTS[initialRole] ?? DEMO_ACCOUNTS.ADMIN!;
   const [role, setRole] = useState<string>(Object.keys(DEMO_ACCOUNTS).find((k) => k === initialRole) ?? "ADMIN");
-  const [email, setEmail] = useState(initial!.email);
-  const [password, setPassword] = useState(initial!.password);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   function pickRole(r: string) {
     setRole(r);
-    setEmail(DEMO_ACCOUNTS[r]!.email);
-    setPassword(DEMO_ACCOUNTS[r]!.password);
+    setEmail("");
+    setPassword("");
     setError(null);
   }
 
@@ -95,12 +95,12 @@ function AdminLogin() {
             ))}
           </div>
 
-          <form onSubmit={submit}>
+          <form onSubmit={submit} autoComplete="off">
             <label className="duga-field__label">Email address</label>
-            <input className="duga-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@school.com" required />
+            <input className="duga-input" type="email" name="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@school.com" autoComplete="off" spellCheck={false} autoCorrect="off" autoCapitalize="off" required />
 
             <label className="duga-field__label" style={{ marginTop: 14 }}>Password</label>
-            <input className="duga-input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required />
+            <PasswordInput value={password} onChange={setPassword} placeholder="••••••••" autoComplete="off" name="password" />
 
             {error && <div className="duga-alert" style={{ background: "var(--duga-danger-soft)", color: "var(--duga-danger)", marginTop: 14 }}>{error}</div>}
 

@@ -116,7 +116,7 @@ export default function SiteHeader() {
                 {n.label}
               </Link>
             ))}
-            <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10, marginTop: 10 }}>
               <Link className="duga-btn duga-btn--primary duga-btn--block" href="/apply" onClick={() => setOpen(false)}>
                 Apply Now
               </Link>

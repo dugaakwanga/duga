@@ -365,7 +365,7 @@ export default function HomePage() {
               </div>
             </Reveal>
             <Reveal variant="right" delay={100}>
-              <div style={{ display: "grid", gap: 24, gridTemplateColumns: "1fr 1fr", alignItems: "center" }}>
+              <div className="mkt-grid mkt-grid--2" style={{ gap: 24, alignItems: "center" }}>
                 <Photo src="/images/single pupil.png" alt="A happy primary pupil" ratio="portrait" caption="Pupil life" />
                 <div style={{ display: "grid", gap: 24 }}>
                   <Photo src="/images/single sec girl.png" alt="A secondary student" ratio="portrait" caption="Student life" />

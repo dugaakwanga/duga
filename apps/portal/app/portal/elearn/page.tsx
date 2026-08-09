@@ -240,7 +240,7 @@ export default function ElearnPage() {
             <Field label="Title" required>
               <Input value={form.title ?? ""} onChange={(e) => setForm({ ...form, title: e.target.value })} />
             </Field>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div className="duga-form-grid">
               <Field label="Category">
                 <Select value={form.category ?? "VIDEO"} onChange={(e) => setForm({ ...form, category: e.target.value })}>
                   <option value="VIDEO">Video</option>

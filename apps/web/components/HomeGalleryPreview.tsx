@@ -39,7 +39,7 @@ export default function HomeGalleryPreview() {
           </div>
         </Reveal>
       ) : (
-        <div className="mkt-grid" style={{ gridTemplateColumns: "repeat(4, 1fr)", gridAutoRows: "200px", gap: 18 }}>
+        <div className="mkt-grid mkt-gallery-preview">
           {items.map((g, i) => (
             <Reveal key={g.id} delay={i * 70} style={{ gridColumn: i === 0 ? "span 2" : undefined, gridRow: i === 1 ? "span 2" : undefined }} variant="zoom">
               <Photo src={g.url} alt={g.alt ?? g.title} ratio="wide" caption={g.title} className="mkt-photo--hover-caption" />

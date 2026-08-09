@@ -25,6 +25,39 @@ async function logActivity(ctx: SACtx, action: string, meta?: unknown) {
   });
 }
 
+function slugify(v: string): string {
+  return v.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+// Creates a school (name, shortName, domain) plus its default free-trial subscription.
+async function createSchoolWithSubscription(opts: { name: string; shortName: string; domain?: string; address?: string; phone?: string; email?: string }) {
+  let domain = String(opts.domain ?? "").trim().toLowerCase();
+  if (!domain) {
+    const base = slugify(opts.name) || "school";
+    domain = `${base}-${Math.random().toString(36).slice(2, 6)}.duga.local`;
+  }
+  const existing = await prisma.school.findUnique({ where: { domain } });
+  if (existing) {
+    const e = new Error("A school with that domain already exists") as Error & { status?: number };
+    e.status = 409;
+    throw e;
+  }
+  const school = await prisma.school.create({
+    data: {
+      name: opts.name,
+      shortName: opts.shortName,
+      domain,
+      address: opts.address || undefined,
+      phone: opts.phone || undefined,
+      email: opts.email || undefined,
+    },
+  });
+  await prisma.subscription.create({
+    data: { schoolId: school.id, plan: "FREE_TRIAL", status: "TRIALING" },
+  });
+  return school;
+}
+
 export const saModules: Record<string, SAModule> = {
   schools: {
     async list(ctx) {
@@ -81,6 +114,27 @@ export const saModules: Record<string, SAModule> = {
     },
 
     actions: {
+      // POST /api/superadmin/schools/create  { name, shortName, domain?, address?, phone?, email? }
+      create: async (ctx) => {
+        const name = String(ctx.body.name ?? "").trim();
+        const shortName = String(ctx.body.shortName ?? "").trim();
+        if (!name || !shortName) {
+          const e = new Error("School name and short name are required") as Error & { status?: number };
+          e.status = 400;
+          throw e;
+        }
+        const school = await createSchoolWithSubscription({
+          name,
+          shortName,
+          domain: ctx.body.domain ? String(ctx.body.domain) : undefined,
+          address: ctx.body.address ? String(ctx.body.address) : undefined,
+          phone: ctx.body.phone ? String(ctx.body.phone) : undefined,
+          email: ctx.body.email ? String(ctx.body.email) : undefined,
+        });
+        await logActivity(ctx, "school.created", { schoolId: school.id, name: school.name });
+        return { ok: true, school: { id: school.id, name: school.name, shortName: school.shortName, domain: school.domain } };
+      },
+
       setStatus: async (ctx) => {
         const schoolId = String(ctx.body.schoolId ?? "");
         const status = String(ctx.body.status ?? "").toUpperCase();
@@ -195,15 +249,15 @@ export const saModules: Record<string, SAModule> = {
     },
 
     actions: {
-      // POST /api/superadmin/owners/create  { schoolId, firstName, lastName, email, phone?, tempPassword? }
+      // POST /api/superadmin/owners/create  { firstName, lastName, email, phone?, tempPassword?, schoolId?, schoolName?, schoolShortName?, schoolDomain? }
+      // If no schoolId is given, a school is created from schoolName (or the owner's name) automatically.
       create: async (ctx) => {
         await logActivity(ctx, "owner.create.request");
-        const schoolId = String(ctx.body.schoolId ?? "");
         const firstName = String(ctx.body.firstName ?? "").trim();
         const lastName = String(ctx.body.lastName ?? "").trim();
         const email = String(ctx.body.email ?? "").trim().toLowerCase();
-        if (!schoolId || !firstName || !lastName || !email) {
-          const e = new Error("schoolId, firstName, lastName and email are required") as Error & { status?: number };
+        if (!firstName || !lastName || !email) {
+          const e = new Error("firstName, lastName and email are required") as Error & { status?: number };
           e.status = 400;
           throw e;
         }
@@ -212,12 +266,26 @@ export const saModules: Record<string, SAModule> = {
           e.status = 400;
           throw e;
         }
-        const school = await prisma.school.findUnique({ where: { id: schoolId } });
-        if (!school) {
-          const e = new Error("School not found") as Error & { status?: number };
-          e.status = 404;
-          throw e;
+
+        let schoolId = String(ctx.body.schoolId ?? "").trim();
+        if (schoolId) {
+          const school = await prisma.school.findUnique({ where: { id: schoolId } });
+          if (!school) {
+            const e = new Error("School not found") as Error & { status?: number };
+            e.status = 404;
+            throw e;
+          }
+        } else {
+          const schoolName = String(ctx.body.schoolName ?? "").trim();
+          const fallbackName = schoolName || `${lastName} Academy`;
+          const school = await createSchoolWithSubscription({
+            name: fallbackName,
+            shortName: String(ctx.body.schoolShortName ?? "").trim() || fallbackName.replace(/\s+/g, "").slice(0, 5).toUpperCase(),
+            domain: ctx.body.schoolDomain ? String(ctx.body.schoolDomain) : undefined,
+          });
+          schoolId = school.id;
         }
+
         const existing = await prisma.user.findUnique({ where: { schoolId_email: { schoolId, email } } });
         if (existing) {
           const e = new Error("A user with this email already exists in this school") as Error & { status?: number };
@@ -238,7 +306,7 @@ export const saModules: Record<string, SAModule> = {
           },
         });
         await logActivity(ctx, "owner.created", { schoolId, email });
-        return { id: user.id, email: user.email };
+        return { id: user.id, email: user.email, tempPassword: password };
       },
 
       // POST /api/superadmin/owners/edit  { id, firstName?, lastName?, phone?, status? }

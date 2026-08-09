@@ -83,7 +83,7 @@ export default function ApplicationForm() {
       <Field label="Applicant full name" required>
         <Input name="applicantName" required placeholder="e.g. Chiamaka Adewale" />
       </Field>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
+      <div className="duga-form-row">
         <Field label="Email" required>
           <Input name="email" type="email" required placeholder="parent@example.com" />
         </Field>
@@ -91,7 +91,7 @@ export default function ApplicationForm() {
           <Input name="phone" required placeholder="+234 800 000 0000" />
         </Field>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
+      <div className="duga-form-row">
         <Field label="Section applying for" required>
           <Select
             name="section"
@@ -111,7 +111,7 @@ export default function ApplicationForm() {
           </Select>
         </Field>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
+      <div className="duga-form-row">
         <Field label="Gender">
           <Select name="gender">
             <option value="">Select...</option>
@@ -126,7 +126,7 @@ export default function ApplicationForm() {
       <Field label="Previous school (if any)">
         <Input name="previousSchool" placeholder="Name of previous school" />
       </Field>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
+      <div className="duga-form-row">
         <Field label="Guardian / parent name" required>
           <Input name="guardianName" required placeholder="Parent or guardian full name" />
         </Field>

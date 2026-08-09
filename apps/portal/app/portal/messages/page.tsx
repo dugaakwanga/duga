@@ -85,7 +85,7 @@ export default function MessagesPage() {
       {loading ? (
         <Spinner size={28} />
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 16 }}>
+        <div className="duga-chat-grid">
           <div className="duga-card" style={{ padding: 0, height: 520, overflowY: "auto" }}>
             <div style={{ padding: 12, borderBottom: "1px solid var(--duga-border)" }}>
               <Input placeholder="Other user's ID…" value={newUserId} onChange={(e) => setNewUserId(e.target.value)} />

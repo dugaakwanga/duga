@@ -68,7 +68,7 @@ export default function StudentHomePage() {
         <Link href="/portal/fees" className="duga-btn duga-btn--outline duga-btn--md"><Icon name="fees" size={16} /> My fees</Link>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.4fr) minmax(0,1fr)", gap: 16, alignItems: "start" }}>
+      <div className="duga-split-2">
         <Card title="My CBT exams">
           {openTests.length === 0 ? (
             <EmptyState title="No open exams right now" hint="When your teacher publishes an exam it will show up here." />

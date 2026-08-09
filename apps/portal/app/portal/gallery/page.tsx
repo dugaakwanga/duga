@@ -85,7 +85,7 @@ export default function GalleryAdminPage() {
       {error && <Alert tone="danger">{error}</Alert>}
 
       <Card title="Upload a new photo" style={{ marginBottom: 28 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div className="duga-form-grid">
           <Field label="Photo title" hint="Shown as the caption on the website.">
             <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Morning assembly" />
           </Field>
@@ -110,7 +110,7 @@ export default function GalleryAdminPage() {
         </Field>
         {preview && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={preview} alt="Preview" style={{ width: 200, borderRadius: 12, marginTop: 8, border: "1px solid var(--duga-border)" }} />
+          <img src={preview} alt="Preview" style={{ width: "100%", maxWidth: 220, borderRadius: 12, marginTop: 8, border: "1px solid var(--duga-border)" }} />
         )}
         <div style={{ marginTop: 16 }}>
           <Button onClick={upload} loading={saving} disabled={!file}>

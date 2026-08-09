@@ -99,7 +99,7 @@ export default function TeacherAttendancePage() {
 
       <Card pad={false}>
         <div className="duga-card__pad">
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.4fr) 180px auto", gap: 10, flexWrap: "wrap" }}>
+          <div className="duga-attend-controls">
             <Select value={classGroupId} onChange={(e) => setClassGroupId(e.target.value)}>
               <option value="">Select a class…</option>
               {classes.map((c) => (

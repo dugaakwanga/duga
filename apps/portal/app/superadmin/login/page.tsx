@@ -5,11 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { postForm } from "@/lib/client/api";
 import { siteHomeUrl } from "@/lib/client/site";
+import { PasswordInput } from "@/components/PasswordInput";
 
 export default function SuperAdminLoginPage() {
   const router = useRouter();
-  const [username, setUsername] = useState("creator");
-  const [password, setPassword] = useState("creator123");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -55,12 +56,12 @@ export default function SuperAdminLoginPage() {
             <h1>Platform Admin Console</h1>
             <p>De Ultimate Glory Academy — super admin</p>
           </div>
-          <form onSubmit={submit}>
+          <form onSubmit={submit} autoComplete="off">
             <label className="duga-field__label">Username</label>
-            <input className="duga-input" value={username} onChange={(e) => setUsername(e.target.value)} required />
+            <input className="duga-input" name="username" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="off" spellCheck={false} autoCorrect="off" autoCapitalize="off" required />
 
             <label className="duga-field__label" style={{ marginTop: 14 }}>Password</label>
-            <input className="duga-input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            <PasswordInput value={password} onChange={setPassword} autoComplete="off" name="password" />
 
             {error && <div className="duga-alert duga-alert--danger" style={{ marginTop: 14 }}>{error}</div>}
 

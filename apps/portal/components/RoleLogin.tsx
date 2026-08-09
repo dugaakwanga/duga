@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { postForm } from "@/lib/client/api";
 import { ArrowRight } from "@/components/icons";
 import LoginCarousel from "@/components/LoginCarousel";
+import { PasswordInput } from "@/components/PasswordInput";
 
 export interface RoleLoginConfig {
   /** Auth role sent to the API */
@@ -39,8 +40,8 @@ const DEMO: RoleLoginConfig = {
 export default function RoleLogin({ config = DEMO }: { config?: Partial<RoleLoginConfig> }) {
   const cfg: RoleLoginConfig = { ...DEMO, ...config };
   const router = useRouter();
-  const [email, setEmail] = useState(cfg.email);
-  const [password, setPassword] = useState(cfg.password);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -90,25 +91,31 @@ export default function RoleLogin({ config = DEMO }: { config?: Partial<RoleLogi
             <p>{cfg.tag} — sign in to continue</p>
           </div>
 
-          <form onSubmit={submit}>
-            <label className="duga-field__label">Email address</label>
+          <form onSubmit={submit} autoComplete="off">
+            <label className="duga-field__label" htmlFor="role-email">Email address</label>
             <input
               className="duga-input"
+              id="role-email"
+              name="email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@school.com"
+              autoComplete="off"
+              spellCheck={false}
+              autoCorrect="off"
+              autoCapitalize="off"
               required
             />
 
-            <label className="duga-field__label" style={{ marginTop: 14 }}>Password</label>
-            <input
-              className="duga-input"
-              type="password"
+            <label className="duga-field__label" htmlFor="role-password" style={{ marginTop: 14 }}>Password</label>
+            <PasswordInput
+              id="role-password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={setPassword}
               placeholder="••••••••"
-              required
+              autoComplete="off"
+              name="password"
             />
 
             {error && (
@@ -128,7 +135,6 @@ export default function RoleLogin({ config = DEMO }: { config?: Partial<RoleLogi
           </form>
 
           <p style={{ fontSize: 13.5, fontWeight: 700, color: "var(--duga-ink-1)", marginTop: 20, textAlign: "center" }}>
-            Demo account is pre-filled.{" "}
             <Link href="/" className="mkt-link-arrow" style={{ display: "inline-flex", fontWeight: 800 }}>
               Choose a different role
             </Link>

@@ -247,7 +247,7 @@ async function openResults(c: Cbt) {
               <Input type="datetime-local" value={form.endsAt ?? ""} onChange={(e) => setForm({ ...form, endsAt: e.target.value })} />
             </Field>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div className="duga-form-grid">
             <Field label="Type">
               <Select value={form.isExam ?? "0"} onChange={(e) => setForm({ ...form, isExam: e.target.value })}>
                 <option value="0">Class test (teacher publishes)</option>
@@ -264,7 +264,7 @@ async function openResults(c: Cbt) {
           {form.isExam === "1" && (
             <Alert tone="info">Exams are created by teachers but published by the school admin. A teacher cannot publish an exam directly.</Alert>
           )}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div className="duga-form-grid">
             <Field label="Status">
               <Select value={form.status ?? "DRAFT"} onChange={(e) => setForm({ ...form, status: e.target.value })}>
                 <option value="DRAFT">Draft</option>
@@ -303,7 +303,7 @@ async function openResults(c: Cbt) {
                   {questions.length > 1 && <Button size="sm" variant="ghost" onClick={() => setQuestions((prev) => prev.filter((_, i) => i !== qi))}>Remove</Button>}
                 </div>
                 <Textarea rows={2} value={q.question} placeholder="Type the question…" onChange={(e) => editQ(qi, { question: e.target.value })} />
-                <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1.5fr 0.4fr", gap: 8, marginTop: 8 }}>
+                <div className="duga-opt-grid">
                   {q.options.map((opt, oi) => (
                     <div key={oi} style={{ display: "flex", gap: 6 }}>
                       <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13 }}>
