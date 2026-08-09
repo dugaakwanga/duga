@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Photo from "@/components/Photo";
-import { school } from "@/lib/content";
+import { school, portalUrl } from "@/lib/content";
 import { Reveal, Counter, Tilt, HeroHeadline } from "@/components/motion";
 import HomeGalleryPreview from "@/components/HomeGalleryPreview";
 import HomeNewsPreview from "@/components/HomeNewsPreview";
@@ -85,8 +85,6 @@ const OFFERINGS = [
 ];
 
 export default function HomePage() {
-  const portalUrl = process.env.NEXT_PUBLIC_PORTAL_URL ?? "http://localhost:3001";
-
   return (
     <>
       {/* ============ HERO ============ */}

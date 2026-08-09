@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import PageHero from "@/components/PageHero";
 import NewsDetail from "@/components/NewsDetail";
+import { portalUrl } from "@/lib/content";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
-  const portalUrl = process.env.NEXT_PUBLIC_PORTAL_URL ?? "http://localhost:3001";
   try {
     const res = await fetch(`${portalUrl}/api/public/site`, { cache: "no-store" });
     const json = await res.json();

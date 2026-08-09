@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import { ArrowRight, Check } from "@/components/icons";
-
-const portalUrl = process.env.NEXT_PUBLIC_PORTAL_URL ?? "http://localhost:3001";
+import { portalUrl } from "@/lib/content";
 
 export default function NewsletterSignup() {
   const [email, setEmail] = useState("");

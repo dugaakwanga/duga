@@ -1,3 +1,5 @@
+export const portalUrl = process.env.NEXT_PUBLIC_PORTAL_URL ?? "https://duga-portal.vercel.app/";
+
 export const school = {
   name: "De Ultimate Glory Academy",
   shortName: "DUGA",

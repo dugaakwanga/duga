@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Field, Input, Select, Textarea, Button } from "@duga/ui";
+import { portalUrl } from "@/lib/content";
 
 interface ApplyForm {
   applicantName: string;
@@ -21,7 +22,6 @@ const LEVELS_PRIMARY = ["Nursery", "Primary 1", "Primary 2", "Primary 3", "Prima
 const LEVELS_SECONDARY = ["JSS 1", "JSS 2", "JSS 3", "SSS 1", "SSS 2", "SSS 3"];
 
 export default function ApplicationForm() {
-  const portalUrl = process.env.NEXT_PUBLIC_PORTAL_URL ?? "http://localhost:3001";
   const [section, setSection] = useState("SECONDARY");
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [ref, setRef] = useState("");

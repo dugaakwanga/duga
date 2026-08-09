@@ -1,9 +1,8 @@
 import Link from "next/link";
-import { school } from "@/lib/content";
+import { school, portalUrl } from "@/lib/content";
 import { Pin, Phone, Mail, Clock, ArrowRight } from "@/components/icons";
 
 export default function SiteFooter() {
-  const portalUrl = process.env.NEXT_PUBLIC_PORTAL_URL ?? "http://localhost:3001";
   return (
     <footer className="mkt-footer">
       <div className="mkt-container">

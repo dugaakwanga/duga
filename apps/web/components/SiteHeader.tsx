@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { school } from "@/lib/content";
+import { school, portalUrl } from "@/lib/content";
 import { useSiteContent } from "@/lib/use-site";
 import { Menu, Close, Phone, Mail, ArrowRight } from "@/components/icons";
 
@@ -31,7 +31,6 @@ export default function SiteHeader() {
   const [scrolled, setScrolled] = useState(false);
   const [progress, setProgress] = useState(0);
   const { content } = useSiteContent();
-  const portalUrl = process.env.NEXT_PUBLIC_PORTAL_URL ?? "http://localhost:3001";
 
   useEffect(() => {
     const onScroll = () => {
