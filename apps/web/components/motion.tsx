@@ -161,15 +161,15 @@ export function HeroHeadline({ lines, accent }: { lines: string[]; accent?: stri
   return (
     <>
       {lines.map((line, li) => {
-        const words = line.split(" ");
+        const words = line.split(" ").filter(Boolean);
         return (
           <span key={li} className="hero-line">
             {words.map((word, wi) => {
               const clean = word.replace(/[.,]/g, "").toLowerCase();
               const isAccent = accent ? clean === accent.toLowerCase() || clean.startsWith(accent.toLowerCase()) : false;
               return (
-                <span key={wi} className={`hero-word${isAccent ? " is-accent" : ""}`}>
-                  {word}
+                <span key={wi}>
+                  <span className={`hero-word${isAccent ? " is-accent" : ""}`}>{word}</span>
                   {wi < words.length - 1 ? " " : ""}
                 </span>
               );
