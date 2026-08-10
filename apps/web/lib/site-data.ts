@@ -1,4 +1,5 @@
 import { portalUrl } from "@/lib/content";
+import { DEFAULT_PAGES, normalizePages, type SitePages } from "@duga/core";
 
 export interface SiteStat {
   value: number;
@@ -52,6 +53,7 @@ export interface SiteContentData {
   testimonials: SiteTestimonial[];
   footer: { about: string; tagline: string };
   contact: { motto: string; founded: number; hours: string };
+  pages: SitePages;
 }
 export interface SiteSchoolInfo {
   id: string;
@@ -183,6 +185,7 @@ export const FALLBACK_CONTENT: SiteContentData = {
     founded: 2006,
     hours: "Mon – Fri · 7:30am – 4:00pm",
   },
+  pages: DEFAULT_PAGES,
 };
 
 export function mergeContent(data: Partial<SiteContentData> | null | undefined): SiteContentData {
@@ -193,7 +196,16 @@ export function mergeContent(data: Partial<SiteContentData> | null | undefined):
     hero: { ...FALLBACK_CONTENT.hero, ...(data.hero ?? {}) },
     footer: { ...FALLBACK_CONTENT.footer, ...(data.footer ?? {}) },
     contact: { ...FALLBACK_CONTENT.contact, ...(data.contact ?? {}) },
+    pages: normalizePages(data.pages),
   };
+}
+
+/** Convenience for pages that render their headline copy from the CMS. */
+export async function getPageContent(slug: string) {
+  const { content: raw } = await getSiteData();
+  const content = mergeContent(raw);
+  const pages = normalizePages(content.pages);
+  return { content, pages, page: pages[slug] ?? {} };
 }
 
 export async function getSiteData(): Promise<{ school: SiteSchoolInfo | null; content: SiteContentData | null }> {

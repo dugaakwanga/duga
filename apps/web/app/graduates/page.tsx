@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import PageHero from "@/components/PageHero";
 import { Reveal } from "@/components/motion";
 import { graduates, graduateStats, alumniVoices } from "@/lib/content";
+import { getPageContent } from "@/lib/site-data";
 
 export const metadata: Metadata = {
   title: "Our Graduates",
@@ -9,13 +10,19 @@ export const metadata: Metadata = {
     "Celebrating the graduates of De Ultimate Glory Academy — their results, their stories and their next chapters.",
 };
 
-export default function GraduatesPage() {
+export default async function GraduatesPage() {
+  const { page } = await getPageContent("graduates");
+  const heroTitle = String(page.heroTitle ?? "");
+  const heroSubtitle = String(page.heroSubtitle ?? "");
+  const alumniKicker = String(page.alumniKicker ?? "");
+  const alumniHeading = String(page.alumniHeading ?? "");
+
   return (
     <>
       <PageHero
         kicker="Our Graduates"
-        title="Proud of every single one"
-        subtitle="Two decades of young people who passed through DUGA and went on to great things. This is their story."
+        title={heroTitle}
+        subtitle={heroSubtitle}
       />
 
       {/* ============ STATS ============ */}
@@ -75,9 +82,9 @@ export default function GraduatesPage() {
       <section className="mkt-section mkt-section--soft">
         <div className="mkt-container">
           <div className="mkt-section-head mkt-section-head--center">
-            <div className="mkt-eyebrow">Alumni Voices</div>
+            <div className="mkt-eyebrow">{alumniKicker}</div>
             <h2 className="mkt-h2">
-              What our alumni <em>say</em>
+              {alumniHeading}
             </h2>
           </div>
           <div className="mkt-grid mkt-grid--3">

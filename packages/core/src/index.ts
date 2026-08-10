@@ -5,6 +5,7 @@ export * from "./env";
 export * from "./geo";
 export * from "./grading";
 export * from "./utils";
+export * from "./pages";
 
 // Server-only exports are at "./server".
 export type { Role, Permission } from "./roles";

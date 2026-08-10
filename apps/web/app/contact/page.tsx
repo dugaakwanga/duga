@@ -5,6 +5,7 @@ import { Reveal } from "@/components/motion";
 import { Pin, Phone, Mail, Clock } from "@/components/icons";
 import { school as fallbackSchool } from "@/lib/content";
 import { getSiteData, mergeContent } from "@/lib/site-data";
+import { normalizePages } from "@duga/core";
 
 export const metadata: Metadata = {
   title: "Contact Us",
@@ -18,6 +19,12 @@ export default async function ContactPage() {
 
   const { school, content: raw } = await getSiteData();
   const content = mergeContent(raw);
+  const pages = normalizePages(content.pages);
+  const p = pages.contact ?? {};
+  const heroTitle = String(p.heroTitle ?? "");
+  const heroSubtitle = String(p.heroSubtitle ?? "");
+  const formHeading = String(p.formHeading ?? "");
+  const detailsHeading = String(p.detailsHeading ?? "");
   const info = {
     address: school?.address ?? fallbackSchool.address,
     phone: school?.phone ?? fallbackSchool.phone,
@@ -36,22 +43,22 @@ export default async function ContactPage() {
     <>
       <PageHero
         kicker="Contact"
-        title="We would love to hear from you"
-        subtitle="Reach out to our admissions office for any enquiries — we respond within one working day."
+        title={heroTitle}
+        subtitle={heroSubtitle}
       />
       <section className="mkt-section">
         <div className="mkt-container">
           <div className="mkt-contact-grid">
             <Reveal variant="left">
               <div className="mkt-form-card">
-                <h3 style={{ marginBottom: 18 }}>Send us a message</h3>
+                <h3 style={{ marginBottom: 18 }}>{formHeading}</h3>
                 <ContactForm />
               </div>
             </Reveal>
             <Reveal variant="right" delay={100}>
               <div>
                 <div className="mkt-form-card" style={{ marginBottom: 24 }}>
-                  <h3 style={{ marginBottom: 6 }}>Contact details</h3>
+                  <h3 style={{ marginBottom: 6 }}>{detailsHeading}</h3>
                   {DETAILS.map((d) => {
                     const Icon = d.icon;
                     return (

@@ -1,4 +1,5 @@
 import { prisma, logAudit } from "@duga/core/server";
+import { DEFAULT_PAGES, normalizePages, PAGE_DEFS, sanitizePage, type SitePages } from "@duga/core";
 import type { Module } from ".";
 import { can, str } from "../helpers";
 
@@ -74,6 +75,7 @@ export interface SiteContent {
     tagline: string;
   };
   contact: ContactItem;
+  pages: SitePages;
 }
 
 export const DEFAULT_CONTENT: SiteContent = {
@@ -196,6 +198,7 @@ export const DEFAULT_CONTENT: SiteContent = {
     founded: 2006,
     hours: "Mon – Fri · 7:30am – 4:00pm",
   },
+  pages: DEFAULT_PAGES,
 };
 
 function asStrArray(v: unknown): string[] | undefined {
@@ -284,6 +287,7 @@ export function normalizeContent(value: unknown): SiteContent {
       founded: typeof contact.founded === "number" ? contact.founded : DEFAULT_CONTENT.contact.founded,
       hours: str(contact.hours) ?? DEFAULT_CONTENT.contact.hours,
     },
+    pages: normalizePages(saved.pages),
   };
 }
 
@@ -345,6 +349,14 @@ export const contentModule: Module = {
       if (str(ctx.body.contactMotto)) next.contact.motto = String(ctx.body.contactMotto);
       if (typeof ctx.body.contactFounded === "number") next.contact.founded = ctx.body.contactFounded;
       if (str(ctx.body.contactHours)) next.contact.hours = String(ctx.body.contactHours);
+
+      if (ctx.body.pages && typeof ctx.body.pages === "object") {
+        next.pages = { ...next.pages };
+        for (const def of PAGE_DEFS) {
+          const raw = (ctx.body.pages as Record<string, unknown>)[def.slug];
+          if (raw && typeof raw === "object") next.pages[def.slug] = sanitizePage(raw as Record<string, unknown>, def);
+        }
+      }
 
       const row = await prisma.schoolSetting.upsert({
         where: { schoolId_key: { schoolId, key: CONTENT_KEY } },

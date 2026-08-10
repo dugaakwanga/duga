@@ -4,6 +4,7 @@ import PageHero from "@/components/PageHero";
 import Photo from "@/components/Photo";
 import { Reveal } from "@/components/motion";
 import { primaryPrograms, secondaryPrograms } from "@/lib/content";
+import { getPageContent } from "@/lib/site-data";
 import {
   ArrowRight,
   Beaker,
@@ -19,6 +20,15 @@ export const metadata: Metadata = {
   description:
     "Overview of the Primary and Secondary academic programmes at De Ultimate Glory Academy, Akwanga.",
 };
+
+const EXTRA = [
+  { icon: Beaker, title: "Science Laboratory", text: "Hands-on practical work in biology, chemistry and physics." },
+  { icon: Monitor, title: "ICT & Computer Studies", text: "Digital literacy from primary through senior secondary." },
+  { icon: Book, title: "Library & Reading Culture", text: "A well-stocked library and weekly reading periods." },
+  { icon: Users, title: "Clubs & Societies", text: "Debate, press, JETS, sports, literary and drama clubs." },
+  { icon: Trophy, title: "Quizzes & Competitions", text: "Abacus, spelling bees, science fairs and maths olympiads." },
+  { icon: Ruler, title: "Sports & Athletics", text: "Inter-house sports, football, athletics and PE." },
+];
 
 const SUBJECTS_PRIMARY = [
   "English Studies", "Mathematics", "Basic Science & Technology", "Computer Studies",
@@ -36,14 +46,9 @@ const SUBJECTS_SSS = [
   "Economics", "Commerce", "Literature-in-English", "Government", "CRS", "Geography", "Computer Studies",
 ];
 
-const EXTRA = [
-  { icon: Beaker, title: "Science Laboratory", text: "Hands-on practical work in biology, chemistry and physics." },
-  { icon: Monitor, title: "ICT & Computer Studies", text: "Digital literacy from primary through senior secondary." },
-  { icon: Book, title: "Library & Reading Culture", text: "A well-stocked library and weekly reading periods." },
-  { icon: Users, title: "Clubs & Societies", text: "Debate, press, JETS, sports, literary and drama clubs." },
-  { icon: Trophy, title: "Quizzes & Competitions", text: "Abacus, spelling bees, science fairs and maths olympiads." },
-  { icon: Ruler, title: "Sports & Athletics", text: "Inter-house sports, football, athletics and PE." },
-];
+function strList(value: string | string[] | undefined, fallback: string[]): string[] {
+  return Array.isArray(value) && value.length > 0 ? value : fallback;
+}
 
 function ProgramCards({
   programs,
@@ -73,13 +78,34 @@ function ProgramCards({
   );
 }
 
-export default function AcademicsPage() {
+export default async function AcademicsPage() {
+  const { page } = await getPageContent("academics");
+  const heroTitle = String(page.heroTitle ?? "");
+  const heroSubtitle = String(page.heroSubtitle ?? "");
+  const primaryKicker = String(page.primaryKicker ?? "");
+  const primaryHeading = String(page.primaryHeading ?? "");
+  const primaryText = String(page.primaryText ?? "");
+  const secondaryKicker = String(page.secondaryKicker ?? "");
+  const secondaryHeading = String(page.secondaryHeading ?? "");
+  const secondaryText = String(page.secondaryText ?? "");
+  const subjectsKicker = String(page.subjectsKicker ?? "");
+  const subjectsHeading = String(page.subjectsHeading ?? "");
+  const subjectsPrimary = strList(page.subjectsPrimary, SUBJECTS_PRIMARY);
+  const subjectsJss = strList(page.subjectsJss, SUBJECTS_JSS);
+  const subjectsSss = strList(page.subjectsSss, SUBJECTS_SSS);
+  const extraKicker = String(page.extraKicker ?? "");
+  const extraHeading = String(page.extraHeading ?? "");
+  const extraText = String(page.extraText ?? "");
+  const ctaKicker = String(page.ctaKicker ?? "");
+  const ctaHeading = String(page.ctaHeading ?? "");
+  const ctaLabel = String(page.ctaLabel ?? "");
+
   return (
     <>
       <PageHero
         kicker="Academics"
-        title="From first steps to final exams"
-        subtitle="Structured, standards-based programmes for the Primary and Secondary sections — from phonics to final national exams (sat at accredited centres)."
+        title={heroTitle}
+        subtitle={heroSubtitle}
       />
 
       {/* Primary */}
@@ -87,9 +113,9 @@ export default function AcademicsPage() {
         <div className="mkt-container">
           <div className="mkt-section-head">
             <Reveal>
-              <span className="mkt-kicker">The Primary Section</span>
-              <h2 className="mkt-h2">Nursery to Primary 6 — strong <em>foundations</em></h2>
-              <p>Literacy, numeracy and character, taught with warmth and structure.</p>
+              <span className="mkt-kicker">{primaryKicker}</span>
+              <h2 className="mkt-h2">{primaryHeading}</h2>
+              <p>{primaryText}</p>
             </Reveal>
           </div>
           <ProgramCards programs={primaryPrograms} delayBase={0} />
@@ -107,9 +133,9 @@ export default function AcademicsPage() {
         <div className="mkt-container">
           <div className="mkt-section-head">
             <Reveal>
-              <span className="mkt-kicker">The Secondary Section</span>
-              <h2 className="mkt-h2">JSS 1 to SSS 3 — rigorous <em>preparation</em></h2>
-              <p>BECE, WAEC, NECO and JAMB (sat at accredited centres) — plus the study skills to succeed beyond them.</p>
+              <span className="mkt-kicker">{secondaryKicker}</span>
+              <h2 className="mkt-h2">{secondaryHeading}</h2>
+              <p>{secondaryText}</p>
             </Reveal>
           </div>
           <ProgramCards programs={secondaryPrograms} delayBase={0} />
@@ -127,15 +153,15 @@ export default function AcademicsPage() {
         <div className="mkt-container">
           <div className="mkt-section-head mkt-section-head--center">
             <Reveal>
-              <span className="mkt-kicker">Subjects Offered</span>
-              <h2 className="mkt-h2">A curriculum that <em>covers everything</em></h2>
+              <span className="mkt-kicker">{subjectsKicker}</span>
+              <h2 className="mkt-h2">{subjectsHeading}</h2>
             </Reveal>
           </div>
           <div className="mkt-grid mkt-grid--3">
             {[
-              { title: "Primary (1 – 6)", items: SUBJECTS_PRIMARY },
-              { title: "Junior Secondary (JSS)", items: SUBJECTS_JSS },
-              { title: "Senior Secondary (SSS)", items: SUBJECTS_SSS },
+              { title: "Primary (1 – 6)", items: subjectsPrimary },
+              { title: "Junior Secondary (JSS)", items: subjectsJss },
+              { title: "Senior Secondary (SSS)", items: subjectsSss },
             ].map((s, i) => (
               <Reveal key={s.title} delay={i * 100}>
                 <div className="mkt-card">
@@ -157,9 +183,9 @@ export default function AcademicsPage() {
         <div className="mkt-container">
           <div className="mkt-section-head mkt-section-head--center">
             <Reveal>
-              <span className="mkt-kicker">Beyond the Classroom</span>
-              <h2 className="mkt-h2">Learning goes <em>far beyond textbooks</em></h2>
-              <p>Clubs, sports, competitions and creative arts — every child finds their spark.</p>
+              <span className="mkt-kicker">{extraKicker}</span>
+              <h2 className="mkt-h2">{extraHeading}</h2>
+              <p>{extraText}</p>
             </Reveal>
           </div>
           <div className="mkt-grid mkt-grid--3">
@@ -189,13 +215,13 @@ export default function AcademicsPage() {
       <section className="mkt-section mkt-section--dark">
         <div className="mkt-container" style={{ textAlign: "center" }}>
           <Reveal>
-            <span className="mkt-kicker mkt-kicker--light" style={{ justifyContent: "center" }}>Ready to join us?</span>
+            <span className="mkt-kicker mkt-kicker--light" style={{ justifyContent: "center" }}>{ctaKicker}</span>
             <h2 className="mkt-h2" style={{ marginTop: 14 }}>
-              Give your child access to an education that <em>truly prepares them</em>
+              {ctaHeading}
             </h2>
             <div style={{ marginTop: 28 }}>
               <Link href="/apply" className="duga-btn mkt-btn--light duga-btn--lg duga-btn--arrow">
-                Apply for Admission <ArrowRight size={17} className="mkt-arrow" />
+                {ctaLabel} <ArrowRight size={17} className="mkt-arrow" />
               </Link>
             </div>
           </Reveal>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Card, PageHeader, Field, Input, Textarea, Button, Alert, Spinner, Badge } from "@duga/ui";
+import { PAGE_DEFS } from "@duga/core";
 import { api } from "@/lib/client/api";
 
 interface StatItem {
@@ -104,6 +105,7 @@ interface SiteContent {
   testimonials: Array<{ quote: string; name: string; role: string }>;
   footer: { about: string; tagline: string };
   contact: { motto: string; founded: number; hours: string };
+  pages: Record<string, Record<string, string | string[]>>;
 }
 
 export default function ContentPage() {
@@ -143,6 +145,7 @@ export default function ContentPage() {
           contactMotto: content.contact.motto,
           contactFounded: content.contact.founded,
           contactHours: content.contact.hours,
+          pages: content.pages,
         },
       });
       setContent(d);
@@ -168,6 +171,19 @@ export default function ContentPage() {
   if (loading || !content) return <Spinner size={28} />;
 
   const set = (patch: Partial<SiteContent>) => setContent((c) => (c ? { ...c, ...patch } : c));
+
+  const setPage = (slug: string, key: string, value: string | string[]) =>
+    setContent((c) =>
+      c
+        ? {
+            ...c,
+            pages: {
+              ...c.pages,
+              [slug]: { ...(c.pages[slug] ?? {}), [key]: value },
+            },
+          }
+        : c,
+    );
 
   return (
     <div>
@@ -381,6 +397,47 @@ export default function ContentPage() {
               onChange={(e) => set({ footer: { ...content.footer, tagline: e.target.value } })}
             />
           </Field>
+        </Card>
+
+        <Card title="Page text (About, Academics, Admissions &amp; more)" style={{ gridColumn: "1 / -1" }}>
+          <p style={{ fontSize: 13.5, color: "var(--duga-muted)", margin: "0 0 16px" }}>
+            Edit the written copy for each page of the website. Open a page below, update the fields,
+            then press <strong>Save content</strong>. Headings and body text update immediately; layout and images are fixed.
+          </p>
+          {PAGE_DEFS.map((def) => (
+            <details
+              key={def.slug}
+              style={{
+                border: "1px solid var(--duga-border)",
+                borderRadius: 12,
+                marginBottom: 10,
+                padding: "6px 14px",
+                background: "var(--duga-surface)",
+              }}
+            >
+              <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 14, padding: "8px 0" }}>
+                {def.label}
+              </summary>
+              <div style={{ display: "grid", gap: 12, padding: "8px 0 14px" }}>
+                {def.fields.map((f) => {
+                  const val = content.pages[def.slug]?.[f.key];
+                  const isList = f.type === "list" && Array.isArray(val);
+                  const text = isList ? (val as string[]).join("\n") : String(val ?? "");
+                  return (
+                    <Field key={f.key} label={f.label}>
+                      {f.type === "list" ? (
+                        <Textarea rows={5} value={text} onChange={(e) => setPage(def.slug, f.key, e.target.value.split("\n"))} />
+                      ) : f.type === "area" ? (
+                        <Textarea rows={3} value={text} onChange={(e) => setPage(def.slug, f.key, e.target.value)} />
+                      ) : (
+                        <Input value={text} onChange={(e) => setPage(def.slug, f.key, e.target.value)} />
+                      )}
+                    </Field>
+                  );
+                })}
+              </div>
+            </details>
+          ))}
         </Card>
       </div>
 

@@ -12,13 +12,16 @@ export const metadata: Metadata = {
 export default async function TestimonialsPage() {
   const { content: raw } = await getSiteData();
   const content = mergeContent(raw);
+  const p = content.pages.testimonials ?? {};
+  const heroTitle = String(p.heroTitle ?? "");
+  const heroSubtitle = String(p.heroSubtitle ?? "");
 
   return (
     <>
       <PageHero
         kicker="Testimonials"
-        title="Words from our school family"
-        subtitle="Parents, pupils and alumni share what De Ultimate Glory Academy means to them."
+        title={heroTitle}
+        subtitle={heroSubtitle}
       />
 
       <section className="mkt-section">

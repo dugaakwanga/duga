@@ -4,7 +4,7 @@ import PageHero from "@/components/PageHero";
 import Photo from "@/components/Photo";
 import { Reveal } from "@/components/motion";
 import { Book, Shield, Heart, Globe, ArrowRight, Target, Spark, Users, Cap } from "@/components/icons";
-import { school } from "@/lib/content";
+import { getPageContent } from "@/lib/site-data";
 
 export const metadata: Metadata = {
   title: "About Us",
@@ -27,13 +27,34 @@ const TIMELINE = [
   { year: "Today", title: "1,200+ Students", text: "A growing family of students, staff and alumni whose results speak for themselves." },
 ];
 
-export default function AboutPage() {
+export default async function AboutPage() {
+  const { page } = await getPageContent("about");
+  const heroTitle = String(page.heroTitle ?? "");
+  const heroSubtitle = String(page.heroSubtitle ?? "");
+  const storyKicker = String(page.storyKicker ?? "");
+  const storyHeading = String(page.storyHeading ?? "");
+  const storyPara1 = String(page.storyPara1 ?? "");
+  const storyPara2 = String(page.storyPara2 ?? "");
+  const missionHeading = String(page.missionHeading ?? "");
+  const missionText = String(page.missionText ?? "");
+  const visionHeading = String(page.visionHeading ?? "");
+  const visionText = String(page.visionText ?? "");
+  const valuesKicker = String(page.valuesKicker ?? "");
+  const valuesHeading = String(page.valuesHeading ?? "");
+  const timelineKicker = String(page.timelineKicker ?? "");
+  const timelineHeading = String(page.timelineHeading ?? "");
+  const leadershipKicker = String(page.leadershipKicker ?? "");
+  const leadershipHeading = String(page.leadershipHeading ?? "");
+  const accreditKicker = String(page.accreditKicker ?? "");
+  const accreditHeading = String(page.accreditHeading ?? "");
+  const ctaLabel = String(page.ctaLabel ?? "");
+
   return (
     <>
       <PageHero
         kicker="About · De Ultimate Glory Academy"
-        title="Our story, told with pride"
-        subtitle="Over twenty years of raising leaders in Akwanga, Nasarawa State — with a mission that has never changed."
+        title={heroTitle}
+        subtitle={heroSubtitle}
       />
 
       {/* Story */}
@@ -42,21 +63,16 @@ export default function AboutPage() {
           <div className="mkt-grid mkt-grid--editorial">
             <Reveal variant="left">
               <div>
-                <span className="mkt-kicker">Our Story</span>
-                <h2 className="mkt-h2">It began with a simple <em>vision</em></h2>
+                <span className="mkt-kicker">{storyKicker}</span>
+                <h2 className="mkt-h2">{storyHeading}</h2>
                 <p style={{ color: "var(--duga-ink-2)", marginTop: 18, lineHeight: 1.8 }}>
-                  Founded in {school.founded}, De Ultimate Glory Academy began with a simple conviction —
-                  to give the children of Akwanga and Nasarawa State a school where academic rigour,
-                  discipline and strong moral values are taken seriously.
+                  {storyPara1}
                 </p>
                 <p style={{ color: "var(--duga-ink-2)", marginTop: 14, lineHeight: 1.8 }}>
-                  Today, we run both a full Primary and Secondary section on one campus, with modern
-                  classrooms, a science laboratory, computer studies, a library, boarding facilities
-                  and school transport. Our graduates have progressed to leading secondary schools
-                  and universities across Nigeria.
+                  {storyPara2}
                 </p>
                 <Link href="/apply" className="duga-btn duga-btn--primary duga-btn--arrow" style={{ marginTop: 26 }}>
-                  Begin your child&apos;s journey <ArrowRight size={16} className="mkt-arrow" />
+                  {ctaLabel} <ArrowRight size={16} className="mkt-arrow" />
                 </Link>
               </div>
             </Reveal>
@@ -74,22 +90,15 @@ export default function AboutPage() {
             <Reveal>
               <div className="mkt-card" style={{ padding: 34 }}>
                 <div className="mkt-icon"><Target size={24} /></div>
-                <h3 style={{ fontFamily: "var(--duga-font-display)", fontSize: 24, fontWeight: 640 }}>Our Mission</h3>
-                <p style={{ marginTop: 10 }}>
-                  To provide a holistic, affordable and high-quality education that nurtures the
-                  intellectual, moral and physical potential of every child — preparing them to excel
-                  in national examinations and in life.
-                </p>
+                <h3 style={{ fontFamily: "var(--duga-font-display)", fontSize: 24, fontWeight: 640 }}>{missionHeading}</h3>
+                <p style={{ marginTop: 10 }}>{missionText}</p>
               </div>
             </Reveal>
             <Reveal delay={120}>
               <div className="mkt-card" style={{ padding: 34 }}>
                 <div className="mkt-icon"><Spark size={24} /></div>
-                <h3 style={{ fontFamily: "var(--duga-font-display)", fontSize: 24, fontWeight: 640 }}>Our Vision</h3>
-                <p style={{ marginTop: 10 }}>
-                  To be the leading citadel of learning in Nasarawa State — producing disciplined,
-                  creative and God-fearing leaders who transform their communities and the nation.
-                </p>
+                <h3 style={{ fontFamily: "var(--duga-font-display)", fontSize: 24, fontWeight: 640 }}>{visionHeading}</h3>
+                <p style={{ marginTop: 10 }}>{visionText}</p>
               </div>
             </Reveal>
           </div>
@@ -101,8 +110,8 @@ export default function AboutPage() {
         <div className="mkt-container">
           <div className="mkt-section-head mkt-section-head--center">
             <Reveal>
-              <span className="mkt-kicker">Core Values</span>
-              <h2 className="mkt-h2">The principles we instil, <em>every day</em></h2>
+              <span className="mkt-kicker">{valuesKicker}</span>
+              <h2 className="mkt-h2">{valuesHeading}</h2>
             </Reveal>
           </div>
           <div className="mkt-grid mkt-grid--4">
@@ -128,8 +137,8 @@ export default function AboutPage() {
           <div className="mkt-grid mkt-grid--2" style={{ alignItems: "start" }}>
             <Reveal variant="left">
               <div>
-                <span className="mkt-kicker">Milestones</span>
-                <h2 className="mkt-h2" style={{ marginBottom: 30 }}>A journey of <em>growth</em></h2>
+                <span className="mkt-kicker">{timelineKicker}</span>
+                <h2 className="mkt-h2" style={{ marginBottom: 30 }}>{timelineHeading}</h2>
                 <div className="mkt-timeline">
                   {TIMELINE.map((t) => (
                     <div key={t.year} className="mkt-timeline-item">
@@ -144,8 +153,8 @@ export default function AboutPage() {
             </Reveal>
             <Reveal variant="right" delay={100}>
               <div>
-                <span className="mkt-kicker">Leadership</span>
-                <h2 className="mkt-h2" style={{ marginBottom: 30 }}>The people behind <em>our success</em></h2>
+                <span className="mkt-kicker">{leadershipKicker}</span>
+                <h2 className="mkt-h2" style={{ marginBottom: 30 }}>{leadershipHeading}</h2>
                 <div style={{ marginBottom: 30 }}>
                   <Photo src="/images/staff.png" alt="The staff of De Ultimate Glory Academy" ratio="wide" caption="Our dedicated team" />
                 </div>
@@ -176,8 +185,8 @@ export default function AboutPage() {
         <div className="mkt-container">
           <div className="mkt-section-head mkt-section-head--center">
             <Reveal>
-              <span className="mkt-kicker">Accreditation</span>
-              <h2 className="mkt-h2">Recognised &amp; <em>accredited</em></h2>
+              <span className="mkt-kicker">{accreditKicker}</span>
+              <h2 className="mkt-h2">{accreditHeading}</h2>
             </Reveal>
           </div>
           <div className="mkt-grid mkt-grid--4">
@@ -201,7 +210,7 @@ export default function AboutPage() {
           <Reveal>
             <div style={{ textAlign: "center", marginTop: 44 }}>
               <Link href="/apply" className="duga-btn duga-btn--primary duga-btn--lg duga-btn--arrow">
-                Begin Your Child&apos;s Journey <ArrowRight size={17} className="mkt-arrow" />
+                {ctaLabel} <ArrowRight size={17} className="mkt-arrow" />
               </Link>
             </div>
           </Reveal>

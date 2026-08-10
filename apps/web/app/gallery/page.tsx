@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import PageHero from "@/components/PageHero";
 import GalleryGrid from "@/components/GalleryGrid";
+import { getPageContent } from "@/lib/site-data";
 
 export const metadata: Metadata = {
   title: "Gallery",
@@ -8,13 +9,17 @@ export const metadata: Metadata = {
     "Photos of campus life, events and students at De Ultimate Glory Academy, Akwanga.",
 };
 
-export default function GalleryPage() {
+export default async function GalleryPage() {
+  const { page } = await getPageContent("gallery");
+  const heroTitle = String(page.heroTitle ?? "");
+  const heroSubtitle = String(page.heroSubtitle ?? "");
+
   return (
     <>
       <PageHero
         kicker="Gallery"
-        title="School life, in pictures"
-        subtitle="A look at campus life, events, students and facilities at De Ultimate Glory Academy."
+        title={heroTitle}
+        subtitle={heroSubtitle}
       />
       <section className="mkt-section">
         <div className="mkt-container">
