@@ -5,6 +5,7 @@ import { Reveal } from "@/components/motion";
 import Photo from "@/components/Photo";
 import { admissionRequirements } from "@/lib/content";
 import { getPageContent } from "@/lib/site-data";
+import { assertSitePage } from "@/lib/site-gate";
 
 export const metadata: Metadata = {
   title: "Apply for Admission",
@@ -17,6 +18,7 @@ function strList(value: string | string[] | undefined, fallback: string[]): stri
 }
 
 export default async function ApplyPage() {
+  await assertSitePage("apply");
   const { page } = await getPageContent("apply");
   const heroTitle = String(page.heroTitle ?? "");
   const heroSubtitle = String(page.heroSubtitle ?? "");

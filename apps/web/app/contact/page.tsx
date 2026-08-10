@@ -5,6 +5,7 @@ import { Reveal } from "@/components/motion";
 import { Pin, Phone, Mail, Clock } from "@/components/icons";
 import { school as fallbackSchool } from "@/lib/content";
 import { getSiteData, mergeContent } from "@/lib/site-data";
+import { assertSitePage } from "@/lib/site-gate";
 import { normalizePages } from "@duga/core";
 
 export const metadata: Metadata = {
@@ -14,6 +15,7 @@ export const metadata: Metadata = {
 };
 
 export default async function ContactPage() {
+  await assertSitePage("contact");
   const lat = process.env.NEXT_PUBLIC_SCHOOL_LAT ?? "8.9123";
   const lng = process.env.NEXT_PUBLIC_SCHOOL_LNG ?? "8.4066";
 

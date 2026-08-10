@@ -5,6 +5,7 @@ import Photo from "@/components/Photo";
 import { Reveal } from "@/components/motion";
 import { primaryPrograms, secondaryPrograms } from "@/lib/content";
 import { getPageContent } from "@/lib/site-data";
+import { assertSitePage } from "@/lib/site-gate";
 import {
   ArrowRight,
   Beaker,
@@ -79,6 +80,7 @@ function ProgramCards({
 }
 
 export default async function AcademicsPage() {
+  await assertSitePage("academics");
   const { page } = await getPageContent("academics");
   const heroTitle = String(page.heroTitle ?? "");
   const heroSubtitle = String(page.heroSubtitle ?? "");

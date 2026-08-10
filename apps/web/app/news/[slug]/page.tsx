@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import PageHero from "@/components/PageHero";
 import NewsDetail from "@/components/NewsDetail";
 import { portalUrl } from "@/lib/content";
+import { assertSitePage } from "@/lib/site-gate";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
@@ -25,6 +26,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 }
 
 export default async function NewsDetailPage({ params }: { params: Promise<{ slug: string }> }) {
+  await assertSitePage("news");
   const { slug } = await params;
   return (
     <>

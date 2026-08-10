@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, Badge, Button, Alert, Spinner, Select, Field } from "@duga/ui";
 import { FEATURES, type FeatureDef } from "@/lib/features";
+import { WEB_PAGES, WEB_FEATURES } from "@duga/core";
 
 async function saApi<T = unknown>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
   const res = await fetch(`/api/superadmin/${path.replace(/^\//, "")}`, {
@@ -34,6 +35,8 @@ interface FeatureConfig {
 interface WebsiteConfig {
   enabled: boolean;
   notice: string;
+  pages: string[];
+  features: string[];
 }
 
 export default function SuperAdminFeatures() {
@@ -120,7 +123,7 @@ export default function SuperAdminFeatures() {
     try {
       const d = await saApi<{ config: WebsiteConfig }>("website/update", {
         method: "POST",
-        body: { schoolId, enabled: website.enabled, notice: website.notice },
+        body: { schoolId, enabled: website.enabled, notice: website.notice, pages: website.pages, features: website.features },
       });
       setWebsite(d.config);
       setSaved(true);
@@ -194,6 +197,107 @@ export default function SuperAdminFeatures() {
                   <Button onClick={saveWebsite} loading={busy}>Save website settings</Button>
                   {saved && <Badge tone="success">Saved</Badge>}
                   {error && <Alert tone="danger">{error}</Alert>}
+                </div>
+              </Card>
+            )}
+
+            {website && (
+              <Card style={{ marginTop: 16 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--duga-muted)", marginBottom: 12 }}>
+                  Website pages
+                </div>
+                <div style={{ fontSize: 13, color: "var(--duga-muted)", marginBottom: 12 }}>
+                  Hidden pages disappear from the site menu and return a &quot;page not found&quot; when visited directly.
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 10 }}>
+                  {WEB_PAGES.map((p) => {
+                    const on = website.pages.includes(p.slug);
+                    return (
+                      <button
+                        key={p.slug}
+                        type="button"
+                        onClick={() =>
+                          setWebsite({
+                            ...website,
+                            pages: on
+                              ? website.pages.filter((s) => s !== p.slug)
+                              : [...website.pages, p.slug],
+                          })
+                        }
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 10,
+                          padding: "10px 12px",
+                          border: `1px solid ${on ? "var(--duga-border)" : "var(--duga-danger)"}`,
+                          borderRadius: 10,
+                          background: on ? "transparent" : "var(--duga-danger-soft, rgba(220,53,69,0.08))",
+                          cursor: "pointer",
+                          textAlign: "left",
+                          fontSize: 13.5,
+                          fontWeight: 600,
+                        }}
+                      >
+                        <span>{p.label}</span>
+                        <Badge tone={on ? "success" : "danger"}>{on ? "Live" : "Hidden"}</Badge>
+                      </button>
+                    );
+                  })}
+                </div>
+              </Card>
+            )}
+
+            {website && (
+              <Card style={{ marginTop: 16 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--duga-muted)", marginBottom: 12 }}>
+                  Website features
+                </div>
+                <div style={{ fontSize: 13, color: "var(--duga-muted)", marginBottom: 12 }}>
+                  Sections of the public site that can be turned on or off for this school.
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 10 }}>
+                  {WEB_FEATURES.map((f) => {
+                    const on = website.features.includes(f.id);
+                    return (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() =>
+                          setWebsite({
+                            ...website,
+                            features: on
+                              ? website.features.filter((id) => id !== f.id)
+                              : [...website.features, f.id],
+                          })
+                        }
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 10,
+                          padding: "10px 12px",
+                          border: `1px solid ${on ? "var(--duga-border)" : "var(--duga-danger)"}`,
+                          borderRadius: 10,
+                          background: on ? "transparent" : "var(--duga-danger-soft, rgba(220,53,69,0.08))",
+                          cursor: "pointer",
+                          textAlign: "left",
+                          fontSize: 13.5,
+                          fontWeight: 600,
+                        }}
+                      >
+                        <span>
+                          {f.label}
+                          <div style={{ fontSize: 11.5, fontWeight: 400, color: "var(--duga-muted)", marginTop: 2 }}>{f.hint}</div>
+                        </span>
+                        <Badge tone={on ? "success" : "danger"}>{on ? "On" : "Off"}</Badge>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14 }}>
+                  <Button onClick={saveWebsite} loading={busy}>Save website settings</Button>
+                  {saved && <Badge tone="success">Saved</Badge>}
                 </div>
               </Card>
             )}

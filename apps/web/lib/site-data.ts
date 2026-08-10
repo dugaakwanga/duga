@@ -1,5 +1,5 @@
 import { portalUrl } from "@/lib/content";
-import { DEFAULT_PAGES, normalizePages, type SitePages } from "@duga/core";
+import { DEFAULT_PAGES, normalizePages, type SitePages, WEB_PAGE_SLUGS, WEB_FEATURE_IDS } from "@duga/core";
 
 export interface SiteStat {
   value: number;
@@ -68,6 +68,8 @@ export interface SiteSchoolInfo {
 export interface SiteWebsiteConfig {
   enabled: boolean;
   notice: string;
+  pages: string[];
+  features: string[];
 }
 
 export const FALLBACK_CONTENT: SiteContentData = {
@@ -224,13 +226,15 @@ export async function getSiteData(): Promise<{ school: SiteSchoolInfo | null; co
         website: {
           enabled: json.data.website?.enabled !== false,
           notice: json.data.website?.notice ?? "",
+          pages: Array.isArray(json.data.website?.pages) ? json.data.website.pages : WEB_PAGE_SLUGS,
+          features: Array.isArray(json.data.website?.features) ? json.data.website.features : WEB_FEATURE_IDS,
         },
       };
     }
   } catch {
     /* portal offline — caller falls back to defaults */
   }
-  return { school: null, content: null, website: { enabled: true, notice: "" } };
+  return { school: null, content: null, website: { enabled: true, notice: "", pages: WEB_PAGE_SLUGS, features: WEB_FEATURE_IDS } };
 }
 
 /** Website on/off state, used by the root layout to gate the whole site. */

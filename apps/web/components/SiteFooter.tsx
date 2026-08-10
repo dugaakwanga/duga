@@ -6,7 +6,10 @@ import { useSiteContent } from "@/lib/use-site";
 import { Pin, Phone, Mail, Clock, ArrowRight } from "@/components/icons";
 
 export default function SiteFooter() {
-  const { content, school } = useSiteContent();
+  const { content, school, website } = useSiteContent();
+
+  const enabled = new Set(website.pages.length ? website.pages : ["about", "academics", "admissions", "gallery", "testimonials", "news", "contact", "apply"]);
+  const show = (slug: string) => enabled.has(slug);
 
   const info = {
     name: school?.name ?? fallbackSchool.name,
@@ -43,21 +46,21 @@ export default function SiteFooter() {
 
           <div>
             <h4>Explore</h4>
-            <Link href="/about">About Us</Link>
-            <Link href="/academics">Academics</Link>
-            <Link href="/admissions">Admissions</Link>
-            <Link href="/gallery">Gallery</Link>
-            <Link href="/testimonials">Testimonials</Link>
-            <Link href="/news">News &amp; Events</Link>
+            {show("about") && <Link href="/about">About Us</Link>}
+            {show("academics") && <Link href="/academics">Academics</Link>}
+            {show("admissions") && <Link href="/admissions">Admissions</Link>}
+            {show("gallery") && <Link href="/gallery">Gallery</Link>}
+            {show("testimonials") && <Link href="/testimonials">Testimonials</Link>}
+            {show("news") && <Link href="/news">News &amp; Events</Link>}
           </div>
 
           <div>
             <h4>Quick Links</h4>
-            <Link href="/apply">Apply Online</Link>
+            {show("apply") && <Link href="/apply">Apply Online</Link>}
             <Link href={portalUrl}>Parent Portal</Link>
             <Link href={portalUrl}>Student Portal</Link>
             <Link href={portalUrl}>Staff Portal</Link>
-            <Link href="/contact">Contact Us</Link>
+            {show("contact") && <Link href="/contact">Contact Us</Link>}
           </div>
 
           <div>
@@ -74,7 +77,7 @@ export default function SiteFooter() {
             <p style={{ fontSize: 13.5, display: "flex", gap: 9, alignItems: "center", marginTop: 8 }}>
               <Clock size={15} /> {info.hours}
             </p>
-            <Link href="/apply" className="duga-btn mkt-btn--light duga-btn--sm duga-btn--arrow" style={{ marginTop: 18, display: "inline-flex" }}>
+            <Link href={show("apply") ? "/apply" : "/contact"} className="duga-btn mkt-btn--light duga-btn--sm duga-btn--arrow" style={{ marginTop: 18, display: "inline-flex" }}>
               Start Application <ArrowRight size={15} className="mkt-arrow" />
             </Link>
           </div>

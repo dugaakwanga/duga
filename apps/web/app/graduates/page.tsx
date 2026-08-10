@@ -3,6 +3,7 @@ import PageHero from "@/components/PageHero";
 import { Reveal } from "@/components/motion";
 import { graduates, graduateStats, alumniVoices } from "@/lib/content";
 import { getPageContent } from "@/lib/site-data";
+import { assertSitePage } from "@/lib/site-gate";
 
 export const metadata: Metadata = {
   title: "Our Graduates",
@@ -11,6 +12,7 @@ export const metadata: Metadata = {
 };
 
 export default async function GraduatesPage() {
+  await assertSitePage("graduates");
   const { page } = await getPageContent("graduates");
   const heroTitle = String(page.heroTitle ?? "");
   const heroSubtitle = String(page.heroSubtitle ?? "");

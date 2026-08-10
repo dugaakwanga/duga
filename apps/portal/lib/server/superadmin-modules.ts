@@ -584,15 +584,17 @@ export const saModules: Record<string, SAModule> = {
     },
 
     actions: {
-      // POST /api/superadmin/website/update  { schoolId, enabled: boolean, notice?: string }
+      // POST /api/superadmin/website/update  { schoolId, enabled?, notice?, pages?, features? }
       update: async (ctx) => {
         const schoolId = String(ctx.body.schoolId ?? "");
         if (!schoolId) throw new Error("schoolId required");
         const config = await setWebsiteConfig(schoolId, {
-          enabled: ctx.body.enabled === true || ctx.body.enabled === "true",
-          notice: typeof ctx.body.notice === "string" ? ctx.body.notice : "",
+          enabled: typeof ctx.body.enabled === "boolean" ? ctx.body.enabled : undefined,
+          notice: typeof ctx.body.notice === "string" ? ctx.body.notice : undefined,
+          pages: Array.isArray(ctx.body.pages) ? (ctx.body.pages as string[]) : undefined,
+          features: Array.isArray(ctx.body.features) ? (ctx.body.features as string[]) : undefined,
         });
-        await logActivity(ctx, "website.updated", { schoolId, enabled: config.enabled });
+        await logActivity(ctx, "website.updated", { schoolId, ...config });
         return { ok: true, config };
       },
     },

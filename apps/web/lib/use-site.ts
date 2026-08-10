@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { portalUrl } from "@/lib/content";
 import { mergeContent, type SiteContentData, type SiteSchoolInfo } from "@/lib/site-data";
+import { WEB_PAGE_SLUGS, WEB_FEATURE_IDS } from "@duga/core";
 
 export interface SiteGalleryItem {
   id: string;
@@ -48,6 +49,7 @@ export interface SiteContent {
   content: SiteContentData;
   loading: boolean;
   pta: { executives: SitePtaExecutive[]; meetings: SitePtaMeeting[] };
+  website: { enabled: boolean; pages: string[]; features: string[] };
 }
 
 export function useSiteContent(): SiteContent {
@@ -58,6 +60,7 @@ export function useSiteContent(): SiteContent {
     content: mergeContent(null),
     loading: true,
     pta: { executives: [], meetings: [] },
+    website: { enabled: true, pages: WEB_PAGE_SLUGS, features: WEB_FEATURE_IDS },
   });
 
   useEffect(() => {
@@ -80,6 +83,11 @@ export function useSiteContent(): SiteContent {
             school: json.data?.school ?? null,
             content: mergeContent(json.data?.content),
             loading: false,
+            website: {
+              enabled: json.data?.website?.enabled !== false,
+              pages: Array.isArray(json.data?.website?.pages) ? json.data.website.pages : WEB_PAGE_SLUGS,
+              features: Array.isArray(json.data?.website?.features) ? json.data.website.features : WEB_FEATURE_IDS,
+            },
             pta: {
               executives: Array.isArray(json.data?.pta?.executives)
                 ? json.data.pta.executives.map((e: SitePtaExecutive) => ({ ...e, photoUrl: absolute(e.photoUrl) }))

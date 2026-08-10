@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import PageHero from "@/components/PageHero";
 import GalleryGrid from "@/components/GalleryGrid";
 import { getPageContent } from "@/lib/site-data";
+import { assertSitePage } from "@/lib/site-gate";
 
 export const metadata: Metadata = {
   title: "Gallery",
@@ -10,6 +11,7 @@ export const metadata: Metadata = {
 };
 
 export default async function GalleryPage() {
+  await assertSitePage("gallery");
   const { page } = await getPageContent("gallery");
   const heroTitle = String(page.heroTitle ?? "");
   const heroSubtitle = String(page.heroSubtitle ?? "");

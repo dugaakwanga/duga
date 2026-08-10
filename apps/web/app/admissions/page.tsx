@@ -5,6 +5,7 @@ import Photo from "@/components/Photo";
 import { Reveal } from "@/components/motion";
 import { admissionSteps, admissionRequirements } from "@/lib/content";
 import { getPageContent } from "@/lib/site-data";
+import { assertSitePage } from "@/lib/site-gate";
 import { ArrowRight, Spark, Leaf, Cap } from "@/components/icons";
 
 export const metadata: Metadata = {
@@ -18,6 +19,7 @@ function strList(value: string | string[] | undefined, fallback: string[]): stri
 }
 
 export default async function AdmissionsPage() {
+  await assertSitePage("admissions");
   const { page } = await getPageContent("admissions");
   const heroTitle = String(page.heroTitle ?? "");
   const heroSubtitle = String(page.heroSubtitle ?? "");

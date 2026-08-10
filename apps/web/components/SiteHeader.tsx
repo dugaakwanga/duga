@@ -32,7 +32,7 @@ export default function SiteHeader() {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [progress, setProgress] = useState(0);
-  const { content, school } = useSiteContent();
+  const { content, school, website } = useSiteContent();
 
   const schoolInfo = {
     name: school?.name ?? fallbackSchool.name,
@@ -40,6 +40,10 @@ export default function SiteHeader() {
     phone: school?.phone ?? fallbackSchool.phone,
     email: school?.email ?? fallbackSchool.email,
   };
+
+  const enabledPages = new Set(website.pages.length ? website.pages : NAV.map((n) => n.href.slice(1)));
+  const navLinks = NAV.filter((n) => n.href === "/" || enabledPages.has(n.href.slice(1)));
+  const tickerOn = website.features.length ? website.features.includes("ticker") : true;
 
   useEffect(() => {
     const onScroll = () => {
@@ -58,7 +62,7 @@ export default function SiteHeader() {
 
   return (
     <>
-      {content.tickerEnabled !== false && (
+      {tickerOn && content.tickerEnabled !== false && (
         <div className="mkt-announce">
           <div className="mkt-announce-track">
             <span>{tickerLine}</span>
@@ -113,7 +117,7 @@ export default function SiteHeader() {
           </div>
 
           <nav className="mkt-nav" aria-label="Primary">
-            {NAV.map((n) => (
+            {navLinks.map((n) => (
               <Link key={n.href} href={n.href}>
                 {n.label}
               </Link>
@@ -121,7 +125,7 @@ export default function SiteHeader() {
           </nav>
 
           <div className={`mkt-mobile-menu${open ? " open" : ""}`}>
-            {NAV.map((n) => (
+            {navLinks.map((n) => (
               <Link key={n.href} href={n.href} onClick={() => setOpen(false)}>
                 {n.label}
               </Link>

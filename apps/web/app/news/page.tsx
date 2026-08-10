@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import PageHero from "@/components/PageHero";
 import NewsList from "@/components/NewsList";
 import { getPageContent } from "@/lib/site-data";
+import { assertSitePage } from "@/lib/site-gate";
 
 export const metadata: Metadata = {
   title: "News & Announcements",
@@ -10,6 +11,7 @@ export const metadata: Metadata = {
 };
 
 export default async function NewsPage() {
+  await assertSitePage("news");
   const { page } = await getPageContent("news");
   const heroTitle = String(page.heroTitle ?? "");
   const heroSubtitle = String(page.heroSubtitle ?? "");

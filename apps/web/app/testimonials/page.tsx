@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import PageHero from "@/components/PageHero";
 import { Reveal } from "@/components/motion";
 import { getSiteData, mergeContent } from "@/lib/site-data";
+import { assertSitePage } from "@/lib/site-gate";
 
 export const metadata: Metadata = {
   title: "Testimonials",
@@ -10,6 +11,7 @@ export const metadata: Metadata = {
 };
 
 export default async function TestimonialsPage() {
+  await assertSitePage("testimonials");
   const { content: raw } = await getSiteData();
   const content = mergeContent(raw);
   const p = content.pages.testimonials ?? {};

@@ -5,6 +5,7 @@ import Photo from "@/components/Photo";
 import { Reveal } from "@/components/motion";
 import { Book, Shield, Heart, Globe, ArrowRight, Target, Spark, Users, Cap } from "@/components/icons";
 import { getPageContent } from "@/lib/site-data";
+import { assertSitePage } from "@/lib/site-gate";
 
 export const metadata: Metadata = {
   title: "About Us",
@@ -28,6 +29,7 @@ const TIMELINE = [
 ];
 
 export default async function AboutPage() {
+  await assertSitePage("about");
   const { page } = await getPageContent("about");
   const heroTitle = String(page.heroTitle ?? "");
   const heroSubtitle = String(page.heroSubtitle ?? "");

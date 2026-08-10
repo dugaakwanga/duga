@@ -3,6 +3,7 @@ import type { ComponentType } from "react";
 import Photo from "@/components/Photo";
 import { school as fallbackSchool, portalUrl } from "@/lib/content";
 import { getSiteData, mergeContent } from "@/lib/site-data";
+import { WEB_FEATURE_IDS } from "@duga/core";
 import { Reveal, Counter, Tilt, HeroHeadline } from "@/components/motion";
 import HomeGalleryPreview from "@/components/HomeGalleryPreview";
 import HomeNewsPreview from "@/components/HomeNewsPreview";
@@ -34,8 +35,10 @@ const PROGRAMME_IMG_FALLBACK = ["/images/primarypupil.png", "/images/group pupil
 const SECTION_IMG_FALLBACK = ["/images/group pupils.png", "/images/sec group 2.png"];
 
 export default async function HomePage() {
-  const { school, content: raw } = await getSiteData();
+  const { school, content: raw, website } = await getSiteData();
   const content = mergeContent(raw);
+  const features = new Set(website.features.length ? website.features : WEB_FEATURE_IDS);
+  const on = (id: string) => features.has(id);
 
   const contact = {
     name: school?.name ?? fallbackSchool.name,
@@ -47,6 +50,7 @@ export default async function HomePage() {
   return (
     <>
       {/* ============ HERO ============ */}
+      {on("hero") && (
       <section className="mkt-hero">
         <HeroVideoCarousel />
         <div className="mkt-blob mkt-blob--1" aria-hidden="true" />
@@ -75,8 +79,10 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
+      )}
 
       {/* ============ TICKER ============ */}
+      {on("ticker") && (
       <div className="mkt-ticker" aria-hidden="true">
         <div className="mkt-ticker-track">
           {content.values.map((v) => (
@@ -89,8 +95,10 @@ export default async function HomePage() {
           ))}
         </div>
       </div>
+      )}
 
       {/* ============ FEATURED PROGRAMMES ============ */}
+      {on("programmes") && (
       <section className="mkt-section mkt-section--paper">
         <div className="mkt-container">
           <div className="mkt-section-head">
@@ -128,10 +136,12 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
+      )}
 
       <WaveDivider tone="white" />
 
       {/* ============ WHY DUGA ============ */}
+      {on("highlights") && (
       <section className="mkt-section">
         <div className="mkt-container">
           <div className="mkt-section-head">
@@ -161,8 +171,10 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
+      )}
 
       {/* ============ PRIMARY & SECONDARY ============ */}
+      {on("sections") && (
       <section className="mkt-section mkt-section--soft">
         <div className="mkt-container">
           <div className="mkt-section-head mkt-section-head--center">
@@ -201,8 +213,10 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
+      )}
 
       {/* ============ OUR OFFERINGS ============ */}
+      {on("offers") && (
       <section className="mkt-section">
         <div className="mkt-container">
           <div className="mkt-section-head mkt-section-head--center">
@@ -231,10 +245,12 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
+      )}
 
       <WaveDivider tone="navy" />
 
       {/* ============ STAT BAND ============ */}
+      {on("statBand") && (
       <section className="mkt-section mkt-section--dark">
         <div className="mkt-container">
           <div className="mkt-stat-band">
@@ -249,10 +265,12 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
+      )}
 
       <WaveDivider tone="white" />
 
       {/* ============ PORTAL ACCESS ============ */}
+      {on("portalPromo") && (
       <section className="mkt-section mkt-section--paper">
         <div className="mkt-container">
           <div className="mkt-grid mkt-grid--editorial">
@@ -304,8 +322,10 @@ export default async function HomePage() {
           </Reveal>
         </div>
       </section>
+      )}
 
       {/* ============ TESTIMONIALS ============ */}
+      {on("testimonials") && (
       <section className="mkt-section">
         <div className="mkt-container">
           <div className="mkt-grid mkt-grid--2" style={{ alignItems: "center", gap: 60 }}>
@@ -322,28 +342,34 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
+      )}
 
       <WaveDivider tone="surface" />
 
       {/* ============ GALLERY PREVIEW ============ */}
+      {on("gallery") && (
       <section className="mkt-section mkt-section--soft">
         <div className="mkt-container">
           <HomeGalleryPreview />
         </div>
       </section>
+      )}
 
       <WaveDivider tone="white" />
 
       {/* ============ NEWS PREVIEW ============ */}
+      {on("news") && (
       <section className="mkt-section">
         <div className="mkt-container">
           <HomeNewsPreview />
         </div>
       </section>
+      )}
 
       <WaveDivider tone="white" />
 
       {/* ============ NEWSLETTER ============ */}
+      {on("newsletter") && (
       <section className="mkt-section mkt-section--paper">
         <div className="mkt-container mkt-container--narrow">
           <Reveal>
@@ -351,10 +377,12 @@ export default async function HomePage() {
           </Reveal>
         </div>
       </section>
+      )}
 
       <WaveDivider tone="navy" />
 
       {/* ============ CTA ============ */}
+      {on("finalCta") && (
       <section className="mkt-section mkt-section--dark">
         <div className="mkt-container" style={{ textAlign: "center" }}>
           <Reveal>
@@ -390,6 +418,7 @@ export default async function HomePage() {
           </Reveal>
         </div>
       </section>
+      )}
     </>
   );
 }
