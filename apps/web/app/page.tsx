@@ -1,6 +1,8 @@
 import Link from "next/link";
+import type { ComponentType } from "react";
 import Photo from "@/components/Photo";
-import { school, portalUrl } from "@/lib/content";
+import { school as fallbackSchool, portalUrl } from "@/lib/content";
+import { getSiteData, mergeContent } from "@/lib/site-data";
 import { Reveal, Counter, Tilt, HeroHeadline } from "@/components/motion";
 import HomeGalleryPreview from "@/components/HomeGalleryPreview";
 import HomeNewsPreview from "@/components/HomeNewsPreview";
@@ -26,65 +28,22 @@ import {
   Clock,
 } from "@/components/icons";
 
-const HIGHLIGHTS = [
-  { icon: Cap, title: "Nursery to SSS 3", text: "One campus, one family — primary and secondary education under the same roof, from first letters to final national exams." },
-  { icon: Beaker, title: "Modern Facilities", text: "A new integrated science laboratory, computer studies, a growing library and bright, spacious classrooms." },
-  { icon: Home, title: "Boarding & Day", text: "Safe, well-supervised hostels with night study, mentorship and 24/7 care from dedicated housemasters." },
-  { icon: Bus, title: "School Transport", text: "Comfortable buses with clearly defined routes across Akwanga and its environs, morning and evening." },
-  { icon: Users, title: "Experienced Teachers", text: "Qualified, caring staff who know every child by name and take each one's success personally." },
-  { icon: Monitor, title: "Digital Learning", text: "Online classes, digital results and a parent portal for full transparency on fees, results and attendance." },
-];
+const HIGHLIGHT_ICONS: ComponentType<{ size?: number }>[] = [Cap, Beaker, Home, Bus, Users, Monitor];
+const OFFER_ICONS: ComponentType<{ size?: number }>[] = [Book, Cap, Home, Leaf, Spark, Users];
+const PROGRAMME_IMG_FALLBACK = ["/images/primarypupil.png", "/images/group pupils.png", "/images/sec group 2.png"];
+const SECTION_IMG_FALLBACK = ["/images/group pupils.png", "/images/sec group 2.png"];
 
-const STATS = [
-  { value: 20, suffix: "+", label: "Years of excellence" },
-  { value: 1200, suffix: "+", label: "Students enrolled" },
-  { value: 98, suffix: "%", label: "BECE pass rate" },
-  { value: 80, suffix: "+", label: "Dedicated staff" },
-];
+export default async function HomePage() {
+  const { school, content: raw } = await getSiteData();
+  const content = mergeContent(raw);
 
-const FEATURED_PROGRAMMES = [
-  {
-    img: "/images/primarypupil.png",
-    tag: "Pre-School & Foundation",
-    title: "Nursery to Primary 1",
-    schedule: "Mon – Fri · 8:00am – 1:00pm",
-    ages: "Ages 2 – 6",
-    text: "A gentle, play-based start with phonics, early numeracy and strong character formation.",
-    href: "/academics#primary",
-    cta: "Explore Primary",
-  },
-  {
-    img: "/images/group pupils.png",
-    tag: "Primary Section",
-    title: "Primary 1 – 6",
-    schedule: "Mon – Fri · 8:00am – 2:30pm",
-    ages: "Ages 6 – 12",
-    text: "A rigorous foundation in literacy, numeracy and the sciences, with ICT and creative arts from day one.",
-    href: "/academics#primary",
-    cta: "Explore Primary",
-  },
-  {
-    img: "/images/sec group 2.png",
-    tag: "Secondary Section",
-    title: "JSS 1 – SSS 3",
-    schedule: "Mon – Fri · 8:00am – 3:30pm",
-    ages: "Ages 12 – 18",
-    text: "Fully prepared for BECE, WAEC, NECO and JAMB (sat at accredited centres) — with science labs, boarding and career guidance.",
-    href: "/academics#secondary",
-    cta: "Explore Secondary",
-  },
-];
-
-const OFFERINGS = [
-  { icon: Book, title: "Academics", sub: "by Subject >", href: "/academics" },
-  { icon: Cap, title: "Admissions", sub: "How to apply >", href: "/admissions" },
-  { icon: Home, title: "Boarding & Day", sub: "Hostel life >", href: "/academics#secondary" },
-  { icon: Leaf, title: "News & Events", sub: "Latest updates >", href: "/news" },
-  { icon: Spark, title: "Parent Portal", sub: "Results & fees >", href: "" },
-  { icon: Users, title: "Our School", sub: "Meet the family >", href: "/about" },
-];
-
-export default function HomePage() {
+  const contact = {
+    name: school?.name ?? fallbackSchool.name,
+    motto: content.contact.motto || fallbackSchool.motto,
+    address: school?.address ?? fallbackSchool.address,
+    phone: school?.phone ?? fallbackSchool.phone,
+    email: school?.email ?? fallbackSchool.email,
+  };
   return (
     <>
       {/* ============ HERO ============ */}
@@ -120,20 +79,14 @@ export default function HomePage() {
       {/* ============ TICKER ============ */}
       <div className="mkt-ticker" aria-hidden="true">
         <div className="mkt-ticker-track">
-          <span>Academic Excellence</span>
-          <span>Discipline</span>
-          <span>Character</span>
-          <span>Innovation</span>
-          <span>Service</span>
-          <span>Integrity</span>
+          {content.values.map((v) => (
+            <span key={v}>{v}</span>
+          ))}
         </div>
         <div className="mkt-ticker-track" aria-hidden="true">
-          <span>Academic Excellence</span>
-          <span>Discipline</span>
-          <span>Character</span>
-          <span>Innovation</span>
-          <span>Service</span>
-          <span>Integrity</span>
+          {content.values.map((v) => (
+            <span key={v}>{v}</span>
+          ))}
         </div>
       </div>
 
@@ -148,13 +101,13 @@ export default function HomePage() {
             </Reveal>
           </div>
           <div className="mkt-feature-grid">
-            {FEATURED_PROGRAMMES.map((p, i) => (
-              <Reveal key={p.title} delay={i * 90}>
+            {content.programmes.map((p, i) => (
+              <Reveal key={p.title || i} delay={i * 90}>
                 <div className="mkt-feature">
                   <div className="mkt-feature-media">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={p.img} alt={p.title} loading="lazy" />
-                    <span className="mkt-feature-tag">{p.tag}</span>
+                    <img src={p.img || PROGRAMME_IMG_FALLBACK[i % PROGRAMME_IMG_FALLBACK.length] || "/images/primarypupil.png"} alt={p.title} loading="lazy" />
+                    {p.tag && <span className="mkt-feature-tag">{p.tag}</span>}
                   </div>
                   <div className="mkt-feature-body">
                     <h3>{p.title}</h3>
@@ -164,8 +117,8 @@ export default function HomePage() {
                     </div>
                     <p>{p.text}</p>
                     <div className="mkt-feature-cta">
-                      <Link href={p.href} className="duga-btn duga-btn--primary duga-btn--sm duga-btn--arrow">
-                        {p.cta} <ArrowRight size={15} className="mkt-arrow" />
+                      <Link href={p.href || "/academics"} className="duga-btn duga-btn--primary duga-btn--sm duga-btn--arrow">
+                        {p.cta || "Learn more"} <ArrowRight size={15} className="mkt-arrow" />
                       </Link>
                     </div>
                   </div>
@@ -192,10 +145,10 @@ export default function HomePage() {
             </Reveal>
           </div>
           <div className="mkt-grid mkt-grid--3">
-            {HIGHLIGHTS.map((h, i) => {
-              const Icon = h.icon;
+            {content.highlights.map((h, i) => {
+              const Icon = HIGHLIGHT_ICONS[i % HIGHLIGHT_ICONS.length] ?? Cap;
               return (
-                <Reveal key={h.title} delay={(i % 3) * 90}>
+                <Reveal key={h.title || i} delay={(i % 3) * 90}>
                   <div className="mkt-card mkt-card--numbered">
                     <span className="mkt-card-num">{String(i + 1).padStart(2, "0")}</span>
                     <div className="mkt-icon"><Icon size={23} /></div>
@@ -221,47 +174,30 @@ export default function HomePage() {
           </div>
 
           <div className="mkt-grid mkt-grid--2">
-            <Reveal variant="left">
-              <div className="mkt-card mkt-card--photo">
-                <div className="mkt-card-photo">
-                  <Photo src="/images/group pupils.png" alt="Primary pupils of De Ultimate Glory Academy" ratio="wide" caption="Primary Section" />
+            {content.sections.map((s, i) => (
+              <Reveal key={s.title || i} variant={i % 2 === 0 ? "left" : "right"} delay={i % 2 === 0 ? 0 : 120}>
+                <div className="mkt-card mkt-card--photo">
+                  <div className="mkt-card-photo">
+                    <Photo
+                      src={s.img || SECTION_IMG_FALLBACK[i % SECTION_IMG_FALLBACK.length] || "/images/group pupils.png"}
+                      alt={s.alt || s.title}
+                      ratio="wide"
+                      caption={s.caption}
+                    />
+                  </div>
+                  <div className="mkt-card--photo-body">
+                    <span className="mkt-kicker">{s.kicker}</span>
+                    <h3 style={{ fontFamily: "var(--duga-font-display)", fontSize: 24, fontWeight: 640, marginBottom: 8 }}>
+                      {s.title}
+                    </h3>
+                    <p>{s.text}</p>
+                    <Link href={s.href || "/academics"} className="mkt-link-arrow">
+                      {s.link || "Explore"} <ArrowRight size={15} className="mkt-arrow" />
+                    </Link>
+                  </div>
                 </div>
-                <div className="mkt-card--photo-body">
-                  <span className="mkt-kicker">Nursery · Primary 1–6</span>
-                  <h3 style={{ fontFamily: "var(--duga-font-display)", fontSize: 24, fontWeight: 640, marginBottom: 8 }}>
-                    The Primary Years
-                  </h3>
-                  <p>
-                    A nurturing, hands-on foundation built on phonics, numeracy and good character.
-                    Our pupils are prepared for the common entrance — and for life.
-                  </p>
-                  <Link href="/academics#primary" className="mkt-link-arrow">
-                    Explore primary <ArrowRight size={15} className="mkt-arrow" />
-                  </Link>
-                </div>
-              </div>
-            </Reveal>
-
-            <Reveal variant="right" delay={120}>
-              <div className="mkt-card mkt-card--photo">
-                <div className="mkt-card-photo">
-                  <Photo src="/images/sec group 2.png" alt="Secondary students of De Ultimate Glory Academy" ratio="wide" caption="Secondary Section" />
-                </div>
-                <div className="mkt-card--photo-body">
-                  <span className="mkt-kicker">JSS 1 · SSS 3</span>
-                  <h3 style={{ fontFamily: "var(--duga-font-display)", fontSize: 24, fontWeight: 640, marginBottom: 8 }}>
-                    The Secondary Years
-                  </h3>
-                  <p>
-                    From JSS 1 to SSS 3 we prepare students for BECE, WAEC, NECO and JAMB — sat at accredited
-                    examination centres — with strong teaching, science labs, ICT and career guidance.
-                  </p>
-                  <Link href="/academics#secondary" className="mkt-link-arrow">
-                    Explore secondary <ArrowRight size={15} className="mkt-arrow" />
-                  </Link>
-                </div>
-              </div>
-            </Reveal>
+              </Reveal>
+            ))}
           </div>
         </div>
       </section>
@@ -277,11 +213,11 @@ export default function HomePage() {
             </Reveal>
           </div>
           <div className="mkt-offers-grid">
-            {OFFERINGS.map((o, i) => {
-              const Icon = o.icon;
+            {content.offers.map((o, i) => {
+              const Icon = OFFER_ICONS[i % OFFER_ICONS.length] ?? Book;
               const href = o.href || portalUrl;
               return (
-                <Reveal key={o.title} delay={(i % 3) * 90}>
+                <Reveal key={o.title || i} delay={(i % 3) * 90}>
                   <Link href={href} className="mkt-offer">
                     <span className="mkt-offer-icon"><Icon size={23} /></span>
                     <div>
@@ -302,8 +238,8 @@ export default function HomePage() {
       <section className="mkt-section mkt-section--dark">
         <div className="mkt-container">
           <div className="mkt-stat-band">
-            {STATS.map((s, i) => (
-              <Reveal key={s.label} delay={i * 90}>
+            {content.stats.map((s, i) => (
+              <Reveal key={s.label || i} delay={i * 90}>
                 <div className="mkt-stat">
                   <strong><Counter to={s.value} suffix={s.suffix} /></strong>
                   <span>{s.label}</span>
@@ -381,7 +317,7 @@ export default function HomePage() {
               <h2 className="mkt-h2" style={{ fontSize: "clamp(26px, 3vw, 38px)", marginBottom: 22 }}>
                 Parents who <em>trust us</em>
               </h2>
-              <TestimonialCarousel />
+              <TestimonialCarousel items={content.testimonials} />
             </Reveal>
           </div>
         </div>
@@ -449,7 +385,7 @@ export default function HomePage() {
               </Link>
             </div>
             <p style={{ marginTop: 22, fontSize: 13, color: "rgba(255,255,255,0.55)" }}>
-              {school.phone} · {school.email}
+              {contact.phone} · {contact.email}
             </p>
           </Reveal>
         </div>

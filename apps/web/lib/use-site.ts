@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { portalUrl } from "@/lib/content";
+import { mergeContent, type SiteContentData, type SiteSchoolInfo } from "@/lib/site-data";
 
 export interface SiteGalleryItem {
   id: string;
@@ -23,25 +24,20 @@ export interface SiteNewsItem {
   publishedAt: string;
 }
 
-export interface SiteContentData {
-  ticker: string[];
-  hero: { eyebrow: string; lead: string };
-  stats: { value: number; suffix: string; label: string }[];
-  footer: { about: string; tagline: string };
-}
-
 export interface SiteContent {
   gallery: SiteGalleryItem[];
   news: SiteNewsItem[];
-  content: SiteContentData | null;
+  school: SiteSchoolInfo | null;
+  content: SiteContentData;
   loading: boolean;
 }
 
 export function useSiteContent(): SiteContent {
-  const [state, setState] = useState<{ gallery: SiteGalleryItem[]; news: SiteNewsItem[]; content: SiteContentData | null; loading: boolean }>({
+  const [state, setState] = useState<SiteContent>({
     gallery: [],
     news: [],
-    content: null,
+    school: null,
+    content: mergeContent(null),
     loading: true,
   });
 
@@ -62,13 +58,14 @@ export function useSiteContent(): SiteContent {
             news: Array.isArray(json.data?.news)
               ? json.data.news.map((n: SiteNewsItem) => ({ ...n, coverUrl: absolute(n.coverUrl) }))
               : [],
-            content: json.data?.content ?? null,
+            school: json.data?.school ?? null,
+            content: mergeContent(json.data?.content),
             loading: false,
           });
         }
       })
       .catch(() => {
-        /* portal offline — leave empty */
+        /* portal offline — leave defaults */
       })
       .finally(() => {
         if (alive) setState((s) => ({ ...s, loading: false }));

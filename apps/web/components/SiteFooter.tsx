@@ -1,8 +1,26 @@
+"use client";
+
 import Link from "next/link";
-import { school, portalUrl } from "@/lib/content";
+import { school as fallbackSchool, portalUrl } from "@/lib/content";
+import { useSiteContent } from "@/lib/use-site";
 import { Pin, Phone, Mail, Clock, ArrowRight } from "@/components/icons";
 
 export default function SiteFooter() {
+  const { content, school } = useSiteContent();
+
+  const info = {
+    name: school?.name ?? fallbackSchool.name,
+    motto: content.contact.motto || fallbackSchool.motto,
+    address: school?.address ?? fallbackSchool.address,
+    phone: school?.phone ?? fallbackSchool.phone,
+    email: school?.email ?? fallbackSchool.email,
+    hours: content.contact.hours || "Mon – Fri · 7:30am – 4:00pm",
+    about:
+      content.footer.about ||
+      "A co-educational Primary and Secondary school in Akwanga, Nasarawa State — building tomorrow's leaders with academic excellence and strong moral values.",
+    tagline: content.footer.tagline || fallbackSchool.motto,
+  };
+
   return (
     <footer className="mkt-footer">
       <div className="mkt-container">
@@ -15,12 +33,11 @@ export default function SiteFooter() {
               </span>
               <span>
                 <span className="mkt-logo-name">De Ultimate Glory Academy</span>
-                <span className="mkt-logo-sub">{school.motto}</span>
+                <span className="mkt-logo-sub">{info.motto}</span>
               </span>
             </Link>
             <p style={{ fontSize: 14, marginTop: 18, maxWidth: 320, lineHeight: 1.7 }}>
-              A co-educational Primary and Secondary school in Akwanga, Nasarawa State — building
-              tomorrow&apos;s leaders with academic excellence and strong moral values.
+              {info.about}
             </p>
           </div>
 
@@ -45,16 +62,16 @@ export default function SiteFooter() {
           <div>
             <h4>Contact</h4>
             <p style={{ fontSize: 13.5, display: "flex", gap: 9, alignItems: "flex-start" }}>
-              <Pin size={15} style={{ marginTop: 2, flexShrink: 0 }} /> {school.address}
+              <Pin size={15} style={{ marginTop: 2, flexShrink: 0 }} /> {info.address}
             </p>
             <p style={{ fontSize: 13.5, display: "flex", gap: 9, alignItems: "center", marginTop: 8 }}>
-              <Phone size={15} /> {school.phone}
+              <Phone size={15} /> {info.phone}
             </p>
             <p style={{ fontSize: 13.5, display: "flex", gap: 9, alignItems: "center", marginTop: 8 }}>
-              <Mail size={15} /> {school.email}
+              <Mail size={15} /> {info.email}
             </p>
             <p style={{ fontSize: 13.5, display: "flex", gap: 9, alignItems: "center", marginTop: 8 }}>
-              <Clock size={15} /> Mon – Fri · 7:30am – 4:00pm
+              <Clock size={15} /> {info.hours}
             </p>
             <Link href="/apply" className="duga-btn mkt-btn--light duga-btn--sm duga-btn--arrow" style={{ marginTop: 18, display: "inline-flex" }}>
               Start Application <ArrowRight size={15} className="mkt-arrow" />
@@ -64,9 +81,9 @@ export default function SiteFooter() {
 
         <div className="mkt-footer-bottom">
           <span>
-            © {new Date().getFullYear()} {school.name}. All rights reserved.
+            © {new Date().getFullYear()} {info.name}. All rights reserved.
           </span>
-          <span>Imparting the winning wisdom in Nasarawa State.</span>
+          <span>{info.tagline}</span>
         </div>
       </div>
     </footer>

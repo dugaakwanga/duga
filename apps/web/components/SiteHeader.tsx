@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { school, portalUrl } from "@/lib/content";
+import { school as fallbackSchool, portalUrl } from "@/lib/content";
 import { useSiteContent } from "@/lib/use-site";
 import { Menu, Close, Phone, Mail, ArrowRight } from "@/components/icons";
 
@@ -30,7 +30,14 @@ export default function SiteHeader() {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [progress, setProgress] = useState(0);
-  const { content } = useSiteContent();
+  const { content, school } = useSiteContent();
+
+  const schoolInfo = {
+    name: school?.name ?? fallbackSchool.name,
+    motto: content.contact.motto || fallbackSchool.motto,
+    phone: school?.phone ?? fallbackSchool.phone,
+    email: school?.email ?? fallbackSchool.email,
+  };
 
   useEffect(() => {
     const onScroll = () => {
@@ -49,12 +56,14 @@ export default function SiteHeader() {
 
   return (
     <>
-      <div className="mkt-announce">
-        <div className="mkt-announce-track">
-          <span>{tickerLine}</span>
-          <span aria-hidden="true">{tickerLine}</span>
+      {content.tickerEnabled !== false && (
+        <div className="mkt-announce">
+          <div className="mkt-announce-track">
+            <span>{tickerLine}</span>
+            <span aria-hidden="true">{tickerLine}</span>
+          </div>
         </div>
-      </div>
+      )}
 
       <header className={`mkt-header${scrolled ? " is-scrolled" : ""}`}>
         <div className="mkt-scroll-progress" style={{ width: `${progress}%` }} />
@@ -64,31 +73,31 @@ export default function SiteHeader() {
               {open ? <Close size={20} /> : <Menu size={20} />}
             </button>
 
-            <Link href="/" className="mkt-logo mkt-logo--brand" aria-label={school.name}>
+            <Link href="/" className="mkt-logo mkt-logo--brand" aria-label={schoolInfo.name}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/images/logo.png" alt="" />
               <span>
                 <span className="mkt-logo-name">
                   De <em>Ultimate</em> Glory <span className="mkt-logo-academy">Academy</span>
                 </span>
-                <span className="mkt-logo-sub">{school.motto}</span>
+                <span className="mkt-logo-sub">{schoolInfo.motto}</span>
               </span>
             </Link>
 
             <div className="mkt-header-actions">
               <a
                 className="duga-btn duga-btn--ghost duga-btn--sm"
-                href={`mailto:${school.email}`}
+                href={`mailto:${schoolInfo.email}`}
                 style={{ paddingLeft: 8, paddingRight: 8 }}
-                aria-label={`Email ${school.email}`}
+                aria-label={`Email ${schoolInfo.email}`}
               >
                 <Mail size={16} />
               </a>
               <a
                 className="duga-btn duga-btn--ghost duga-btn--sm"
-                href={`tel:${school.phone.replace(/\s/g, "")}`}
+                href={`tel:${schoolInfo.phone.replace(/\s/g, "")}`}
                 style={{ paddingLeft: 8, paddingRight: 8 }}
-                aria-label={`Call ${school.phone}`}
+                aria-label={`Call ${schoolInfo.phone}`}
               >
                 <Phone size={16} />
               </a>

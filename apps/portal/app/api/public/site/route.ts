@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@duga/core/server";
+import { normalizeContent } from "@/lib/server/modules/content";
 
 export async function GET(request: NextRequest) {
   try {
@@ -44,7 +45,7 @@ export async function GET(request: NextRequest) {
           school,
           gallery,
           news,
-          content: contentRow?.value ?? null,
+          content: contentRow?.value ? normalizeContent(contentRow.value) : null,
         },
       }),
     );

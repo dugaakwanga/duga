@@ -3,7 +3,8 @@ import PageHero from "@/components/PageHero";
 import ContactForm from "@/components/ContactForm";
 import { Reveal } from "@/components/motion";
 import { Pin, Phone, Mail, Clock } from "@/components/icons";
-import { school } from "@/lib/content";
+import { school as fallbackSchool } from "@/lib/content";
+import { getSiteData, mergeContent } from "@/lib/site-data";
 
 export const metadata: Metadata = {
   title: "Contact Us",
@@ -11,16 +12,25 @@ export const metadata: Metadata = {
     "Contact De Ultimate Glory Academy, Akwanga, Nasarawa State. Call, email or visit our campus.",
 };
 
-const DETAILS = [
-  { icon: Pin, title: "Visit us", value: school.address },
-  { icon: Phone, title: "Call us", value: school.phone },
-  { icon: Mail, title: "Email us", value: school.email },
-  { icon: Clock, title: "Office hours", value: "Monday – Friday · 7:30am – 4:00pm" },
-];
-
-export default function ContactPage() {
+export default async function ContactPage() {
   const lat = process.env.NEXT_PUBLIC_SCHOOL_LAT ?? "8.9123";
   const lng = process.env.NEXT_PUBLIC_SCHOOL_LNG ?? "8.4066";
+
+  const { school, content: raw } = await getSiteData();
+  const content = mergeContent(raw);
+  const info = {
+    address: school?.address ?? fallbackSchool.address,
+    phone: school?.phone ?? fallbackSchool.phone,
+    email: school?.email ?? fallbackSchool.email,
+    hours: content.contact.hours || "Monday – Friday · 7:30am – 4:00pm",
+  };
+
+  const DETAILS = [
+    { icon: Pin, title: "Visit us", value: info.address },
+    { icon: Phone, title: "Call us", value: info.phone },
+    { icon: Mail, title: "Email us", value: info.email },
+    { icon: Clock, title: "Office hours", value: info.hours },
+  ];
 
   return (
     <>
