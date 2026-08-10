@@ -1481,3 +1481,33 @@ body {
   .mkt-hero p.lead { font-size: 15.5px; }
   .mkt-hero h1 { font-size: 30px; }
 }
+
+/* ==========================================================================
+   Phones/tablets — hero carousel fills the width; caption pills stay small
+   ========================================================================== */
+@media (max-width: 900px) {
+  /* Fill wide photos so the background carousel covers the hero edge-to-edge
+     instead of letterboxing on smaller screens */
+  .mkt-hero-video-stage img {
+    object-fit: cover;
+    object-position: center;
+  }
+}
+
+@media (max-width: 700px) {
+  /* Captions on the small hero collage photos shrink + wrap instead of
+     covering the whole image */
+  .mkt-photo-caption {
+    left: 8px;
+    bottom: 8px;
+    max-width: calc(100% - 16px);
+    font-size: 11px;
+    line-height: 1.2;
+    padding: 5px 9px;
+    gap: 5px;
+    white-space: normal;
+    display: flex;
+    justify-content: center;
+    text-align: center;
+  }
+}
