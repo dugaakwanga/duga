@@ -3,7 +3,7 @@ import { Baloo_2, Manrope } from "next/font/google";
 import "./globals.css";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
-import { school } from "@/lib/content";
+import { school, siteUrl } from "@/lib/content";
 
 const manrope = Manrope({
   subsets: ["latin"],
@@ -18,7 +18,7 @@ const baloo = Baloo_2({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://duga-web.vercel.app"),
+  metadataBase: new URL(siteUrl),
   title: {
     default: `${school.name} — Akwanga, Nasarawa State`,
     template: `%s | ${school.name}`,

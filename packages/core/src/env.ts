@@ -26,6 +26,15 @@ export const envBool = (key: string, fallback = false): boolean => {
   return ["1", "true", "yes", "on"].includes(raw.toLowerCase());
 };
 
+// App home URLs. We ignore localhost/127.0.0.1 overrides so a stale dev value
+// left in a deployment's env vars can never leak into the production links.
+function appUrl(key: string, fallback: string): string {
+  const value = process.env[key]?.trim() ?? "";
+  if (!value) return fallback;
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+|\/)?/i.test(value)) return fallback;
+  return value;
+}
+
 export const schoolConfig = {
   get name() {
     return env("NEXT_PUBLIC_SCHOOL_NAME", "De Ultimate Glory Academy");
@@ -52,9 +61,9 @@ export const schoolConfig = {
     return envInt("ATTENDANCE_RADIUS_METERS", 150);
   },
   get portalUrl() {
-    return env("NEXT_PUBLIC_PORTAL_URL", "https://duga-portal.vercel.app");
+    return appUrl("NEXT_PUBLIC_PORTAL_URL", "https://duga-portal.vercel.app");
   },
   get siteUrl() {
-    return env("NEXT_PUBLIC_SITE_URL", "https://duga-web.vercel.app");
+    return appUrl("NEXT_PUBLIC_SITE_URL", "https://duga-web.vercel.app");
   },
 };

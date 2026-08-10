@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { portalUrl } from "@/lib/content";
 
 export interface SiteGalleryItem {
   id: string;
@@ -35,9 +36,6 @@ export interface SiteContent {
   content: SiteContentData | null;
   loading: boolean;
 }
-
-const portalUrl =
-  process.env.NEXT_PUBLIC_PORTAL_URL ?? "https://duga-portal.vercel.app";
 
 export function useSiteContent(): SiteContent {
   const [state, setState] = useState<{ gallery: SiteGalleryItem[]; news: SiteNewsItem[]; content: SiteContentData | null; loading: boolean }>({
