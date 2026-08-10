@@ -114,6 +114,7 @@ export const studentsModule: Module = {
       // Link parent (create parent account if new)
       const parentEmail = str(b.parentEmail);
       const parentName = str(b.parentName);
+      const parentPhone = b.parentPhone ? str(b.parentPhone) : "";
       if (parentEmail && parentName) {
         let parentUser = await prisma.user.findUnique({ where: { schoolId_email: { schoolId, email: parentEmail } } });
         if (!parentUser) {
@@ -125,10 +126,13 @@ export const studentsModule: Module = {
               passwordHash: await bcrypt.hash("parent123", 10),
               firstName: parentName.split(" ")[0] ?? "Parent",
               lastName: parentName.split(" ").slice(1).join(" ") || "Guardian",
+              phone: parentPhone || null,
               mustChangePassword: true,
             },
           });
           await prisma.parent.create({ data: { userId: parentUser.id, schoolId } });
+        } else if (parentPhone && !parentUser.phone) {
+          parentUser = await prisma.user.update({ where: { id: parentUser.id }, data: { phone: parentPhone } });
         }
         const parentProfile = await prisma.parent.findUnique({ where: { userId: parentUser.id } });
         if (parentProfile) {

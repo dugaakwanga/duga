@@ -132,6 +132,9 @@ export default function StudentsPage() {
           <Field label="Parent name">
             <Input value={form.parentName ?? ""} onChange={(e) => setForm({ ...form, parentName: e.target.value })} placeholder="Parent name" />
           </Field>
+          <Field label="Parent phone">
+            <Input value={form.parentPhone ?? ""} onChange={(e) => setForm({ ...form, parentPhone: e.target.value })} placeholder="0803 000 0000" />
+          </Field>
           <Field label="Temp password">
             <Input value={form.tempPassword ?? ""} onChange={(e) => setForm({ ...form, tempPassword: e.target.value })} placeholder="default: password123" />
           </Field>
