@@ -12,6 +12,7 @@ const NAV = [
   { href: "/academics", label: "Academics" },
   { href: "/admissions", label: "Admissions" },
   { href: "/graduates", label: "Graduates" },
+  { href: "/testimonials", label: "Testimonials" },
   { href: "/gallery", label: "Gallery" },
   { href: "/news", label: "News" },
   { href: "/contact", label: "Contact" },

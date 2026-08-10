@@ -1,6 +1,7 @@
 import { prisma, logAudit } from "@duga/core/server";
 import type { Module } from ".";
 import { can, str } from "../helpers";
+import { removeFile } from "../storage";
 
 export const galleryModule: Module = {
   async list(ctx) {
@@ -49,6 +50,11 @@ export const galleryModule: Module = {
     const schoolId = ctx.session.user.schoolId;
     const existing = await prisma.galleryImage.findFirst({ where: { id: ctx.id, schoolId } });
     if (!existing) throw new Error("Image not found");
+    const upload = await prisma.fileUpload.findFirst({ where: { schoolId, url: existing.url } });
+    if (upload) {
+      await removeFile(upload.key).catch(() => {});
+      await prisma.fileUpload.delete({ where: { id: upload.id } }).catch(() => {});
+    }
     await prisma.galleryImage.delete({ where: { id: ctx.id } });
     await logAudit({ schoolId, userId: ctx.session.user.id, action: "gallery.deleted", entityType: "GalleryImage", entityId: ctx.id });
     return { ok: true };

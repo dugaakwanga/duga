@@ -11,7 +11,46 @@ interface StatItem {
 }
 
 interface RowFields {
-  fields: Array<{ key: string; label: string; type?: "text" | "area" | "number" }>;
+  fields: Array<{ key: string; label: string; type?: "text" | "area" | "number" | "image" }>;
+}
+
+function ImageField({ value, onChange, hint }: { value: string; onChange: (v: string) => void; hint?: string }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  async function pick(file: File | undefined) {
+    if (!file) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/upload", { method: "POST", body: fd });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Upload failed");
+      onChange(json.data.url);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder="Paste image URL or upload from device" />
+        <label className="duga-btn duga-btn--outline duga-btn--sm" style={{ flexShrink: 0, cursor: "pointer", margin: 0 }}>
+          <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" style={{ display: "none" }} onChange={(e) => pick(e.target.files?.[0])} />
+          {busy ? "Uploading…" : "Upload"}
+        </label>
+      </div>
+      {err && <span style={{ color: "var(--duga-danger)", fontSize: 12 }}>{err}</span>}
+      {value && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={value} alt="" style={{ height: 56, borderRadius: 8, marginTop: 8, border: "1px solid var(--duga-border)" }} />
+      )}
+      {hint && <span className="duga-field__hint">{hint}</span>}
+    </div>
+  );
 }
 
 function RowList<T extends Record<string, unknown>>({ rows, fields, onChange, addLabel, newRow }: {
@@ -31,6 +70,8 @@ function RowList<T extends Record<string, unknown>>({ rows, fields, onChange, ad
             <Field key={f.key} label={f.label}>
               {f.type === "area" ? (
                 <Textarea rows={2} value={String(r[f.key] ?? "")} onChange={(e) => set(i, { [f.key]: e.target.value } as Partial<T>)} />
+              ) : f.type === "image" ? (
+                <ImageField value={String(r[f.key] ?? "")} onChange={(v) => set(i, { [f.key]: v } as Partial<T>)} hint={f.label.includes("default") ? "Leave empty to keep the current default photo." : undefined} />
               ) : (
                 <Input
                   type={f.type === "number" ? "number" : "text"}
@@ -248,7 +289,7 @@ export default function ContentPage() {
               { key: "text", label: "Text", type: "area" },
               { key: "href", label: "Link (e.g. /academics#primary)" },
               { key: "cta", label: "Button label" },
-              { key: "img", label: "Image URL (leave empty for default)" },
+              { key: "img", label: "Image URL (leave empty for default)", type: "image" },
             ]}
             onChange={(programmes) => set({ programmes })}
             addLabel="Add programme"
@@ -279,7 +320,7 @@ export default function ContentPage() {
               { key: "text", label: "Body text", type: "area" },
               { key: "href", label: "Link" },
               { key: "link", label: "Link label" },
-              { key: "img", label: "Image URL (leave empty for default)" },
+              { key: "img", label: "Image URL (leave empty for default)", type: "image" },
               { key: "alt", label: "Image alt text" },
               { key: "caption", label: "Image caption" },
             ]}

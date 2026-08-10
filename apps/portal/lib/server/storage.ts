@@ -49,3 +49,13 @@ export async function uploadPublicFile(opts: {
   const { data } = sb.storage.from(BUCKET).getPublicUrl(key);
   return { url: data.publicUrl, key, bucket: BUCKET };
 }
+
+export async function removeFile(key: string): Promise<void> {
+  const sb = supabaseAdmin();
+  const { error } = await sb.storage.from(BUCKET).remove([key]);
+  if (error) {
+    const err = new Error(`Storage delete failed: ${error.message}`) as Error & { status?: number };
+    err.status = 500;
+    throw err;
+  }
+}

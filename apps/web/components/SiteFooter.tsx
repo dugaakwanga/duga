@@ -47,6 +47,7 @@ export default function SiteFooter() {
             <Link href="/academics">Academics</Link>
             <Link href="/admissions">Admissions</Link>
             <Link href="/gallery">Gallery</Link>
+            <Link href="/testimonials">Testimonials</Link>
             <Link href="/news">News &amp; Events</Link>
           </div>
 

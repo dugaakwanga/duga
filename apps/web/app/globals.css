@@ -921,7 +921,8 @@ body {
   margin-bottom: 18px;
   opacity: 0.8;
 }
-.mkt-quote p { font-size: 18px; line-height: 1.7; color: var(--duga-ink-2); font-weight: 600; text-wrap: pretty; }
+.mkt-quote p, .mkt-quote blockquote { font-size: 18px; line-height: 1.7; color: var(--duga-ink-2); font-weight: 600; text-wrap: pretty; }
+.mkt-quote blockquote { margin: 0; }
 .mkt-quote footer { margin-top: 20px; display: flex; align-items: center; gap: 12px; }
 .mkt-quote footer strong { font-size: 14px; color: var(--duga-primary-ink); display: block; font-weight: 800; }
 .mkt-quote footer span { font-size: 12.5px; color: var(--duga-muted); font-weight: 600; }
@@ -1547,4 +1548,24 @@ body {
     justify-content: center;
     text-align: center;
   }
+}
+
+/* ==========================================================================
+   Route loading spinner
+   ========================================================================== */
+.mkt-loading {
+  min-height: 55vh;
+  display: grid;
+  place-items: center;
+}
+.mkt-loading-spinner {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 4px solid var(--duga-border-strong);
+  border-top-color: var(--duga-primary);
+  animation: mkt-spin 0.8s linear infinite;
+}
+@keyframes mkt-spin {
+  to { transform: rotate(360deg); }
 }
