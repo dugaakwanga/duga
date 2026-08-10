@@ -56,10 +56,13 @@ export const feesModule: Module = {
       orderBy: { createdAt: "desc" },
       take: 400,
     });
-    const [feeTypes, feeStructures, overrides] = await Promise.all([
-      prisma.feeType.findMany({ where: { schoolId } }),
+    const [feeTypes, feeStructures, overrides, terms, levels, classGroups] = await Promise.all([
+      prisma.feeType.findMany({ where: { schoolId }, orderBy: { name: "asc" } }),
       prisma.feeStructure.findMany({ where: { schoolId }, include: { feeType: true, level: true, classGroup: { include: { level: true } }, term: true } }),
       prisma.feeOverride.findMany({ where: { schoolId, isActive: true }, include: { student: { include: { user: { select: { firstName: true, lastName: true } } } }, term: true } }),
+      prisma.term.findMany({ where: { schoolId }, include: { session: true }, orderBy: [{ session: { createdAt: "desc" } }, { termNumber: "asc" }] }),
+      prisma.classLevel.findMany({ where: { schoolId }, orderBy: [{ section: "asc" }, { order: "asc" }] }),
+      prisma.classGroup.findMany({ where: { schoolId }, include: { level: true } }),
     ]);
     return {
       role,
@@ -68,6 +71,9 @@ export const feesModule: Module = {
       feeTypes,
       feeStructures,
       overrides,
+      terms,
+      levels,
+      classGroups,
     };
   },
 
@@ -167,6 +173,60 @@ export const feesModule: Module = {
       });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.structureCreated", entityType: "FeeStructure", entityId: fs.id, meta: { amount } });
       return fs;
+    },
+
+    updateFeeType: async (ctx) => {
+      can(ctx, "fees:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const existing = await prisma.feeType.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!existing) throw new Error("Fee type not found");
+      const data: Record<string, unknown> = {};
+      if (str(ctx.body.name)) data.name = str(ctx.body.name);
+      if (ctx.body.description !== undefined) data.description = str(ctx.body.description) ?? null;
+      if (typeof ctx.body.isOptional === "boolean") data.isOptional = ctx.body.isOptional;
+      if (typeof ctx.body.isRecurring === "boolean") data.isRecurring = ctx.body.isRecurring;
+      const ft = await prisma.feeType.update({ where: { id: ctx.id }, data });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.typeUpdated", entityType: "FeeType", entityId: ctx.id });
+      return ft;
+    },
+
+    deleteFeeType: async (ctx) => {
+      can(ctx, "fees:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const existing = await prisma.feeType.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!existing) throw new Error("Fee type not found");
+      const used = await prisma.feeStructure.count({ where: { feeTypeId: ctx.id } });
+      if (used > 0) throw new Error("Remove its fee structures first");
+      await prisma.feeType.delete({ where: { id: ctx.id } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.typeDeleted", entityType: "FeeType", entityId: ctx.id });
+      return { ok: true };
+    },
+
+    updateFeeStructure: async (ctx) => {
+      can(ctx, "fees:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const existing = await prisma.feeStructure.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!existing) throw new Error("Fee structure not found");
+      const data: Record<string, unknown> = {};
+      if (str(ctx.body.feeTypeId)) data.feeTypeId = str(ctx.body.feeTypeId);
+      if (ctx.body.termId !== undefined) data.termId = str(ctx.body.termId) ?? null;
+      if (ctx.body.section !== undefined) data.section = (str(ctx.body.section) as "PRIMARY" | "SECONDARY" | undefined) ?? null;
+      if (ctx.body.levelId !== undefined) data.levelId = str(ctx.body.levelId) ?? null;
+      if (ctx.body.classGroupId !== undefined) data.classGroupId = str(ctx.body.classGroupId) ?? null;
+      if (ctx.body.amount !== undefined) data.amount = num(ctx.body.amount) ?? existing.amount;
+      const fs = await prisma.feeStructure.update({ where: { id: ctx.id }, data });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.structureUpdated", entityType: "FeeStructure", entityId: ctx.id, meta: { amount: data.amount } });
+      return fs;
+    },
+
+    deleteFeeStructure: async (ctx) => {
+      can(ctx, "fees:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const existing = await prisma.feeStructure.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!existing) throw new Error("Fee structure not found");
+      await prisma.feeStructure.delete({ where: { id: ctx.id } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.structureDeleted", entityType: "FeeStructure", entityId: ctx.id });
+      return { ok: true };
     },
 
     // Initiate a Paystack payment for an invoice

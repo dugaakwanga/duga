@@ -15,6 +15,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "School not found" }, { status: 404 });
     }
 
+    // School-level restriction: when applications are closed, block submissions.
+    const restrictionsRow = await prisma.schoolSetting.findUnique({
+      where: { schoolId_key: { schoolId: school.id, key: "restrictions" } },
+    });
+    const restrictions = restrictionsRow?.value && typeof restrictionsRow.value === "object" ? restrictionsRow.value : {};
+    const applicationsOpen = (restrictions as { applicationsOpen?: unknown }).applicationsOpen !== false;
+    if (!applicationsOpen) {
+      return NextResponse.json({ ok: false, error: "Online applications are currently closed." }, { status: 403 });
+    }
+
     const applicantName = String(body.applicantName || "").trim();
     const email = String(body.email || "").trim().toLowerCase();
     const phone = String(body.phone || "").trim();

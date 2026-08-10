@@ -285,6 +285,8 @@ model User {
   staffAttendance     StaffAttendance[]
   auditLogs           AuditLog[]             @relation("AuditActor")
   createdFeeOverrides FeeOverride[]          @relation("OverrideCreator")
+  recordedPtaMeetings PtaMeeting[]           @relation("PtaMeetingRecorder")
+  recordedPtaContributions PtaContribution[] @relation("PtaContributionRecorder")
 
   @@unique([schoolId, email])
   @@index([schoolId, role])
@@ -328,6 +330,7 @@ model Student {
   transportAssignments TransportAssignment[]
   contentProgress     ContentProgress[]
   gameProgress        GameProgress[]
+  bookLoans           BookLoan[]
 
   @@index([schoolId])
   @@unique([schoolId, admissionNumber])
@@ -1558,6 +1561,109 @@ model GameProgress {
   @@unique([gameId, studentId])
   @@index([studentId])
   @@index([schoolId])
+}
+
+// ----------------------------------------------------------------------------
+// MODULE J — PARENT-TEACHER ASSOCIATION (PTA)
+// ----------------------------------------------------------------------------
+
+model PtaExecutive {
+  id        String   @id @default(cuid())
+  schoolId  String
+  name      String
+  role      String
+  phone     String?
+  email     String?
+  photoUrl  String?
+  isActive  Boolean  @default(true)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([schoolId])
+}
+
+model PtaMeeting {
+  id           String   @id @default(cuid())
+  schoolId     String
+  title        String
+  date         DateTime
+  venue        String?
+  agenda       String?
+  minutes      String?
+  recordedByUserId String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  recordedBy User? @relation("PtaMeetingRecorder", fields: [recordedByUserId], references: [id])
+
+  @@index([schoolId])
+  @@index([date])
+}
+
+model PtaContribution {
+  id           String   @id @default(cuid())
+  schoolId     String
+  memberName   String
+  amount       Decimal
+  method       String   @default("CASH")
+  date         DateTime @default(now())
+  note         String?
+  recordedByUserId String?
+  createdAt    DateTime @default(now())
+
+  recordedBy User? @relation("PtaContributionRecorder", fields: [recordedByUserId], references: [id])
+
+  @@index([schoolId])
+  @@index([date])
+}
+
+// ----------------------------------------------------------------------------
+// MODULE K — LIBRARY
+// ----------------------------------------------------------------------------
+
+model LibraryBook {
+  id             String   @id @default(cuid())
+  schoolId       String
+  title          String
+  author         String?
+  isbn           String?
+  category       String   @default("General")
+  shelfLocation  String?
+  totalCopies    Int      @default(1)
+  availableCopies Int     @default(1)
+  coverUrl       String?
+  description    String?
+  addedByUserId  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  loans BookLoan[]
+
+  @@index([schoolId])
+  @@index([category])
+}
+
+model BookLoan {
+  id            String    @id @default(cuid())
+  schoolId      String
+  bookId        String
+  studentId     String
+  borrowedAt    DateTime  @default(now())
+  dueDate       DateTime?
+  returnedAt    DateTime?
+  status        String    @default("BORROWED") // BORROWED | RETURNED | OVERDUE | LOST
+  note          String?
+  recordedByUserId String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  book    LibraryBook @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  student Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([bookId])
+  @@index([studentId])
+  @@index([schoolId, status])
 }
 
 // ----------------------------------------------------------------------------

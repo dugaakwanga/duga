@@ -13,6 +13,7 @@ const NAV = [
   { href: "/admissions", label: "Admissions" },
   { href: "/graduates", label: "Graduates" },
   { href: "/testimonials", label: "Testimonials" },
+  { href: "/pta", label: "PTA" },
   { href: "/gallery", label: "Gallery" },
   { href: "/news", label: "News" },
   { href: "/contact", label: "Contact" },

@@ -24,12 +24,30 @@ export interface SiteNewsItem {
   publishedAt: string;
 }
 
+export interface SitePtaExecutive {
+  id: string;
+  name: string;
+  role: string;
+  phone: string | null;
+  email: string | null;
+  photoUrl: string | null;
+}
+
+export interface SitePtaMeeting {
+  id: string;
+  title: string;
+  date: string;
+  venue: string | null;
+  agenda: string | null;
+}
+
 export interface SiteContent {
   gallery: SiteGalleryItem[];
   news: SiteNewsItem[];
   school: SiteSchoolInfo | null;
   content: SiteContentData;
   loading: boolean;
+  pta: { executives: SitePtaExecutive[]; meetings: SitePtaMeeting[] };
 }
 
 export function useSiteContent(): SiteContent {
@@ -39,6 +57,7 @@ export function useSiteContent(): SiteContent {
     school: null,
     content: mergeContent(null),
     loading: true,
+    pta: { executives: [], meetings: [] },
   });
 
   useEffect(() => {
@@ -61,6 +80,14 @@ export function useSiteContent(): SiteContent {
             school: json.data?.school ?? null,
             content: mergeContent(json.data?.content),
             loading: false,
+            pta: {
+              executives: Array.isArray(json.data?.pta?.executives)
+                ? json.data.pta.executives.map((e: SitePtaExecutive) => ({ ...e, photoUrl: absolute(e.photoUrl) }))
+                : [],
+              meetings: Array.isArray(json.data?.pta?.meetings)
+                ? json.data.pta.meetings.map((m: SitePtaMeeting) => ({ ...m, venue: m.venue }))
+                : [],
+            },
           });
         }
       })

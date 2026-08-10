@@ -104,6 +104,20 @@ export const FEATURES: FeatureDef[] = [
     roles: ["ADMIN"],
   },
   {
+    id: "pta",
+    label: "Parent-Teacher Association",
+    group: "Operations",
+    resources: ["pta"],
+    roles: ["ADMIN", "PARENT", "STUDENT"],
+  },
+  {
+    id: "library",
+    label: "Library",
+    group: "Operations",
+    resources: ["library"],
+    roles: ["ADMIN", "TEACHER", "PARENT", "STUDENT"],
+  },
+  {
     id: "reports",
     label: "Reports & financials",
     group: "Operations",

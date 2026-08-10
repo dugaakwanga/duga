@@ -75,6 +75,12 @@ export type Permission =
   | "elearn:view"
   | "games:manage"
   | "games:play"
+  // PTA
+  | "pta:view"
+  | "pta:manage"
+  // Library
+  | "library:view"
+  | "library:manage"
   // Audit
   | "audit:view";
 
@@ -129,6 +135,10 @@ export const PERMISSIONS: Permission[] = [
   "elearn:view",
   "games:manage",
   "games:play",
+  "pta:view",
+  "pta:manage",
+  "library:view",
+  "library:manage",
   "audit:view",
 ];
 
@@ -172,6 +182,10 @@ const rolePermissions: Record<Role, Permission[]> = {
     "content:manage",
     "audit:view",
     "staff:clock",
+    "pta:view",
+    "pta:manage",
+    "library:view",
+    "library:manage",
   ],
   TEACHER: [
     "learning:manage",
@@ -196,6 +210,7 @@ const rolePermissions: Record<Role, Permission[]> = {
     "elearn:view",
     "games:manage",
     "games:play",
+    "library:view",
   ],
   PARENT: [
     "students:view",
@@ -215,6 +230,8 @@ const rolePermissions: Record<Role, Permission[]> = {
     "assignments:submit",
     "elearn:view",
     "games:play",
+    "pta:view",
+    "library:view",
   ],
   STUDENT: [
     "learning:view",
@@ -233,6 +250,8 @@ const rolePermissions: Record<Role, Permission[]> = {
     "transport:view",
     "elearn:view",
     "games:play",
+    "pta:view",
+    "library:view",
   ],
 };
 

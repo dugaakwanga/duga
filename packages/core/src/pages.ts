@@ -156,6 +156,19 @@ export const PAGE_DEFS: PageDef[] = [
       { key: "heroSubtitle", label: "Hero subtitle", type: "area" },
     ],
   },
+  {
+    slug: "pta",
+    label: "Parent-Teacher Association",
+    fields: [
+      { key: "heroTitle", label: "Hero title", type: "text" },
+      { key: "heroSubtitle", label: "Hero subtitle", type: "area" },
+      { key: "executivesKicker", label: "Executives kicker", type: "text" },
+      { key: "executivesHeading", label: "Executives heading", type: "text" },
+      { key: "meetingsKicker", label: "Meetings kicker", type: "text" },
+      { key: "meetingsHeading", label: "Meetings heading", type: "text" },
+      { key: "joinText", label: "Join / participation note", type: "area" },
+    ],
+  },
 ];
 
 export const DEFAULT_PAGES: SitePages = {
@@ -287,6 +300,15 @@ export const DEFAULT_PAGES: SitePages = {
   testimonials: {
     heroTitle: "Words from our school family",
     heroSubtitle: "Parents, pupils and alumni share what De Ultimate Glory Academy means to them.",
+  },
+  pta: {
+    heroTitle: "Working together for every child",
+    heroSubtitle: "Our Parent-Teacher Association brings parents and teachers together to support the school community.",
+    executivesKicker: "Our Executive",
+    executivesHeading: "Meet the PTA executive",
+    meetingsKicker: "Meetings",
+    meetingsHeading: "Upcoming & past meetings",
+    joinText: "All parents and guardians of enrolled pupils are automatic members. Join us at our next meeting.",
   },
 };
 

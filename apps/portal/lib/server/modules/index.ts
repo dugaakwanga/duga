@@ -36,6 +36,8 @@ import { elearnModule } from "./elearn";
 import { gamesModule } from "./games";
 import { featuresModule } from "./features";
 import { progressModule } from "./progress";
+import { ptaModule } from "./pta";
+import { libraryModule } from "./library";
 
 export const modules: Record<string, Module> = {
   dashboard: dashboardModule,
@@ -63,6 +65,8 @@ export const modules: Record<string, Module> = {
   games: gamesModule,
   features: featuresModule,
   progress: progressModule,
+  pta: ptaModule,
+  library: libraryModule,
 };
 
 export type { Ctx };

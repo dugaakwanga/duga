@@ -54,6 +54,20 @@ export async function getSetting(schoolId: string, key: string): Promise<unknown
 // Effective access gate: is this student allowed to view published results?
 // Returns { allowed, reason, override }.
 export async function resolveResultsAccess(studentId: string, termId?: string) {
+  // School-level restriction: when the school does not require payment before
+  // results, everyone with a published report card gets access.
+  const student = await prisma.student.findUnique({ where: { id: studentId }, select: { schoolId: true } });
+  const schoolId = student?.schoolId;
+  const restrictions = schoolId ? await getSetting(schoolId, "restrictions") : null;
+  const requirePayment =
+    !restrictions || typeof restrictions !== "object"
+      ? true
+      : (restrictions as { resultsRequirePayment?: unknown }).resultsRequirePayment !== false;
+
+  if (!requirePayment) {
+    return { allowed: true, override: null, invoice: null, reason: "open" };
+  }
+
   const override = await prisma.feeOverride.findFirst({
     where: {
       studentId,
