@@ -55,7 +55,7 @@ export default async function HomePage() {
           <div>
             <HeroIntro eyebrow={content.hero.eyebrow} lead={content.hero.lead} stats={content.stats} />
             <h1>
-              <HeroHeadline lines={["De Ultimate Glory", "Academy"]} accent="Academy" />
+              <HeroHeadline lines={["De  Ultimate  Glory", "Academy"]} accent="Academy" />
             </h1>
             <div className="mkt-hero-cta mkt-fade-in mkt-fade-in--3">
               <Link href="/apply" className="duga-btn duga-btn--primary duga-btn--lg duga-btn--arrow">
