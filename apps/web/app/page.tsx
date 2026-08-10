@@ -113,21 +113,6 @@ export default function HomePage() {
               <Photo src="/images/primarypupil.png" alt="A primary pupil of De Ultimate Glory Academy" ratio="portrait" caption="Primary · Nursery to P6" className="mkt-hero-main-photo" />
               <Photo src="/images/group 1 sec.png" alt="Secondary students of De Ultimate Glory Academy" ratio="wide" caption="Secondary · JSS1 to SSS3" className="mkt-hero-photo-2" />
             </Tilt>
-
-            <div className="mkt-float-chip mkt-float-chip--tl">
-              <span className="mkt-chip-dot"><Spark size={18} /></span>
-              <div>
-                <strong>98% BECE pass</strong>
-                <span>2025 results</span>
-              </div>
-            </div>
-              <div className="mkt-float-chip mkt-float-chip--bl">
-              <span className="mkt-chip-dot"><Cap size={18} /></span>
-              <div>
-                <strong>Since 2006</strong>
-                <span>20 years of excellence</span>
-              </div>
-            </div>
           </div>
         </div>
         <div className="mkt-scroll-cue">Scroll</div>

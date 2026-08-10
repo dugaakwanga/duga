@@ -1435,3 +1435,49 @@ body {
   .mkt-section-head p,
   .mkt-section-head--center p { font-size: 18px; }
 }
+
+/* ==========================================================================
+   Phones — never a sideways scroll; restack hero media so every photo shows
+   ========================================================================== */
+html,
+body {
+  overflow-x: clip;
+}
+
+@media (max-width: 700px) {
+  /* Hero: put the two photos back in a normal, fully-visible collage */
+  .mkt-hero-media {
+    height: auto;
+    min-height: 0;
+  }
+  .mkt-hero-main-photo {
+    position: relative;
+    top: auto;
+    left: auto;
+    width: 66%;
+    height: auto;
+  }
+  .mkt-hero-photo-2 {
+    position: relative;
+    top: -34px;
+    right: 0;
+    bottom: auto;
+    width: 50%;
+    height: auto;
+    margin-left: auto;
+    z-index: 2;
+  }
+  .mkt-hero p.lead { font-size: 17px; line-height: 1.65; }
+}
+
+@media (max-width: 600px) {
+  /* Schedule / age lines under each programme stack instead of wrapping */
+  .mkt-feature-meta { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .mkt-section { padding: 52px 0; }
+}
+
+@media (max-width: 420px) {
+  .mkt-hero .mkt-container { padding-top: 30px; padding-bottom: 38px; gap: 24px; }
+  .mkt-hero p.lead { font-size: 15.5px; }
+  .mkt-hero h1 { font-size: 30px; }
+}
