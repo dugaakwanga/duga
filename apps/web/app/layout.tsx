@@ -18,7 +18,7 @@ const baloo = Baloo_2({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://duga-web.vercel.app"),
   title: {
     default: `${school.name} — Akwanga, Nasarawa State`,
     template: `%s | ${school.name}`,

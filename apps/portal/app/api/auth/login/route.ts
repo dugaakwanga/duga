@@ -4,6 +4,27 @@ import { prisma, logAudit } from "@duga/core/server";
 import { signPortalToken, cookieOptions, getJwtLifetimeSeconds } from "@duga/core";
 import { COOKIE_NAMES } from "@duga/core";
 
+// Try a handful of common phone formats so "+2348030000000", "2348030000000",
+// "08030000000" and "8030000000" all resolve to the same account.
+function phoneVariants(raw: string): string[] {
+  const digits = raw.replace(/[^\d]/g, "");
+  if (digits.length < 7) return [];
+  const out = new Set<string>([raw, digits]);
+  if (digits.startsWith("234")) {
+    out.add(`+${digits}`);
+    out.add(`0${digits.slice(3)}`);
+    out.add(digits.slice(3));
+  } else if (digits.startsWith("0")) {
+    out.add(`234${digits.slice(1)}`);
+    out.add(`+234${digits.slice(1)}`);
+  } else {
+    out.add(`0${digits}`);
+    out.add(`234${digits}`);
+    out.add(`+234${digits}`);
+  }
+  return [...out];
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -11,23 +32,30 @@ export async function POST(request: NextRequest) {
     const password = String(body.password ?? "");
 
     if (!identifier || !password) {
-      return NextResponse.json({ ok: false, error: "Email, phone or staff ID and password are required" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Email, phone or ID and password are required" }, { status: 400 });
     }
 
+    // Lookup by email, phone (with variants) or internal user id.
     let user = await prisma.user.findFirst({
       where: {
         OR: [
           { email: identifier.toLowerCase() },
-          { phone: identifier },
+          ...phoneVariants(identifier).map((phone) => ({ phone })),
           { id: identifier },
         ],
       },
     });
 
-    // Staff ID: numbers live on the Teacher profile, not the user row.
+    // Staff ID lives on the Teacher profile; admission number on the Student profile.
     if (!user) {
       const teacher = await prisma.teacher.findFirst({ where: { staffNumber: identifier } });
       if (teacher) user = await prisma.user.findUnique({ where: { id: teacher.userId } });
+    }
+    if (!user) {
+      const student = await prisma.student.findFirst({
+        where: { admissionNumber: { equals: identifier, mode: "insensitive" } },
+      });
+      if (student) user = await prisma.user.findUnique({ where: { id: student.userId } });
     }
     if (!user) {
       return NextResponse.json({ ok: false, error: "Invalid credentials" }, { status: 401 });

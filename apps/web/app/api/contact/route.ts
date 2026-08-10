@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 const portalUrl =
-  process.env.NEXT_PUBLIC_PORTAL_URL ?? "http://localhost:3001";
+  process.env.NEXT_PUBLIC_PORTAL_URL ?? "https://duga-portal.vercel.app";
 
 export async function POST(request: Request) {
   try {

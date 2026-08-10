@@ -39,10 +39,12 @@ export const staffModule: Module = {
     const email = str(b.email)?.toLowerCase();
     const phone = str(b.phone);
     const staffNumber = str(b.staffNumber);
+    const tempPassword = str(b.tempPassword);
     // The teacher can be created with any single identifier — email, phone or staff number.
     if (!role || !firstName || !lastName) throw new Error("role, firstName and lastName are required");
     if (!email && !phone && !staffNumber) throw new Error("Provide at least one of email, phone number or staff ID");
     if (!["TEACHER", "ADMIN"].includes(role)) throw new Error("Invalid staff role");
+    if (tempPassword && tempPassword.length < 8) throw new Error("Temporary password must be at least 8 characters");
 
     const emailOrGenerated = email ?? (staffNumber ? `${staffNumber}@staff.local` : `${phone}@phone.local`);
     const existing = await prisma.user.findFirst({
@@ -60,7 +62,7 @@ export const staffModule: Module = {
         role: role as "TEACHER" | "ADMIN",
         email: emailOrGenerated,
         phone,
-        passwordHash: await bcrypt.hash(str(b.tempPassword) ?? "password123", 10),
+        passwordHash: await bcrypt.hash(tempPassword ?? "password123", 10),
         firstName,
         lastName,
         mustChangePassword: true,
@@ -96,5 +98,34 @@ export const staffModule: Module = {
     if (b.designation) await prisma.teacher.updateMany({ where: { userId: ctx.id }, data: { designation: String(b.designation) } });
     await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "staff.updated", entityType: "User", entityId: ctx.id, meta: data });
     return user;
+  },
+
+  actions: {
+    // Owner/admin can issue a temporary password so the staff member can sign
+    // in; they must then change it on first login (mustChangePassword = true).
+    setTempPassword: async (ctx) => {
+      can(ctx, "staff:manage");
+      const targetId = ctx.id ?? ctx.body.userId;
+      if (!targetId) throw new Error("Staff member id required");
+      const tempPassword = str(ctx.body.tempPassword);
+      if (!tempPassword) throw new Error("Temporary password is required");
+      if (tempPassword.length < 8) throw new Error("Temporary password must be at least 8 characters");
+      const target = await prisma.user.findFirst({ where: { id: targetId, schoolId: ctx.session.user.schoolId } });
+      if (!target) throw new Error("Staff member not found");
+      if (!["TEACHER", "ADMIN", "OWNER"].includes(target.role)) throw new Error("Not a staff member");
+      await prisma.user.update({
+        where: { id: target.id },
+        data: { passwordHash: await bcrypt.hash(tempPassword, 10), mustChangePassword: true },
+      });
+      await logAudit({
+        schoolId: ctx.session.user.schoolId,
+        userId: ctx.session.user.id,
+        action: "staff.tempPasswordSet",
+        entityType: "User",
+        entityId: target.id,
+        meta: { resetBy: ctx.session.user.id },
+      });
+      return { ok: true };
+    },
   },
 };

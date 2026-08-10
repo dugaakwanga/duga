@@ -40,7 +40,7 @@ const DEMO: RoleLoginConfig = {
 export default function RoleLogin({ config = DEMO }: { config?: Partial<RoleLoginConfig> }) {
   const cfg: RoleLoginConfig = { ...DEMO, ...config };
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -49,7 +49,7 @@ export default function RoleLogin({ config = DEMO }: { config?: Partial<RoleLogi
     e.preventDefault();
     setLoading(true);
     setError(null);
-    const res = await postForm("/api/auth/login", { email, password, portal: "family" });
+    const res = await postForm("/api/auth/login", { email: identifier, identifier, password, portal: "family" });
     setLoading(false);
     if (!res.ok) {
       setError(res.error || "Login failed");
@@ -92,16 +92,17 @@ export default function RoleLogin({ config = DEMO }: { config?: Partial<RoleLogi
           </div>
 
           <form onSubmit={submit} autoComplete="off">
-            <label className="duga-field__label" htmlFor="role-email">Email address</label>
+            <label className="duga-field__label" htmlFor="role-email">Email, phone or ID</label>
             <input
               className="duga-input"
               id="role-email"
-              name="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@school.com"
-              autoComplete="off"
+              name="identifier"
+              type="text"
+              inputMode="text"
+              autoComplete="username"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              placeholder="Email, phone or admission number"
               spellCheck={false}
               autoCorrect="off"
               autoCapitalize="off"

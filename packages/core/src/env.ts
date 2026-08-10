@@ -52,9 +52,9 @@ export const schoolConfig = {
     return envInt("ATTENDANCE_RADIUS_METERS", 150);
   },
   get portalUrl() {
-    return env("NEXT_PUBLIC_PORTAL_URL", "http://localhost:3001");
+    return env("NEXT_PUBLIC_PORTAL_URL", "https://duga-portal.vercel.app");
   },
   get siteUrl() {
-    return env("NEXT_PUBLIC_SITE_URL", "http://localhost:3000");
+    return env("NEXT_PUBLIC_SITE_URL", "https://duga-web.vercel.app");
   },
 };

@@ -23,6 +23,13 @@ export default function StaffPage() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  // Reset-password modal
+  const [resetTarget, setResetTarget] = useState<StaffUser | null>(null);
+  const [tempPassword, setTempPassword] = useState("");
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetSaving, setResetSaving] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -46,11 +53,34 @@ export default function StaffPage() {
       await api("staff", { method: "POST", body: form });
       setOpen(false);
       setForm({});
+      setNotice(form.tempPassword
+        ? `Staff member added. Temporary password: ${form.tempPassword} — they will be asked to change it on first login.`
+        : "Staff member added. They will be asked to set their own password on first login.");
       load();
     } catch (e) {
       alert((e as Error).message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function submitTempPassword() {
+    if (!resetTarget) return;
+    setResetError(null);
+    if (tempPassword.length < 8) {
+      setResetError("Temporary password must be at least 8 characters");
+      return;
+    }
+    setResetSaving(true);
+    try {
+      await api(`staff/${resetTarget.id}/setTempPassword`, { method: "POST", body: { tempPassword } });
+      setResetTarget(null);
+      setTempPassword("");
+      setNotice(`${resetTarget.firstName} ${resetTarget.lastName} can now sign in with the temporary password and will be asked to change it on first login.`);
+    } catch (e) {
+      setResetError((e as Error).message);
+    } finally {
+      setResetSaving(false);
     }
   }
 
@@ -62,13 +92,14 @@ export default function StaffPage() {
         actions={<Button onClick={() => setOpen(true)}><Icon name="plus" size={16} /> Add staff</Button>}
       />
       {error && <Alert tone="danger">{error}</Alert>}
+      {notice && <Alert tone="success">{notice}</Alert>}
       {loading ? (
         <Spinner size={28} />
       ) : items.length === 0 ? (
         <EmptyState title="No staff" />
       ) : (
         <Card>
-          <Table headers={["Name", "Role", "Email", "Staff no.", "Status"]}>
+          <Table headers={["Name", "Role", "Email", "Staff no.", "Status", ""]}>
             {items.map((u) => (
               <tr key={u.id}>
                 <td>{u.firstName} {u.lastName}</td>
@@ -76,6 +107,11 @@ export default function StaffPage() {
                 <td>{u.email}</td>
                 <td>{u.teacher?.staffNumber ?? u.admin?.designation ?? "—"}</td>
                 <td><Badge tone={u.status === "ACTIVE" ? "success" : "danger"}>{u.status}</Badge></td>
+                <td>
+                  <Button size="sm" variant="ghost" onClick={() => { setResetTarget(u); setTempPassword(""); setResetError(null); }}>
+                    Set password
+                  </Button>
+                </td>
               </tr>
             ))}
           </Table>
@@ -113,10 +149,29 @@ export default function StaffPage() {
           <Field label="Specialty">
             <Input value={form.specialty ?? ""} onChange={(e) => setForm({ ...form, specialty: e.target.value })} />
           </Field>
+          <Field label="Temporary password" hint="Optional — leave empty to let them set their own password on first login.">
+            <Input value={form.tempPassword ?? ""} onChange={(e) => setForm({ ...form, tempPassword: e.target.value })} placeholder="At least 8 characters" />
+          </Field>
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
           <Button onClick={save} loading={saving}>Add staff</Button>
+        </div>
+      </Modal>
+
+      <Modal open={!!resetTarget} onClose={() => setResetTarget(null)} title={resetTarget ? `Set temporary password — ${resetTarget.firstName} ${resetTarget.lastName}` : ""}>
+        <Alert tone="info">
+          The staff member will sign in with this temporary password using their email, phone or staff ID, and will be asked to change it on first login.
+        </Alert>
+        <div style={{ marginTop: 14 }}>
+          <Field label="Temporary password" required hint="At least 8 characters">
+            <Input type="text" value={tempPassword} onChange={(e) => setTempPassword(e.target.value)} placeholder="e.g. Welcome2026!" autoComplete="off" />
+          </Field>
+          {resetError && <Alert tone="danger">{resetError}</Alert>}
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+          <Button variant="ghost" onClick={() => setResetTarget(null)}>Cancel</Button>
+          <Button onClick={submitTempPassword} loading={resetSaving}>Set temporary password</Button>
         </div>
       </Modal>
     </div>

@@ -37,7 +37,7 @@ export interface SiteContent {
 }
 
 const portalUrl =
-  process.env.NEXT_PUBLIC_PORTAL_URL ?? "http://localhost:3001";
+  process.env.NEXT_PUBLIC_PORTAL_URL ?? "https://duga-portal.vercel.app";
 
 export function useSiteContent(): SiteContent {
   const [state, setState] = useState<{ gallery: SiteGalleryItem[]; news: SiteNewsItem[]; content: SiteContentData | null; loading: boolean }>({

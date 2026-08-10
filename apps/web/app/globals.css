@@ -1384,3 +1384,54 @@ body {
   .mkt-logo--brand .mkt-logo-name { font-size: 16px; line-height: 1.15; }
   .mkt-header-top { padding-right: 44px; }
 }
+
+/* ==========================================================================
+   Mobile polish — hero carousel, testimonial carousel, sections, cards, text
+   Tighten vertical rhythm, paddings and hero legibility on small screens.
+   ========================================================================== */
+@media (max-width: 720px) {
+  .mkt-section { padding: 72px 0; }
+  .mkt-section-head { margin-bottom: 44px; }
+  .mkt-grid { gap: 26px; }
+  .mkt-gallery-grid, .mkt-gallery-preview { gap: 14px; }
+  .mkt-ticker-track span { font-size: 18px; }
+  .mkt-timeline { padding-left: 26px; }
+}
+
+@media (max-width: 600px) {
+  .mkt-section { padding: 56px 0; }
+  .mkt-section-head { margin-bottom: 36px; }
+  .mkt-card { padding: 22px; border-radius: 22px; }
+  .mkt-card--photo-body { padding: 22px 20px; }
+  .mkt-feature-body { padding: 20px 20px 22px; }
+  .mkt-feature-grid, .mkt-offers-grid { gap: 18px; }
+  .mkt-offer { padding: 16px; gap: 14px; }
+  .mkt-icon { width: 46px; height: 46px; border-radius: 16px; }
+  .mkt-page-hero { padding: 56px 0 48px; }
+
+  /* Testimonial carousel — smaller quote, lighter padding, wrapping footer */
+  .mkt-quote { padding: 26px 22px 24px; border-radius: 24px; }
+  .mkt-quote-mark { font-size: 52px; margin-bottom: 10px; }
+  .mkt-quote footer { flex-wrap: wrap; }
+  .mkt-carousel-dots { margin-top: 18px; }
+
+  /* Home hero stats — keep the three up in a row but closer together */
+  .mkt-hero-stats { gap: 0 18px; }
+}
+
+@media (max-width: 560px) {
+  .mkt-hero .mkt-container { padding-top: 40px; padding-bottom: 48px; gap: 30px; }
+  .mkt-hero-media { height: 340px; }
+  .mkt-hero-video-indicators { bottom: 18px; }
+  /* Darker scrim behind the hero copy so text stays readable over the video */
+  .mkt-hero-video-overlay {
+    background:
+      linear-gradient(to bottom, rgba(255, 248, 236, 0.58) 0%, rgba(255, 248, 236, 0.22) 42%, rgba(36, 48, 71, 0.6) 100%),
+      linear-gradient(120deg, rgba(255, 248, 236, 0.6) 0%, rgba(255, 248, 236, 0.26) 60%, rgba(36, 48, 71, 0.6) 100%);
+  }
+  .mkt-hero-cta { flex-direction: column; }
+  .mkt-hero-cta .duga-btn { width: 100%; justify-content: center; }
+  .mkt-scroll-cue { display: none; }
+  .mkt-section-head p,
+  .mkt-section-head--center p { font-size: 18px; }
+}

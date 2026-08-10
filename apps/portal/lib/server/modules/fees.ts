@@ -225,7 +225,7 @@ export const feesModule: Module = {
         email: invoice.student.user.email,
         amountKobo: Math.round(payAmount * 100),
         reference,
-        callbackUrl: `${process.env.PAYSTACK_CALLBACK_URL ?? `http://localhost:3001/portal/fees`}?reference=${reference}`,
+        callbackUrl: `${process.env.PAYSTACK_CALLBACK_URL ?? `https://duga-portal.vercel.app/portal/fees`}?reference=${reference}`,
         metadata: { invoiceId: invoice.id, studentId: invoice.studentId },
       });
       return { mock: false, reference, authorization_url: data.authorization_url };

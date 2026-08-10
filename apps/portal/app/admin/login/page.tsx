@@ -27,14 +27,14 @@ function AdminLogin() {
   const searchParams = useSearchParams();
   const initialRole = (searchParams.get("role") ?? "ADMIN").toUpperCase();
   const [role, setRole] = useState<string>(Object.keys(DEMO_ACCOUNTS).find((k) => k === initialRole) ?? "ADMIN");
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   function pickRole(r: string) {
     setRole(r);
-    setEmail("");
+    setIdentifier("");
     setPassword("");
     setError(null);
   }
@@ -43,7 +43,7 @@ function AdminLogin() {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    const res = await postForm("/api/auth/login", { email, password, portal: "admin" });
+    const res = await postForm("/api/auth/login", { email: identifier, identifier, password, portal: "admin" });
     setLoading(false);
     if (!res.ok) {
       setError(res.error || "Login failed");
@@ -96,8 +96,8 @@ function AdminLogin() {
           </div>
 
           <form onSubmit={submit} autoComplete="off">
-            <label className="duga-field__label">Email address</label>
-            <input className="duga-input" type="email" name="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@school.com" autoComplete="off" spellCheck={false} autoCorrect="off" autoCapitalize="off" required />
+            <label className="duga-field__label">Email, phone or staff ID</label>
+            <input className="duga-input" type="text" name="identifier" inputMode="text" autoComplete="username" value={identifier} onChange={(e) => setIdentifier(e.target.value)} placeholder="Email, phone or staff number" spellCheck={false} autoCorrect="off" autoCapitalize="off" required />
 
             <label className="duga-field__label" style={{ marginTop: 14 }}>Password</label>
             <PasswordInput value={password} onChange={setPassword} placeholder="••••••••" autoComplete="off" name="password" />

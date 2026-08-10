@@ -366,7 +366,29 @@
 
 @media (max-width: 940px) {
   .login-wrap { grid-template-columns: 1fr; }
-  .login-visual { display: none; }
+  /* Keep a compact carousel banner on tablets/phones instead of hiding the visual */
+  .login-visual {
+    display: flex;
+    height: 210px;
+    min-height: 210px;
+    padding: 22px 24px;
+  }
+  .login-visual .login-visual-content { width: 100%; }
+  .login-visual h2 { font-size: clamp(19px, 4.6vw, 26px); max-width: none; margin-top: 4px; }
+  .login-visual p { display: none; }
+  /* Super admin page uses a static image rather than the carousel */
+  .login-visual > img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .login-card { max-width: 420px; }
+}
+@media (max-width: 520px) {
+  .login-visual { height: 180px; min-height: 180px; padding: 18px 20px; }
+  .login-visual h2 { font-size: 19px; }
 }
 
 /* ==========================================================================
@@ -666,3 +688,40 @@ body {
 .duga-empty { font-size: 15px; font-weight: 650; }
 .duga-nav-link { font-size: 15.5px; font-weight: 650; }
 .duga-nav-link--active { font-weight: 800; }
+
+/* ==========================================================================
+   Mobile polish — login carousel, role landing, shell
+   ========================================================================== */
+
+/* Role landing (/) — compact stage + tighter card on small screens */
+@media (max-width: 600px) {
+  .role-stage { min-height: 34vh; max-height: 44vh; }
+  .role-stage-caption { padding: 0 18px; }
+  .role-stage-caption span { font-size: 11px; letter-spacing: 0.18em; }
+  .role-stage-caption p { font-size: 22px; }
+  .role-stage-dots { bottom: 14px; gap: 6px; }
+  .role-stage-dots span { width: 7px; height: 7px; }
+  .role-stage-dots span.active { width: 20px; }
+  .role-card-head { margin-bottom: 24px; }
+  .role-card-head img { height: 60px; margin-bottom: 14px; }
+  .role-card-head h1 { font-size: 24px; }
+  .role-drop-select { padding: 12px 14px; font-size: 15.5px; }
+  .role-card-selected { margin-top: 14px; padding-top: 14px; }
+}
+@media (max-width: 380px) {
+  .role-stage-caption p { font-size: 18px; }
+}
+
+/* Portal shell — tighter content padding, no horizontal cross-page scroll */
+@media (max-width: 600px) {
+  .portal-content {
+    padding: 18px 14px 30px;
+    overflow-x: clip;
+  }
+  .duga-page-head { margin-bottom: 18px; }
+}
+@media (max-width: 400px) {
+  .portal-content { padding: 14px 12px 26px; }
+  /* Keep the title visible next to the bell/sign-out on very small screens */
+  .portal-topbar__signout { padding: 8px; }
+}
