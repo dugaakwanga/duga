@@ -1,10 +1,11 @@
 // App home URLs. We ignore localhost/127.0.0.1 overrides so a stale dev value
 // left in a deployment's env vars can never leak into the production links.
 function appUrl(key: string, fallback: string): string {
+  const clean = (u: string) => u.replace(/\/+$/, "");
   const value = process.env[key]?.trim() ?? "";
-  if (!value) return fallback;
-  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+|\/)?/i.test(value)) return fallback;
-  return value;
+  if (!value) return clean(fallback);
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+|\/)?/i.test(value)) return clean(fallback);
+  return clean(value);
 }
 
 export const portalUrl = appUrl("NEXT_PUBLIC_PORTAL_URL", "https://duga-portal.vercel.app/");

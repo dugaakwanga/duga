@@ -53,7 +53,7 @@ export default async function HomePage() {
         <div className="mkt-blob mkt-blob--2" aria-hidden="true" />
         <div className="mkt-container">
           <div>
-            <HeroIntro />
+            <HeroIntro eyebrow={content.hero.eyebrow} lead={content.hero.lead} stats={content.stats} />
             <h1>
               <HeroHeadline lines={["De Ultimate Glory", "Academy"]} accent="Academy" />
             </h1>

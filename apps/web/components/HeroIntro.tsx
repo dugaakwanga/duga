@@ -2,6 +2,7 @@
 
 import { Counter } from "@/components/motion";
 import { useSiteContent } from "@/lib/use-site";
+import type { SiteStat } from "@/lib/site-data";
 
 const FALLBACK = {
   eyebrow: "Admissions Open · 2025/2026 Session",
@@ -13,19 +14,30 @@ const FALLBACK = {
   ],
 };
 
-export default function HeroIntro() {
+export default function HeroIntro({
+  eyebrow,
+  lead,
+  stats,
+}: {
+  eyebrow?: string;
+  lead?: string;
+  stats?: SiteStat[];
+}) {
   const { content } = useSiteContent();
   const hero = content?.hero;
-  const eyebrow = hero?.eyebrow || FALLBACK.eyebrow;
-  const lead = hero?.lead || FALLBACK.lead;
-  const stats = content?.stats && content.stats.length > 0 ? content.stats.slice(0, 3) : FALLBACK.stats;
+  const showEyebrow = eyebrow || hero?.eyebrow || FALLBACK.eyebrow;
+  const showLead = lead || hero?.lead || FALLBACK.lead;
+  const showStats =
+    (stats && stats.length > 0 ? stats : null) ||
+    (content?.stats && content.stats.length > 0 ? content.stats.slice(0, 3) : null) ||
+    FALLBACK.stats;
 
   return (
     <>
-      <span className="mkt-eyebrow mkt-fade-in">{eyebrow}</span>
-      <p className="lead mkt-fade-in mkt-fade-in--2">{lead}</p>
+      <span className="mkt-eyebrow mkt-fade-in">{showEyebrow}</span>
+      <p className="lead mkt-fade-in mkt-fade-in--2">{showLead}</p>
       <div className="mkt-hero-stats mkt-fade-in mkt-fade-in--4">
-        {stats.map((s) => (
+        {showStats.map((s) => (
           <div key={s.label}>
             <strong>
               <Counter to={s.value} suffix={s.suffix} />
