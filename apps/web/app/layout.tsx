@@ -4,6 +4,7 @@ import "./globals.css";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import { school, siteUrl } from "@/lib/content";
+import { getWebsiteStatus } from "@/lib/site-data";
 
 const manrope = Manrope({
   subsets: ["latin"],
@@ -42,16 +43,34 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const website = await getWebsiteStatus();
+
   return (
     <html lang="en" className={`${manrope.variable} ${baloo.variable}`}>
       <body>
         <div className="mkt-grain" aria-hidden="true" />
-        <div className="mkt-shell">
-          <SiteHeader />
-          <main className="mkt-main">{children}</main>
-          <SiteFooter />
-        </div>
+        {website.enabled ? (
+          <div className="mkt-shell">
+            <SiteHeader />
+            <main className="mkt-main">{children}</main>
+            <SiteFooter />
+          </div>
+        ) : (
+          <div className="mkt-maintenance">
+            <div className="mkt-maintenance-card">
+              <span className="mkt-logo-badge">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/images/logo.png" alt="" />
+              </span>
+              <h1>{school.name}</h1>
+              <p>{website.notice || "This website is currently offline. Please check back soon."}</p>
+              <a href="mailto:info@deultimateglory.com" className="duga-btn duga-btn--outline duga-btn--sm">
+                Contact the school
+              </a>
+            </div>
+          </div>
+        )}
       </body>
     </html>
   );

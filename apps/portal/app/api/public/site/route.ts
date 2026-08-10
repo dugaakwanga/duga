@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@duga/core/server";
 import { normalizeContent } from "@/lib/server/modules/content";
+import { getWebsiteConfig } from "@/lib/server/site-settings";
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,7 +22,7 @@ export async function GET(request: NextRequest) {
       return cors(NextResponse.json({ ok: false, error: "School not found" }, { status: 404 }));
     }
 
-    const [gallery, news, contentRow] = await Promise.all([
+    const [gallery, news, contentRow, website] = await Promise.all([
       prisma.galleryImage.findMany({
         where: { schoolId: school.id },
         orderBy: { createdAt: "desc" },
@@ -36,6 +37,7 @@ export async function GET(request: NextRequest) {
         where: { schoolId_key: { schoolId: school.id, key: "siteContent" } },
         select: { value: true },
       }),
+      getWebsiteConfig(school.id),
     ]);
 
     return cors(
@@ -45,6 +47,7 @@ export async function GET(request: NextRequest) {
           school,
           gallery,
           news,
+          website,
           content: contentRow?.value ? normalizeContent(contentRow.value) : null,
         },
       }),

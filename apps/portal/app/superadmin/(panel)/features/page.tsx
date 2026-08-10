@@ -31,10 +31,16 @@ interface FeatureConfig {
   family: string[];
 }
 
+interface WebsiteConfig {
+  enabled: boolean;
+  notice: string;
+}
+
 export default function SuperAdminFeatures() {
   const [schools, setSchools] = useState<SchoolRow[]>([]);
   const [schoolId, setSchoolId] = useState("");
   const [config, setConfig] = useState<FeatureConfig | null>(null);
+  const [website, setWebsite] = useState<WebsiteConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,9 +65,14 @@ export default function SuperAdminFeatures() {
     if (!id) return;
     setError(null);
     setConfig(null);
+    setWebsite(null);
     try {
-      const d = await saApi<{ config: FeatureConfig }>(`features/${id}`);
-      setConfig(d.config);
+      const [f, w] = await Promise.all([
+        saApi<{ config: FeatureConfig }>(`features/${id}`),
+        saApi<{ config: WebsiteConfig }>(`website/${id}`),
+      ]);
+      setConfig(f.config);
+      setWebsite(w.config);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -101,6 +112,25 @@ export default function SuperAdminFeatures() {
     }
   }
 
+  async function saveWebsite() {
+    if (!website) return;
+    setBusy(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const d = await saApi<{ config: WebsiteConfig }>("website/update", {
+        method: "POST",
+        body: { schoolId, enabled: website.enabled, notice: website.notice },
+      });
+      setWebsite(d.config);
+      setSaved(true);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="sa-shell">
       <div style={{ width: "100%" }}>
@@ -117,19 +147,57 @@ export default function SuperAdminFeatures() {
           </div>
         </div>
 
-        <div className="portal-content" style={{ maxWidth: 1000 }}>
-          <Card>
-            <Field label="School">
-              <Select value={schoolId} onChange={(e) => setSchoolId(e.target.value)}>
-                {schools.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </Select>
-            </Field>
-            <div style={{ fontSize: 13, color: "var(--duga-muted)", marginTop: 8 }}>
-              Turning a function off hides it from the whole school (owner included). The data behind it stays safe and can be turned back on anytime.
-            </div>
-          </Card>
+          <div className="portal-content" style={{ maxWidth: 1000 }}>
+            <Card>
+              <Field label="School">
+                <Select value={schoolId} onChange={(e) => setSchoolId(e.target.value)}>
+                  {schools.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </Select>
+              </Field>
+              <div style={{ fontSize: 13, color: "var(--duga-muted)", marginTop: 8 }}>
+                Turning a function off hides it from the whole school (owner included). The data behind it stays safe and can be turned back on anytime.
+              </div>
+            </Card>
+
+            {website && (
+              <Card style={{ marginTop: 16 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--duga-muted)", marginBottom: 12 }}>
+                  Public website
+                </div>
+                <Field label="Website status">
+                  <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={website.enabled}
+                      onChange={(e) => setWebsite({ ...website, enabled: e.target.checked })}
+                      style={{ width: 18, height: 18 }}
+                    />
+                    <span style={{ fontSize: 14, fontWeight: 600 }}>
+                      {website.enabled ? "Live — visitors can view the school's website" : "Offline — visitors see a maintenance page"}
+                    </span>
+                  </label>
+                </Field>
+                {!website.enabled && (
+                  <Field label="Maintenance notice" hint="Shown to visitors while the website is offline.">
+                    <textarea
+                      rows={3}
+                      value={website.notice}
+                      onChange={(e) => setWebsite({ ...website, notice: e.target.value })}
+                      className="duga-input"
+                      placeholder="e.g. This website is under maintenance. Please check back soon."
+                    />
+                  </Field>
+                )}
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <Button onClick={saveWebsite} loading={busy}>Save website settings</Button>
+                  {saved && <Badge tone="success">Saved</Badge>}
+                  {error && <Alert tone="danger">{error}</Alert>}
+                </div>
+              </Card>
+            )}
+
 
           {config ? (
             <Card style={{ marginTop: 16 }}>

@@ -2,6 +2,7 @@ import { prisma } from "@duga/core/server";
 import type { SuperAdminSession } from "./superadmin";
 import bcrypt from "bcryptjs";
 import { FEATURE_SETTING_KEY, getFeatureConfig } from "./features";
+import { getWebsiteConfig, setWebsiteConfig } from "./site-settings";
 
 export interface SACtx {
   session: SuperAdminSession;
@@ -569,6 +570,30 @@ export const saModules: Record<string, SAModule> = {
         });
         await logActivity(ctx, "features.enable", { schoolId, enabled: [...ids] });
         return { ok: true, config: cfg };
+      },
+    },
+  },
+
+  website: {
+    async get(ctx) {
+      const schoolId = String(ctx.id ?? "");
+      if (!schoolId) throw new Error("schoolId required");
+      const school = await prisma.school.findUnique({ where: { id: schoolId }, select: { id: true, name: true } });
+      if (!school) throw new Error("School not found");
+      return { school, config: await getWebsiteConfig(schoolId) };
+    },
+
+    actions: {
+      // POST /api/superadmin/website/update  { schoolId, enabled: boolean, notice?: string }
+      update: async (ctx) => {
+        const schoolId = String(ctx.body.schoolId ?? "");
+        if (!schoolId) throw new Error("schoolId required");
+        const config = await setWebsiteConfig(schoolId, {
+          enabled: ctx.body.enabled === true || ctx.body.enabled === "true",
+          notice: typeof ctx.body.notice === "string" ? ctx.body.notice : "",
+        });
+        await logActivity(ctx, "website.updated", { schoolId, enabled: config.enabled });
+        return { ok: true, config };
       },
     },
   },

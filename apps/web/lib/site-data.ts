@@ -65,6 +65,11 @@ export interface SiteSchoolInfo {
   logoUrl: string | null;
 }
 
+export interface SiteWebsiteConfig {
+  enabled: boolean;
+  notice: string;
+}
+
 export const FALLBACK_CONTENT: SiteContentData = {
   tickerEnabled: true,
   ticker: [
@@ -208,15 +213,28 @@ export async function getPageContent(slug: string) {
   return { content, pages, page: pages[slug] ?? {} };
 }
 
-export async function getSiteData(): Promise<{ school: SiteSchoolInfo | null; content: SiteContentData | null }> {
+export async function getSiteData(): Promise<{ school: SiteSchoolInfo | null; content: SiteContentData | null; website: SiteWebsiteConfig }> {
   try {
     const res = await fetch(`${portalUrl}/api/public/site`, { cache: "no-store" });
     const json = await res.json();
     if (json?.ok && json.data) {
-      return { school: json.data.school ?? null, content: json.data.content ?? null };
+      return {
+        school: json.data.school ?? null,
+        content: json.data.content ?? null,
+        website: {
+          enabled: json.data.website?.enabled !== false,
+          notice: json.data.website?.notice ?? "",
+        },
+      };
     }
   } catch {
     /* portal offline — caller falls back to defaults */
   }
-  return { school: null, content: null };
+  return { school: null, content: null, website: { enabled: true, notice: "" } };
+}
+
+/** Website on/off state, used by the root layout to gate the whole site. */
+export async function getWebsiteStatus(): Promise<SiteWebsiteConfig> {
+  const { website } = await getSiteData();
+  return website;
 }
