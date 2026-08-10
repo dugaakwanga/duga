@@ -245,9 +245,12 @@ body {
   .mkt-header-actions { display: none; }
   .mkt-nav { display: none; }
   .mkt-header-top .mkt-burger { display: inline-flex; left: auto; right: 0; }
-  .mkt-header-top { padding: 14px 0 12px; }
+  .mkt-header-top { padding: 14px 52px 12px; }
+  .mkt-logo { min-width: 0; max-width: 100%; }
   .mkt-logo--brand img { height: 54px; }
   .mkt-logo--brand .mkt-logo-name { font-size: 24px; }
+  .mkt-logo-name,
+  .mkt-logo-sub { white-space: normal; }
 }
 
 @media (max-width: 480px) {
