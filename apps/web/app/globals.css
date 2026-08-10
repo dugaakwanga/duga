@@ -1485,11 +1485,18 @@ body {
 /* ==========================================================================
    Phones/tablets — hero carousel fills the width; caption pills stay small
    ========================================================================== */
-@media (max-width: 900px) {
-  /* Fill wide photos so the background carousel covers the hero edge-to-edge
-     instead of letterboxing on smaller screens */
-  .mkt-hero-video-stage img {
-    object-fit: cover;
+@media (max-width: 700px) {
+  /* Keep the whole carousel slide visible: anchor it to the top of the hero
+     and never crop the photo/video, so it adjusts to any screen size */
+  .mkt-hero-video {
+    inset: 0 0 auto;
+    height: 54vh;
+    min-height: 260px;
+    max-height: 440px;
+  }
+  .mkt-hero-video-stage img,
+  .mkt-hero-video-stage video {
+    object-fit: contain;
     object-position: center;
   }
 }

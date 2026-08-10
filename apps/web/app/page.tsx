@@ -115,7 +115,6 @@ export default function HomePage() {
             </Tilt>
           </div>
         </div>
-        <div className="mkt-scroll-cue">Scroll</div>
       </section>
 
       {/* ============ TICKER ============ */}
