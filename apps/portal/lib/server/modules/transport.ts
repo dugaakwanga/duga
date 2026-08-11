@@ -44,6 +44,28 @@ export const transportModule: Module = {
       });
     },
 
+    updateRoute: async (ctx) => {
+      can(ctx, "transport:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const route = await prisma.transportRoute.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!route) throw new Error("Route not found");
+      const data: Record<string, unknown> = {};
+      if (ctx.body.name !== undefined) data.name = str(ctx.body.name) ?? route.name;
+      if (ctx.body.description !== undefined) data.description = str(ctx.body.description);
+      if (ctx.body.fee !== undefined) data.fee = ctx.body.fee === "" || ctx.body.fee === null ? null : Number(ctx.body.fee);
+      return prisma.transportRoute.update({ where: { id: ctx.id }, data });
+    },
+
+    deleteRoute: async (ctx) => {
+      can(ctx, "transport:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const route = await prisma.transportRoute.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!route) throw new Error("Route not found");
+      await prisma.transportRoute.delete({ where: { id: ctx.id } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "transport.routeDeleted", entityType: "TransportRoute", entityId: ctx.id });
+      return { ok: true };
+    },
+
     addStop: async (ctx) => {
       can(ctx, "transport:manage");
       const routeId = str(ctx.body.routeId);
@@ -53,6 +75,27 @@ export const transportModule: Module = {
       return prisma.transportStop.create({
         data: { routeId, name, order, lat: ctx.body.lat ? Number(ctx.body.lat) : undefined, lng: ctx.body.lng ? Number(ctx.body.lng) : undefined, pickupTime: str(ctx.body.pickupTime) },
       });
+    },
+
+    updateStop: async (ctx) => {
+      can(ctx, "transport:manage");
+      const stop = await prisma.transportStop.findUnique({ where: { id: ctx.id } });
+      if (!stop) throw new Error("Stop not found");
+      const data: Record<string, unknown> = {};
+      if (ctx.body.name !== undefined) data.name = str(ctx.body.name) ?? stop.name;
+      if (ctx.body.pickupTime !== undefined) data.pickupTime = str(ctx.body.pickupTime);
+      if (ctx.body.order !== undefined) data.order = Number(ctx.body.order);
+      return prisma.transportStop.update({ where: { id: ctx.id }, data });
+    },
+
+    deleteStop: async (ctx) => {
+      can(ctx, "transport:manage");
+      const stop = await prisma.transportStop.findUnique({ where: { id: ctx.id } });
+      if (!stop) throw new Error("Stop not found");
+      const used = await prisma.transportAssignment.count({ where: { stopId: ctx.id, status: "ACTIVE" } });
+      if (used > 0) throw new Error("This stop is still assigned to students");
+      await prisma.transportStop.delete({ where: { id: ctx.id } });
+      return { ok: true };
     },
 
     addVehicle: async (ctx) => {
@@ -67,6 +110,30 @@ export const transportModule: Module = {
       return vehicle;
     },
 
+    updateVehicle: async (ctx) => {
+      can(ctx, "transport:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const vehicle = await prisma.vehicle.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!vehicle) throw new Error("Vehicle not found");
+      const data: Record<string, unknown> = {};
+      if (ctx.body.plateNumber !== undefined) data.plateNumber = str(ctx.body.plateNumber) ?? vehicle.plateNumber;
+      if (ctx.body.model !== undefined) data.model = str(ctx.body.model);
+      if (ctx.body.capacity !== undefined) data.capacity = Number(ctx.body.capacity) || 15;
+      if (ctx.body.routeId !== undefined) data.routeId = str(ctx.body.routeId);
+      return prisma.vehicle.update({ where: { id: ctx.id }, data });
+    },
+
+    deleteVehicle: async (ctx) => {
+      can(ctx, "transport:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const vehicle = await prisma.vehicle.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!vehicle) throw new Error("Vehicle not found");
+      const used = await prisma.driver.count({ where: { vehicleId: ctx.id } });
+      if (used > 0) throw new Error("Assign the driver to another vehicle first");
+      await prisma.vehicle.delete({ where: { id: ctx.id } });
+      return { ok: true };
+    },
+
     addDriver: async (ctx) => {
       can(ctx, "transport:manage");
       const name = str(ctx.body.name);
@@ -74,6 +141,26 @@ export const transportModule: Module = {
       return prisma.driver.create({
         data: { schoolId: ctx.session.user.schoolId, name, phone: str(ctx.body.phone), licenseNumber: str(ctx.body.licenseNumber), vehicleId: str(ctx.body.vehicleId) },
       });
+    },
+
+    updateDriver: async (ctx) => {
+      can(ctx, "transport:manage");
+      const driver = await prisma.driver.findUnique({ where: { id: ctx.id } });
+      if (!driver) throw new Error("Driver not found");
+      const data: Record<string, unknown> = {};
+      if (ctx.body.name !== undefined) data.name = str(ctx.body.name) ?? driver.name;
+      if (ctx.body.phone !== undefined) data.phone = str(ctx.body.phone);
+      if (ctx.body.licenseNumber !== undefined) data.licenseNumber = str(ctx.body.licenseNumber);
+      if (ctx.body.vehicleId !== undefined) data.vehicleId = str(ctx.body.vehicleId);
+      return prisma.driver.update({ where: { id: ctx.id }, data });
+    },
+
+    deleteDriver: async (ctx) => {
+      can(ctx, "transport:manage");
+      const driver = await prisma.driver.findUnique({ where: { id: ctx.id } });
+      if (!driver) throw new Error("Driver not found");
+      await prisma.driver.delete({ where: { id: ctx.id } });
+      return { ok: true };
     },
 
     assignStudent: async (ctx) => {
@@ -87,6 +174,15 @@ export const transportModule: Module = {
         data: { schoolId, studentId, routeId, stopId: str(ctx.body.stopId), termId: str(ctx.body.termId) },
       });
       return assignment;
+    },
+
+    removeAssignment: async (ctx) => {
+      can(ctx, "transport:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const assignment = await prisma.transportAssignment.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!assignment) throw new Error("Assignment not found");
+      await prisma.transportAssignment.update({ where: { id: ctx.id }, data: { status: "ENDED" } });
+      return { ok: true };
     },
 
     // Driver/GPS: report current bus location

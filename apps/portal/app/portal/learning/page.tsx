@@ -71,6 +71,47 @@ export default function LearningPage() {
     }
   }
 
+  async function saveEdit(item: Item) {
+    try {
+      const body: Record<string, string> = { ...form };
+      const action = kind === "notes" ? "notes" : kind === "assignments" ? "assignments" : kind === "tests" ? "tests" : "live";
+      await api(`learning/${item.id}?kind=${action}`, { method: "PATCH", body });
+      setOpen(false);
+      setForm({});
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
+  function openEdit(item: Item) {
+    setForm({
+      topic: item.topic ?? "",
+      title: item.title ?? "",
+      content: item.content ?? "",
+      instructions: item.instructions ?? "",
+      dueAt: item.dueAt ?? "",
+      maxScore: String(item.maxScore ?? ""),
+      description: item.description ?? "",
+      scheduledAt: item.scheduledAt ?? "",
+    });
+    setEditItem(item);
+    setOpen(true);
+  }
+
+  const [editItem, setEditItem] = useState<Item | null>(null);
+
+  async function deleteItem(item: Item) {
+    if (!confirm(`Delete this ${kind.slice(0, -1)}? This cannot be undone.`)) return;
+    try {
+      const action = kind === "notes" ? "deleteNote" : kind === "assignments" ? "deleteAssignment" : kind === "tests" ? "deleteTest" : "deleteLive";
+      await api(`learning/${item.id}/${action}`, { method: "POST", body: {} });
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -122,15 +163,19 @@ export default function LearningPage() {
                   Take this test
                 </Link>
               )}
+              {!isStudent && (
+                <div style={{ display: "flex", gap: 6, marginTop: 12 }}>
+                  <Button variant="outline" size="sm" onClick={() => openEdit(item)}>Edit</Button>
+                  <Button variant="ghost" size="sm" onClick={() => deleteItem(item)}>Delete</Button>
+                </div>
+              )}
             </Card>
           ))}
         </div>
       )}
 
-      <Modal open={open} onClose={() => setOpen(false)} title={`New ${kind === "tests" ? "test" : kind === "live" ? "live class" : kind.slice(0, -1)}`} wide>
-        <Field label={kind === "notes" ? "Topic" : "Title"} required>
-          <Input value={form.title ?? form.topic ?? ""} onChange={(e) => setForm({ ...form, title: e.target.value, topic: e.target.value })} />
-        </Field>
+      <Modal open={open} onClose={() => { setOpen(false); setEditItem(null); }} title={`${editItem ? "Edit" : "New"} ${kind === "tests" ? "test" : kind === "live" ? "live class" : kind.slice(0, -1)}`} wide>
+        {!editItem && (
         <Field label="Class subject" required>
           <Select value={form.classSubjectId ?? ""} onChange={(e) => setForm({ ...form, classSubjectId: e.target.value })}>
             <option value="">Select a class subject…</option>
@@ -140,6 +185,10 @@ export default function LearningPage() {
               </option>
             ))}
           </Select>
+        </Field>
+        )}
+        <Field label={kind === "notes" ? "Topic" : "Title"} required>
+          <Input value={form.title ?? form.topic ?? ""} onChange={(e) => setForm({ ...form, title: e.target.value, topic: e.target.value })} />
         </Field>
         {kind === "notes" && (
           <Field label="Content">
@@ -181,8 +230,8 @@ export default function LearningPage() {
           </>
         )}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
-          <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={createItem}>Create</Button>
+          <Button variant="ghost" onClick={() => { setOpen(false); setEditItem(null); }}>Cancel</Button>
+          <Button onClick={() => (editItem ? saveEdit(editItem) : createItem())}>{editItem ? "Save changes" : "Create"}</Button>
         </div>
       </Modal>
     </div>

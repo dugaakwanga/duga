@@ -1,7 +1,7 @@
 import { prisma } from "@duga/core/server";
 import { logAudit } from "@duga/core/server";
 import type { Module } from ".";
-import { can, str } from "../helpers";
+import { can, str, num } from "../helpers";
 
 export const classesModule: Module = {
   async list(ctx) {
@@ -12,7 +12,13 @@ export const classesModule: Module = {
       prisma.classLevel.findMany({ where: { schoolId }, orderBy: { order: "asc" } }),
       prisma.classGroup.findMany({
         where: { schoolId },
-        include: { level: true, session: true, formTeacher: { include: { user: { select: { firstName: true, lastName: true } } } }, _count: { select: { students: true } } },
+        include: {
+          level: true,
+          session: true,
+          formTeacher: { include: { user: { select: { firstName: true, lastName: true } } } },
+          classSubjects: { include: { subject: { select: { id: true, name: true, section: true } }, teacher: { select: { id: true } } } },
+          _count: { select: { students: true } },
+        },
         orderBy: { createdAt: "asc" },
       }),
       prisma.subject.findMany({ where: { schoolId }, orderBy: { name: "asc" } }),
@@ -159,6 +165,118 @@ export const classesModule: Module = {
       if (dup) throw new Error(`Session "${name}" already exists`);
       const session = await prisma.academicSession.create({ data: { schoolId, name } });
       return session;
+    },
+
+    // ---- Subject edit/delete ------------------------------------------
+    updateSubject: async (ctx) => {
+      can(ctx, "subjects:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const existing = await prisma.subject.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!existing) throw new Error("Subject not found");
+      const data: Record<string, unknown> = {};
+      if (str(ctx.body.name)) data.name = str(ctx.body.name);
+      if (ctx.body.section !== undefined) data.section = str(ctx.body.section) as "PRIMARY" | "SECONDARY";
+      if (ctx.body.code !== undefined) data.code = str(ctx.body.code) ?? null;
+      const dup = await prisma.subject.findFirst({
+        where: { schoolId, name: String(data.name ?? existing.name), section: (String(data.section ?? existing.section) as "PRIMARY" | "SECONDARY"), NOT: { id: ctx.id } },
+      });
+      if (dup) throw new Error(`Subject "${data.name}" already exists for that section`);
+      const subject = await prisma.subject.update({ where: { id: ctx.id }, data });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "subject.updated", entityType: "Subject", entityId: ctx.id });
+      return subject;
+    },
+
+    deleteSubject: async (ctx) => {
+      can(ctx, "subjects:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const existing = await prisma.subject.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!existing) throw new Error("Subject not found");
+      const used = await prisma.classSubject.count({ where: { subjectId: ctx.id } });
+      if (used > 0) throw new Error("This subject is assigned to classes — unassign it first");
+      await prisma.subject.delete({ where: { id: ctx.id } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "subject.deleted", entityType: "Subject", entityId: ctx.id });
+      return { ok: true };
+    },
+
+    // ---- Level edit/delete --------------------------------------------
+    updateLevel: async (ctx) => {
+      can(ctx, "classes:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const existing = await prisma.classLevel.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!existing) throw new Error("Level not found");
+      const data: Record<string, unknown> = {};
+      if (str(ctx.body.name)) data.name = str(ctx.body.name);
+      if (ctx.body.section !== undefined) data.section = str(ctx.body.section) as "PRIMARY" | "SECONDARY";
+      if (ctx.body.order !== undefined && ctx.body.order !== "") data.order = num(ctx.body.order);
+      const dup = await prisma.classLevel.findFirst({
+        where: { schoolId, name: String(data.name ?? existing.name), section: (String(data.section ?? existing.section) as "PRIMARY" | "SECONDARY"), NOT: { id: ctx.id } },
+      });
+      if (dup) throw new Error(`Level "${data.name}" already exists for that section`);
+      const level = await prisma.classLevel.update({ where: { id: ctx.id }, data });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "level.updated", entityType: "ClassLevel", entityId: ctx.id });
+      return level;
+    },
+
+    deleteLevel: async (ctx) => {
+      can(ctx, "classes:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const existing = await prisma.classLevel.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!existing) throw new Error("Level not found");
+      const classes = await prisma.classGroup.count({ where: { levelId: ctx.id } });
+      if (classes > 0) throw new Error("This level still has classes — delete or move those classes first");
+      await prisma.classLevel.delete({ where: { id: ctx.id } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "level.deleted", entityType: "ClassLevel", entityId: ctx.id });
+      return { ok: true };
+    },
+
+    // ---- Session edit/delete ------------------------------------------
+    updateSession: async (ctx) => {
+      can(ctx, "classes:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const existing = await prisma.academicSession.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!existing) throw new Error("Session not found");
+      const name = str(ctx.body.name);
+      if (!name) throw new Error("name required");
+      const dup = await prisma.academicSession.findFirst({ where: { schoolId, name, NOT: { id: ctx.id } } });
+      if (dup) throw new Error(`Session "${name}" already exists`);
+      const session = await prisma.academicSession.update({ where: { id: ctx.id }, data: { name } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "session.updated", entityType: "AcademicSession", entityId: ctx.id });
+      return session;
+    },
+
+    deleteSession: async (ctx) => {
+      can(ctx, "classes:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const existing = await prisma.academicSession.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!existing) throw new Error("Session not found");
+      const classes = await prisma.classGroup.count({ where: { sessionId: ctx.id } });
+      if (classes > 0) throw new Error("This session still has classes — delete those classes first");
+      await prisma.academicSession.delete({ where: { id: ctx.id } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "session.deleted", entityType: "AcademicSession", entityId: ctx.id });
+      return { ok: true };
+    },
+
+    // ---- Class group delete / subject unassign ------------------------
+    deleteClass: async (ctx) => {
+      can(ctx, "classes:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const cls = await prisma.classGroup.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!cls) throw new Error("Class not found");
+      await prisma.classGroup.delete({ where: { id: ctx.id } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "class.deleted", entityType: "ClassGroup", entityId: ctx.id });
+      return { ok: true };
+    },
+
+    unassignSubject: async (ctx) => {
+      can(ctx, "classes:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const subjectId = str(ctx.body.subjectId);
+      if (!subjectId) throw new Error("subjectId required");
+      const cs = await prisma.classSubject.findFirst({ where: { classGroupId: ctx.id, subjectId, schoolId } });
+      if (!cs) throw new Error("Subject is not assigned to this class");
+      await prisma.classSubject.delete({ where: { id: cs.id } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "classSubject.unassigned", entityType: "ClassSubject", entityId: cs.id });
+      return { ok: true };
     },
   },
 };

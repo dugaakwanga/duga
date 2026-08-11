@@ -153,6 +153,51 @@ export default function ElearnPage() {
 
   const studentsOfSelected = Object.values(rosters).flat();
 
+  const [editingItem, setEditingItem] = useState<ContentItem | null>(null);
+
+  function openEdit(item: ContentItem) {
+    setEditingItem(item);
+    setForm({
+      title: item.title,
+      description: item.description ?? "",
+      category: item.category ?? "VIDEO",
+      url: item.url ?? "",
+      body: item.body ?? "",
+      rewardPoints: String(item.rewardPoints ?? ""),
+      publish: item.isPublished ? "1" : "0",
+    });
+    setSelClassIds(Array.isArray(item.targetClassGroupIds) ? item.targetClassGroupIds as string[] : []);
+    setSelStudentIds(Array.isArray(item.targetStudentIds) ? item.targetStudentIds as string[] : []);
+    setOpen(true);
+  }
+
+  async function saveEdit() {
+    if (!editingItem) return;
+    if (!form.title) return alert("Enter a title");
+    try {
+      await api(`elearn/${editingItem.id}`, {
+        method: "PATCH",
+        body: {
+          title: form.title,
+          description: form.description || null,
+          category: form.category ?? "VIDEO",
+          url: form.url || null,
+          body: form.body || null,
+          rewardPoints: form.rewardPoints ? Number(form.rewardPoints) : 0,
+          isPublished: form.publish === "1",
+        },
+      });
+      setOpen(false);
+      setEditingItem(null);
+      setForm({});
+      setSelClassIds([]);
+      setSelStudentIds([]);
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -206,6 +251,7 @@ export default function ElearnPage() {
                       ) : (
                         <Button size="sm" variant="accent" loading={btn[`publish-${item.id}`]} onClick={() => action(item, "publish")}>Publish & assign</Button>
                       )}
+                      <Button size="sm" variant="outline" onClick={() => openEdit(item)}>Edit</Button>
                       <Button size="sm" variant="danger" loading={btn[`delete-${item.id}`]} onClick={() => action(item, "delete")}>Delete</Button>
                     </div>
                   ) : (
@@ -235,7 +281,7 @@ export default function ElearnPage() {
       )}
 
       {isManager && (
-        <Modal open={open} onClose={() => setOpen(false)} title="Assign online content" wide>
+        <Modal open={open} onClose={() => { setOpen(false); setEditingItem(null); }} title={editingItem ? "Edit content" : "Assign online content"} wide>
           <div style={{ display: "grid", gap: 12 }}>
             <Field label="Title" required>
               <Input value={form.title ?? ""} onChange={(e) => setForm({ ...form, title: e.target.value })} />
@@ -297,8 +343,8 @@ export default function ElearnPage() {
             </Field>
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
-            <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={create}>Assign content</Button>
+            <Button variant="ghost" onClick={() => { setOpen(false); setEditingItem(null); }}>Cancel</Button>
+            <Button onClick={editingItem ? saveEdit : create}>{editingItem ? "Save changes" : "Assign content"}</Button>
           </div>
         </Modal>
       )}

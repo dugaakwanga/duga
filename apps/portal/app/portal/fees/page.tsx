@@ -27,9 +27,9 @@ interface FeeStructure {
   id: string;
   amount: string | number;
   feeType: { id: string; name: string };
-  term: { name: string } | null;
-  level: { name: string } | null;
-  classGroup: { name: string; level: { name: string } } | null;
+  term: { id: string; name: string } | null;
+  level: { id: string; name: string } | null;
+  classGroup: { id: string; name: string; level: { id: string; name: string } } | null;
   section: string | null;
 }
 
@@ -71,6 +71,7 @@ export default function FeesPage() {
   const [open, setOpen] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
   const [setupKind, setSetupKind] = useState<SetupKind>("type");
+  const [editingSetupId, setEditingSetupId] = useState<string | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
   const [paying, setPaying] = useState<string | null>(null);
 
@@ -140,17 +141,63 @@ export default function FeesPage() {
     }
   }
 
+  async function deleteInvoice(invoiceId: string) {
+    if (!confirm("Delete this invoice? Only invoices with no payments can be deleted.")) return;
+    setPaying(invoiceId);
+    try {
+      await api(`fees/${invoiceId}/deleteInvoice`, { method: "POST", body: {} });
+      await load();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setPaying(null);
+    }
+  }
+
   function openSetup(kind: SetupKind) {
     setSetupKind(kind);
+    setEditingSetupId(null);
     setForm({});
+    setSetupOpen(true);
+  }
+
+  function openEditSetup(kind: SetupKind, item: FeeType | FeeStructure) {
+    setSetupKind(kind);
+    setEditingSetupId(item.id);
+    if (kind === "type") {
+      const t = item as FeeType;
+      setForm({ name: t.name, description: t.description ?? "", isRecurring: t.isRecurring ? "true" : "false", isOptional: t.isOptional ? "true" : "false" });
+    } else {
+      const s = item as FeeStructure;
+      setForm({
+        feeTypeId: s.feeType.id,
+        amount: String(Number(s.amount)),
+        termId: s.term?.id ?? "",
+        section: s.section ?? "",
+        levelId: s.level?.id ?? "",
+        classGroupId: s.classGroup?.id ?? "",
+      });
+    }
     setSetupOpen(true);
   }
 
   async function saveSetup() {
     try {
-      const path = setupKind === "type" ? "fees/addFeeType" : "fees/addFeeStructure";
-      await api(path, { method: "POST", body: form });
+      if (setupKind === "type") {
+        const body: Record<string, unknown> = {
+          name: form.name ?? "",
+          description: form.description ?? "",
+          isRecurring: form.isRecurring === "true",
+          isOptional: form.isOptional === "true",
+        };
+        const path = editingSetupId ? `fees/${editingSetupId}/updateFeeType` : "fees/addFeeType";
+        await api(path, { method: "POST", body });
+      } else {
+        const path = editingSetupId ? `fees/${editingSetupId}/updateFeeStructure` : "fees/addFeeStructure";
+        await api(path, { method: "POST", body: form });
+      }
       setSetupOpen(false);
+      setEditingSetupId(null);
       await load();
     } catch (e) {
       alert((e as Error).message);
@@ -215,7 +262,10 @@ export default function FeesPage() {
                     <Button size="sm" loading={paying === i.id} onClick={() => pay(i.id)}>Pay</Button>
                   )}
                   {isStaff && (
-                    <Button size="sm" variant="outline" loading={paying === i.id} onClick={() => recordManual(i.id)}>Record payment</Button>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <Button size="sm" variant="outline" loading={paying === i.id} onClick={() => recordManual(i.id)}>Record payment</Button>
+                      <Button size="sm" variant="ghost" loading={paying === i.id} onClick={() => deleteInvoice(i.id)}>Delete</Button>
+                    </div>
                   )}
                 </td>
               </tr>
@@ -238,7 +288,10 @@ export default function FeesPage() {
                     <td><Badge tone={t.isRecurring ? "success" : "neutral"}>{t.isRecurring ? "Yes" : "No"}</Badge></td>
                     <td><Badge tone={t.isOptional ? "warning" : "neutral"}>{t.isOptional ? "Yes" : "No"}</Badge></td>
                     <td>
-                      <Button variant="ghost" size="sm" onClick={() => removeSetup("type", t.id)}>Remove</Button>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <Button variant="outline" size="sm" onClick={() => openEditSetup("type", t)}>Edit</Button>
+                        <Button variant="ghost" size="sm" onClick={() => removeSetup("type", t.id)}>Remove</Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -264,7 +317,10 @@ export default function FeesPage() {
                           : s.section ?? "All classes"}
                     </td>
                     <td>
-                      <Button variant="ghost" size="sm" onClick={() => removeSetup("structure", s.id)}>Remove</Button>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <Button variant="outline" size="sm" onClick={() => openEditSetup("structure", s)}>Edit</Button>
+                        <Button variant="ghost" size="sm" onClick={() => removeSetup("structure", s.id)}>Remove</Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -297,7 +353,7 @@ export default function FeesPage() {
         </div>
       </Modal>
 
-      <Modal open={setupOpen} onClose={() => setSetupOpen(false)} title={setupKind === "type" ? "Add fee type" : "Add fee structure"}>
+      <Modal open={setupOpen} onClose={() => { setSetupOpen(false); setEditingSetupId(null); }} title={`${editingSetupId ? "Edit" : "Add"} ${setupKind === "type" ? "fee type" : "fee structure"}`}>
         {setupKind === "type" ? (
           <>
             <Field label="Name" required>
@@ -354,7 +410,7 @@ export default function FeesPage() {
           </>
         )}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
-          <Button variant="ghost" onClick={() => setSetupOpen(false)}>Cancel</Button>
+          <Button variant="ghost" onClick={() => { setSetupOpen(false); setEditingSetupId(null); }}>Cancel</Button>
           <Button onClick={saveSetup}>Save</Button>
         </div>
       </Modal>

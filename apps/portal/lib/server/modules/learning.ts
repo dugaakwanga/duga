@@ -517,5 +517,55 @@ export const learningModule: Module = {
       }
       return live;
     },
+
+    // ---- Deletion (owner/admin or owning teacher) -----------------------
+    deleteNote: async (ctx) => {
+      can(ctx, "learning:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const role = ctx.session.user.role;
+      const teacher = ctx.session.user.teacher;
+      const teacherFilter = role === "TEACHER" && teacher ? { teacherId: teacher.id } : {};
+      const note = await prisma.lessonNote.findFirst({ where: { id: ctx.id, schoolId, ...teacherFilter } });
+      if (!note) throw new Error("Note not found");
+      await prisma.lessonNote.delete({ where: { id: ctx.id } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "note.deleted", entityType: "LessonNote", entityId: ctx.id });
+      return { ok: true };
+    },
+
+    deleteAssignment: async (ctx) => {
+      can(ctx, "learning:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const role = ctx.session.user.role;
+      const teacher = ctx.session.user.teacher;
+      const teacherFilter = role === "TEACHER" && teacher ? { teacherId: teacher.id } : {};
+      const assignment = await prisma.assignment.findFirst({ where: { id: ctx.id, schoolId, ...teacherFilter } });
+      if (!assignment) throw new Error("Assignment not found");
+      await prisma.assignment.delete({ where: { id: ctx.id } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "assignment.deleted", entityType: "Assignment", entityId: ctx.id });
+      return { ok: true };
+    },
+
+    deleteTest: async (ctx) => {
+      can(ctx, "learning:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const role = ctx.session.user.role;
+      const teacher = ctx.session.user.teacher;
+      const teacherFilter = role === "TEACHER" && teacher ? { teacherId: teacher.id } : {};
+      const test = await prisma.test.findFirst({ where: { id: ctx.id, schoolId, ...teacherFilter } });
+      if (!test) throw new Error("Test not found");
+      await prisma.test.delete({ where: { id: ctx.id } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "test.deleted", entityType: "Test", entityId: ctx.id });
+      return { ok: true };
+    },
+
+    deleteLive: async (ctx) => {
+      can(ctx, "live:schedule");
+      const schoolId = ctx.session.user.schoolId;
+      const live = await prisma.liveClass.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!live) throw new Error("Live class not found");
+      await prisma.liveClass.delete({ where: { id: ctx.id } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "live.deleted", entityType: "LiveClass", entityId: ctx.id });
+      return { ok: true };
+    },
   },
 };

@@ -16,6 +16,7 @@ interface ClassGroup {
   session: Session;
   formTeacherId?: string | null;
   formTeacher?: { id: string; user: { firstName: string; lastName: string } } | null;
+  classSubjects?: { id: string; subject?: { id: string; name: string; section: string }; teacher?: { id: string } | null }[];
   _count?: { students: number };
 }
 
@@ -35,6 +36,8 @@ export default function ClassesPage() {
   const [saving, setSaving] = useState(false);
   const [assignTarget, setAssignTarget] = useState<ClassGroup | null>(null);
   const [assignForm, setAssignForm] = useState<Record<string, string>>({});
+  const [editingClass, setEditingClass] = useState<ClassGroup | null>(null);
+  const [editingItem, setEditingItem] = useState<{ kind: "subject" | "level" | "session"; id: string } | null>(null);
   const isAdmin = role === "OWNER" || role === "ADMIN";
 
   const load = useCallback(async () => {
@@ -59,6 +62,13 @@ export default function ClassesPage() {
 
   async function addClass() {
     try {
+      if (editingClass) {
+        await api(`classes/${editingClass.id}`, { method: "PATCH", body: form });
+        setOpen(false);
+        setEditingClass(null);
+        load();
+        return;
+      }
       await api("classes", { method: "POST", body: form });
       setOpen(false);
       const d = await api<{ items: ClassGroup[] }>("classes");
@@ -68,9 +78,62 @@ export default function ClassesPage() {
     }
   }
 
+  function openEditClass(c: ClassGroup) {
+    setEditingClass(c);
+    setForm({ name: c.name, room: c.room ?? "", formTeacherId: c.formTeacher?.id ?? "" });
+    setOpen(true);
+  }
+
+  async function deleteClass(c: ClassGroup) {
+    if (!confirm(`Delete class ${c.level.name} ${c.name}? This cannot be undone.`)) return;
+    try {
+      await api(`classes/${c.id}/deleteClass`, { method: "POST", body: {} });
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
   function openAdd(kind: "subject" | "level" | "session") {
     setAddKind(kind);
+    setEditingItem(null);
     setAddForm(kind === "session" ? {} : { section: "SECONDARY" });
+  }
+
+  function openEditItem(kind: "subject" | "level" | "session", id: string) {
+    setEditingItem({ kind, id });
+    const item = kind === "subject" ? subjects.find((s) => s.id === id) : kind === "level" ? levels.find((l) => l.id === id) : sessions.find((s) => s.id === id);
+    if (!item) return;
+    setAddForm({ name: item.name, section: (item as Subject | Level).section ?? "SECONDARY" });
+    setAddKind(kind as "subject" | "level" | "session");
+  }
+
+  async function saveEditItem() {
+    if (!editingItem) return;
+    setSaving(true);
+    try {
+      const action = editingItem.kind === "subject" ? "updateSubject" : editingItem.kind === "level" ? "updateLevel" : "updateSession";
+      await api(`classes/${editingItem.id}/${action}`, { method: "POST", body: addForm });
+      setAddKind("");
+      setEditingItem(null);
+      setAddForm({});
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteItem(kind: "subject" | "level" | "session", id: string) {
+    if (!confirm(`Delete this ${kind}? This cannot be undone.`)) return;
+    try {
+      const action = kind === "subject" ? "deleteSubject" : kind === "level" ? "deleteLevel" : "deleteSession";
+      await api(`classes/${id}/${action}`, { method: "POST", body: {} });
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    }
   }
 
   async function saveAdd() {
@@ -116,6 +179,16 @@ export default function ClassesPage() {
     }
   }
 
+  async function unassignSubject(c: ClassGroup, subjectId: string) {
+    if (!confirm(`Unassign this subject from ${c.level.name} ${c.name}?`)) return;
+    try {
+      await api(`classes/${c.id}/unassignSubject`, { method: "POST", body: { subjectId } });
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -154,13 +227,32 @@ export default function ClassesPage() {
               </div>
               {isAdmin && (
                 <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                  {(c.classSubjects?.length ?? 0) > 0 && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                      {(c.classSubjects ?? []).map((cs) => (
+                        <button
+                          key={cs.id}
+                          onClick={() => unassignSubject(c, cs.subject!.id)}
+                          className="duga-btn duga-btn--sm duga-btn--ghost"
+                          title={`Unassign ${cs.subject!.name}`}
+                          style={{ fontSize: 12, padding: "2px 8px" }}
+                        >
+                          {cs.subject!.name} ×
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <Select value={c.formTeacher?.id ?? ""} onChange={(e) => assignFormTeacher(c, e.target.value)}>
                     <option value="">— Select class teacher —</option>
                     {teachers.map((t) => (
                       <option key={t.id} value={t.id}>{t.firstName} {t.lastName}</option>
                     ))}
                   </Select>
-                  <Button size="sm" variant="outline" onClick={() => { setAssignTarget(c); setAssignForm({}); }}><Icon name="quiz" size={14} /> Assign subject</Button>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <Button size="sm" variant="outline" onClick={() => { setAssignTarget(c); setAssignForm({}); }}><Icon name="quiz" size={14} /> Assign subject</Button>
+                    <Button size="sm" variant="outline" onClick={() => openEditClass(c)}>Edit</Button>
+                    <Button size="sm" variant="ghost" onClick={() => deleteClass(c)}>Delete</Button>
+                  </div>
                 </div>
               )}
             </Card>
@@ -168,27 +260,83 @@ export default function ClassesPage() {
         </div>
       )}
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Create class group">
-        <div style={{ marginBottom: 12 }}>
-          {levels.length === 0 && <Alert tone="warning">No levels yet — add a level first (e.g. Basic 1, JSS 1) using the &quot;Add level&quot; button.</Alert>}
-          {sessions.length === 0 && <Alert tone="warning">No sessions yet — add a session first (e.g. 2025/2026) using the &quot;Add session&quot; button.</Alert>}
+      {isAdmin && (
+        <div style={{ marginTop: 28 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 16 }}>
+            <Card title="Subjects">
+              {subjects.length === 0 ? <EmptyState title="No subjects" /> : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {subjects.map((s) => (
+                    <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 13.5 }}>{s.name} <Badge tone="neutral">{s.section.toLowerCase()}</Badge></span>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <Button size="sm" variant="ghost" onClick={() => openEditItem("subject", s.id)}>Edit</Button>
+                        <Button size="sm" variant="ghost" onClick={() => deleteItem("subject", s.id)}>Delete</Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+            <Card title="Levels">
+              {levels.length === 0 ? <EmptyState title="No levels" /> : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {levels.map((l) => (
+                    <div key={l.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 13.5 }}>{l.name} <Badge tone="neutral">{l.section.toLowerCase()}</Badge></span>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <Button size="sm" variant="ghost" onClick={() => openEditItem("level", l.id)}>Edit</Button>
+                        <Button size="sm" variant="ghost" onClick={() => deleteItem("level", l.id)}>Delete</Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+            <Card title="Sessions">
+              {sessions.length === 0 ? <EmptyState title="No sessions" /> : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {sessions.map((s) => (
+                    <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 13.5 }}>{s.name}</span>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <Button size="sm" variant="ghost" onClick={() => openEditItem("session", s.id)}>Edit</Button>
+                        <Button size="sm" variant="ghost" onClick={() => deleteItem("session", s.id)}>Delete</Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </div>
         </div>
-        <Field label="Level" required>
-          <Select value={form.levelId ?? ""} onChange={(e) => setForm({ ...form, levelId: e.target.value })}>
-            <option value="">Select level…</option>
-            {levels.map((l) => (
-              <option key={l.id} value={l.id}>{l.name} ({l.section.toLowerCase()})</option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Session" required>
-          <Select value={form.sessionId ?? ""} onChange={(e) => setForm({ ...form, sessionId: e.target.value })}>
-            <option value="">Select session…</option>
-            {sessions.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </Select>
-        </Field>
+      )}
+
+      <Modal open={open} onClose={() => { setOpen(false); setEditingClass(null); }} title={editingClass ? `Edit class — ${editingClass.level.name} ${editingClass.name}` : "Create class group"}>
+        {!editingClass && (
+          <>
+            <div style={{ marginBottom: 12 }}>
+              {levels.length === 0 && <Alert tone="warning">No levels yet — add a level first (e.g. Basic 1, JSS 1) using the &quot;Add level&quot; button.</Alert>}
+              {sessions.length === 0 && <Alert tone="warning">No sessions yet — add a session first (e.g. 2025/2026) using the &quot;Add session&quot; button.</Alert>}
+            </div>
+            <Field label="Level" required>
+              <Select value={form.levelId ?? ""} onChange={(e) => setForm({ ...form, levelId: e.target.value })}>
+                <option value="">Select level…</option>
+                {levels.map((l) => (
+                  <option key={l.id} value={l.id}>{l.name} ({l.section.toLowerCase()})</option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Session" required>
+              <Select value={form.sessionId ?? ""} onChange={(e) => setForm({ ...form, sessionId: e.target.value })}>
+                <option value="">Select session…</option>
+                {sessions.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </Select>
+            </Field>
+          </>
+        )}
         <Field label="Class name" required>
           <Input value={form.name ?? ""} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. A or 1A" />
         </Field>
@@ -204,8 +352,8 @@ export default function ClassesPage() {
           </Select>
         </Field>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
-          <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={addClass}>Create</Button>
+          <Button variant="ghost" onClick={() => { setOpen(false); setEditingClass(null); }}>Cancel</Button>
+          <Button onClick={addClass}>{editingClass ? "Save changes" : "Create"}</Button>
         </div>
       </Modal>
 
@@ -237,8 +385,8 @@ export default function ClassesPage() {
 
       <Modal
         open={!!addKind}
-        onClose={() => setAddKind("")}
-        title={addKind === "subject" ? "Add subject" : addKind === "level" ? "Add level" : "Add session"}
+        onClose={() => { setAddKind(""); setEditingItem(null); }}
+        title={`${editingItem ? "Edit" : "Add"} ${addKind === "subject" ? "subject" : addKind === "level" ? "level" : "session"}`}
       >
         {addKind === "level" && (
           <div style={{ marginBottom: 12 }}>
@@ -266,8 +414,8 @@ export default function ClassesPage() {
           </Field>
         )}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
-          <Button variant="ghost" onClick={() => setAddKind("")}>Cancel</Button>
-          <Button onClick={saveAdd} loading={saving}>Save</Button>
+          <Button variant="ghost" onClick={() => { setAddKind(""); setEditingItem(null); }}>Cancel</Button>
+          <Button onClick={editingItem ? saveEditItem : saveAdd} loading={saving}>{editingItem ? "Save changes" : "Save"}</Button>
         </div>
       </Modal>
     </div>

@@ -1,6 +1,7 @@
 import { prisma, logAudit, dispatchNotification } from "@duga/core/server";
 import type { Module } from ".";
 import { can, str, num } from "../helpers";
+import { removeFile } from "../storage";
 
 const loanStatus = (loan: { borrowedAt: Date; dueDate: Date | null; returnedAt: Date | null; status: string }) => {
   if (loan.returnedAt) return "RETURNED";
@@ -65,6 +66,9 @@ export const libraryModule: Module = {
       const title = str(ctx.body.title);
       if (!title) throw new Error("title is required");
       const totalCopies = Math.max(num(ctx.body.totalCopies) ?? 1, 1);
+      const fileUrl = str(ctx.body.fileUrl);
+      const fileMime = str(ctx.body.fileMime);
+      const fileSize = num(ctx.body.fileSize);
       const book = await prisma.libraryBook.create({
         data: {
           schoolId: ctx.session.user.schoolId,
@@ -76,6 +80,11 @@ export const libraryModule: Module = {
           totalCopies,
           availableCopies: Math.max(num(ctx.body.availableCopies) ?? totalCopies, 0),
           coverUrl: str(ctx.body.coverUrl),
+          coverKey: str(ctx.body.coverUrl) ? str(ctx.body.coverKey) : null,
+          fileUrl,
+          fileKey: fileUrl ? str(ctx.body.fileKey) : null,
+          fileMime,
+          fileSize: fileSize ?? null,
           description: str(ctx.body.description),
           addedByUserId: ctx.session.user.id,
         },
@@ -96,6 +105,17 @@ export const libraryModule: Module = {
       if (ctx.body.category !== undefined) data.category = str(ctx.body.category) ?? "General";
       if (ctx.body.shelfLocation !== undefined) data.shelfLocation = str(ctx.body.shelfLocation) ?? null;
       if (ctx.body.coverUrl !== undefined) data.coverUrl = str(ctx.body.coverUrl) ?? null;
+      if (ctx.body.coverKey !== undefined && data.coverUrl) data.coverKey = str(ctx.body.coverKey) || null;
+      if (ctx.body.fileUrl !== undefined) data.fileUrl = str(ctx.body.fileUrl) || null;
+      if (ctx.body.fileKey !== undefined && data.fileUrl) data.fileKey = str(ctx.body.fileKey) || null;
+      if (ctx.body.fileMime !== undefined && data.fileUrl !== null) data.fileMime = str(ctx.body.fileMime) || null;
+      if (ctx.body.fileSize !== undefined && data.fileUrl !== null) data.fileSize = num(ctx.body.fileSize) ?? null;
+      if (ctx.body.clearFile) {
+        data.fileUrl = null;
+        data.fileKey = null;
+        data.fileMime = null;
+        data.fileSize = null;
+      }
       if (ctx.body.description !== undefined) data.description = str(ctx.body.description) ?? null;
       if (ctx.body.totalCopies !== undefined) data.totalCopies = Math.max(num(ctx.body.totalCopies) ?? existing.totalCopies, 1);
       if (ctx.body.availableCopies !== undefined) data.availableCopies = Math.max(num(ctx.body.availableCopies) ?? existing.availableCopies, 0);
@@ -111,6 +131,8 @@ export const libraryModule: Module = {
       if (!existing) throw new Error("Book not found");
       const openLoans = await prisma.bookLoan.count({ where: { bookId: ctx.id, returnedAt: null } });
       if (openLoans > 0) throw new Error("Cannot delete a book with outstanding loans");
+      if (existing.fileKey) await removeFile(existing.fileKey).catch(() => {});
+      if (existing.coverKey) await removeFile(existing.coverKey).catch(() => {});
       await prisma.libraryBook.delete({ where: { id: ctx.id } });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "library.bookDeleted", entityType: "LibraryBook", entityId: ctx.id });
       return { ok: true };
@@ -178,6 +200,22 @@ export const libraryModule: Module = {
       const loan = await prisma.bookLoan.update({ where: { id: ctx.id }, data: { status: "LOST", returnedAt: new Date() } });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "library.loanLost", entityType: "BookLoan", entityId: ctx.id });
       return { ok: true, loan };
+    },
+
+    deleteLoan: async (ctx) => {
+      can(ctx, "library:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const existing = await prisma.bookLoan.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!existing) throw new Error("Loan not found");
+      if (!existing.returnedAt) {
+        const book = await prisma.libraryBook.findUnique({ where: { id: existing.bookId } });
+        if (book) {
+          await prisma.libraryBook.update({ where: { id: book.id }, data: { availableCopies: Math.min(book.availableCopies + 1, book.totalCopies) } });
+        }
+      }
+      await prisma.bookLoan.delete({ where: { id: ctx.id } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "library.loanDeleted", entityType: "BookLoan", entityId: ctx.id });
+      return { ok: true };
     },
   },
 };

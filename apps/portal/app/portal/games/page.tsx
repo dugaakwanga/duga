@@ -58,6 +58,7 @@ export default function GamesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<GameItem | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
   const [selClassIds, setSelClassIds] = useState<string[]>([]);
   const [selStudentIds, setSelStudentIds] = useState<string[]>([]);
@@ -123,6 +124,56 @@ export default function GamesPage() {
         },
       });
       setOpen(false);
+      setForm({});
+      setSelClassIds([]);
+      setSelStudentIds([]);
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
+  async function openEdit(item: GameItem) {
+    const classIds = Array.isArray(item.targetClassGroupIds) ? (item.targetClassGroupIds as string[]).filter(Boolean) : [];
+    const studentIds = Array.isArray(item.targetStudentIds) ? (item.targetStudentIds as string[]).filter(Boolean) : [];
+    loadRosterForClasses(classIds);
+    setEditing(item);
+    setForm({
+      title: item.title,
+      description: item.description ?? "",
+      category: item.category ?? "QUIZ",
+      gameUrl: item.gameUrl ?? "",
+      difficulty: item.difficulty ?? "MEDIUM",
+      rewardPoints: item.rewardPoints != null ? String(item.rewardPoints) : "0",
+      publish: item.isPublished ? "1" : "0",
+    });
+    setSelClassIds(classIds);
+    setSelStudentIds(studentIds);
+    setOpen(true);
+  }
+
+  async function saveEdit() {
+    if (!editing) return;
+    if (!form.title) return alert("Enter a title");
+    const classIds = selClassIds;
+    const studentIds = selStudentIds;
+    try {
+      await api(`games/${editing.id}`, {
+        method: "PATCH",
+        body: {
+          title: form.title,
+          description: form.description || undefined,
+          category: form.category ?? "QUIZ",
+          gameUrl: form.gameUrl || undefined,
+          difficulty: form.difficulty ?? "MEDIUM",
+          rewardPoints: form.rewardPoints ? Number(form.rewardPoints) : 0,
+          targetClassGroupIds: classIds,
+          targetStudentIds: studentIds,
+          isPublished: form.publish === "1",
+        },
+      });
+      setOpen(false);
+      setEditing(null);
       setForm({});
       setSelClassIds([]);
       setSelStudentIds([]);
@@ -208,6 +259,7 @@ export default function GamesPage() {
                     ) : (
                       <Button size="sm" variant="accent" loading={btn[`publish-${item.id}`]} onClick={() => action(item, "publish")}>Publish & assign</Button>
                     )}
+                    <Button size="sm" variant="outline" onClick={() => openEdit(item)}>Edit</Button>
                     <Button size="sm" variant="danger" loading={btn[`delete-${item.id}`]} onClick={() => action(item, "delete")}>Delete</Button>
                   </div>
                 ) : (
@@ -228,7 +280,7 @@ export default function GamesPage() {
       )}
 
       {isManager && (
-        <Modal open={open} onClose={() => setOpen(false)} title="Create educational game" wide>
+        <Modal open={open} onClose={() => { setOpen(false); setEditing(null); }} title={editing ? "Edit educational game" : "Create educational game"} wide>
           <div style={{ display: "grid", gap: 12 }}>
             <Field label="Title" required>
               <Input value={form.title ?? ""} onChange={(e) => setForm({ ...form, title: e.target.value })} />
@@ -298,8 +350,8 @@ export default function GamesPage() {
             </Field>
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
-            <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={create}>Create game</Button>
+            <Button variant="ghost" onClick={() => { setOpen(false); setEditing(null); }}>Cancel</Button>
+            <Button onClick={editing ? saveEdit : create}>{editing ? "Save changes" : "Create game"}</Button>
           </div>
         </Modal>
       )}

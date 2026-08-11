@@ -63,6 +63,33 @@ export const hostelModule: Module = {
       });
     },
 
+    updateHostel: async (ctx) => {
+      can(ctx, "hostel:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const hostel = await prisma.hostel.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!hostel) throw new Error("Hostel not found");
+      const data: Record<string, unknown> = {};
+      if (ctx.body.name !== undefined) data.name = str(ctx.body.name) ?? hostel.name;
+      if (ctx.body.gender !== undefined) data.gender = str(ctx.body.gender) as "MALE" | "FEMALE" | undefined;
+      if (ctx.body.capacity !== undefined) data.capacity = Number(ctx.body.capacity) || 0;
+      if (ctx.body.wardenUserId !== undefined) data.wardenUserId = str(ctx.body.wardenUserId);
+      return prisma.hostel.update({ where: { id: ctx.id }, data });
+    },
+
+    deleteHostel: async (ctx) => {
+      can(ctx, "hostel:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const hostel = await prisma.hostel.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!hostel) throw new Error("Hostel not found");
+      const active = await prisma.hostelAllocation.count({ where: { hostelId: ctx.id, status: "ACTIVE" } });
+      if (active > 0) throw new Error("This hostel still has active room allocations — release them first");
+      const total = await prisma.hostelRoom.count({ where: { hostelId: ctx.id } });
+      if (total > 0) throw new Error("Delete the rooms inside this hostel first");
+      await prisma.hostel.delete({ where: { id: ctx.id } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "hostel.deleted", entityType: "Hostel", entityId: ctx.id });
+      return { ok: true };
+    },
+
     addRoom: async (ctx) => {
       can(ctx, "hostel:manage");
       const schoolId = ctx.session.user.schoolId;
@@ -77,6 +104,37 @@ export const hostelModule: Module = {
         data: Array.from({ length: capacity }, (_, i) => ({ roomId: room.id, bedNumber: String(i + 1) })),
       });
       return room;
+    },
+
+    updateRoom: async (ctx) => {
+      can(ctx, "hostel:manage");
+      const room = await prisma.hostelRoom.findUnique({ where: { id: ctx.id }, include: { hostel: true } });
+      if (!room) throw new Error("Room not found");
+      const roomId = room.id;
+      const data: Record<string, unknown> = {};
+      if (ctx.body.roomNumber !== undefined) data.roomNumber = str(ctx.body.roomNumber) ?? room.roomNumber;
+      if (ctx.body.floor !== undefined) data.floor = Number(ctx.body.floor) || undefined;
+      if (ctx.body.capacity !== undefined && Number(ctx.body.capacity) > 0) {
+        data.capacity = Number(ctx.body.capacity);
+        const existingBeds = await prisma.hostelBed.count({ where: { roomId } });
+        const diff = Number(ctx.body.capacity) - existingBeds;
+        if (diff > 0) {
+          await prisma.hostelBed.createMany({
+            data: Array.from({ length: diff }, (_, i) => ({ roomId, bedNumber: String(existingBeds + i + 1) })),
+          });
+        }
+      }
+      return prisma.hostelRoom.update({ where: { id: roomId }, data });
+    },
+
+    deleteRoom: async (ctx) => {
+      can(ctx, "hostel:manage");
+      const room = await prisma.hostelRoom.findUnique({ where: { id: ctx.id } });
+      if (!room) throw new Error("Room not found");
+      const occupied = await prisma.hostelBed.count({ where: { roomId: ctx.id, isOccupied: true } });
+      if (occupied > 0) throw new Error("This room still has occupied beds — release them first");
+      await prisma.hostelRoom.delete({ where: { id: ctx.id } });
+      return { ok: true };
     },
 
     // Admin: allocate a bed to a boarding student
@@ -165,6 +223,14 @@ export const hostelModule: Module = {
         where: { id: ctx.id },
         data: { status: "RESOLVED", actionTaken: str(ctx.body.actionTaken), resolvedAt: new Date() },
       });
+    },
+
+    deleteIncident: async (ctx) => {
+      can(ctx, "hostel:manage");
+      const incident = await prisma.hostelIncident.findFirst({ where: { id: ctx.id, schoolId: ctx.session.user.schoolId } });
+      if (!incident) throw new Error("Incident not found");
+      await prisma.hostelIncident.delete({ where: { id: ctx.id } });
+      return { ok: true };
     },
   },
 };

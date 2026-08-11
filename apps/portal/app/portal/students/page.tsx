@@ -120,6 +120,19 @@ export default function StudentsPage() {
     });
   }
 
+  async function removeStudent(s: Student) {
+    if (!confirm(`Remove "${s.user.firstName} ${s.user.lastName}"? This deactivates their account so they can no longer sign in.`)) return;
+    setSaving(true);
+    try {
+      await api(`students/${s.id}`, { method: "DELETE" });
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function feeBadge(s: Student) {
     if (!s.fee || (!s.fee.feeAmount || Number(s.fee.feeAmount) === 0)) return <Badge tone="neutral">No fee set</Badge>;
     if (s.fee.expired) return <Badge tone="danger">Expired</Badge>;
@@ -169,6 +182,7 @@ export default function StudentsPage() {
                   <div style={{ display: "flex", gap: 8 }}>
                     <Button size="sm" variant="ghost" onClick={() => openEdit(s)}>Edit</Button>
                     <Button size="sm" variant="outline" onClick={() => { setFeeTarget(s); setFeeForm({}); }}>Set fee</Button>
+                    <Button size="sm" variant="danger" onClick={() => removeStudent(s)}>Remove</Button>
                   </div>
                 </td>
               </tr>

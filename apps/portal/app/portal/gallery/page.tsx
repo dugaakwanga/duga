@@ -76,6 +76,20 @@ export default function GalleryAdminPage() {
     }
   }
 
+  async function saveEdit(g: GalleryItem) {
+    try {
+      await api(`gallery/${g.id}`, { method: "PATCH", body: { title: editingTitle, category: editingCategory } });
+      setEditing(null);
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
+  const [editing, setEditing] = useState<GalleryItem | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
+  const [editingCategory, setEditingCategory] = useState("Students");
+
   return (
     <div>
       <PageHeader
@@ -135,10 +149,32 @@ export default function GalleryAdminPage() {
               />
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 700, color: "var(--duga-primary-ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.title}</div>
-                  <Badge tone="accent">{g.category}</Badge>
+                  {editing?.id === g.id ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 180 }}>
+                      <Input value={editingTitle} onChange={(e) => setEditingTitle(e.target.value)} />
+                      <Select value={editingCategory} onChange={(e) => setEditingCategory(e.target.value)}>
+                        {CATEGORIES.map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </Select>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <Button size="sm" variant="accent" onClick={() => saveEdit(g)}>Save</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 13.5, fontWeight: 700, color: "var(--duga-primary-ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.title}</div>
+                      <Badge tone="accent">{g.category}</Badge>
+                    </>
+                  )}
                 </div>
-                <Button size="sm" variant="danger" onClick={() => remove(g.id)}>Remove</Button>
+                {editing?.id !== g.id && (
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <Button size="sm" variant="outline" onClick={() => { setEditing(g); setEditingTitle(g.title); setEditingCategory(g.category); }}>Edit</Button>
+                    <Button size="sm" variant="danger" onClick={() => remove(g.id)}>Remove</Button>
+                  </div>
+                )}
               </div>
             </Card>
           ))}

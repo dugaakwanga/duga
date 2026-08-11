@@ -199,6 +199,20 @@ export const studentsModule: Module = {
     return { ...student, fee: feeInfoOf(student) };
   },
 
+  // Soft delete: deactivate the account so the student can no longer sign in,
+  // and mark the student withdrawn. Records (invoices, results, attendance)
+  // are preserved for history.
+  async remove(ctx) {
+    can(ctx, "students:manage");
+    const schoolId = ctx.session.user.schoolId;
+    const student = await prisma.student.findFirst({ where: { id: ctx.id, schoolId }, include: { user: true } });
+    if (!student) throw new Error("Student not found");
+    await prisma.user.update({ where: { id: student.userId }, data: { status: "DEACTIVATED" } });
+    await prisma.student.update({ where: { id: ctx.id }, data: { status: "WITHDRAWN" } });
+    await logAudit({ schoolId, userId: ctx.session.user.id, action: "student.deleted", entityType: "Student", entityId: ctx.id });
+    return { ok: true };
+  },
+
   // Promote / change class
   actions: {
     // Set / renew a student's fee window (amount, days) and reopen access.

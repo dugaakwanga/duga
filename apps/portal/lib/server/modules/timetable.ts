@@ -47,7 +47,17 @@ export const timetableModule: Module = {
       take: 200,
     });
 
-    return { grid, examTimetable };
+    const isManager = role === "OWNER" || role === "ADMIN";
+    const refs = isManager
+      ? {
+          classes: await prisma.classGroup.findMany({ where: { schoolId }, include: { level: true }, orderBy: { name: "asc" }, take: 300 }),
+          subjects: await prisma.subject.findMany({ where: { schoolId }, orderBy: { name: "asc" }, take: 200 }),
+          teachers: await prisma.user.findMany({ where: { schoolId, role: "TEACHER" }, select: { id: true, firstName: true, lastName: true }, orderBy: { firstName: "asc" }, take: 300 }),
+          terms: await prisma.term.findMany({ where: { schoolId }, orderBy: { name: "asc" }, take: 100 }),
+        }
+      : {};
+
+    return { grid, examTimetable, refs };
   },
 
   actions: {
@@ -90,6 +100,26 @@ export const timetableModule: Module = {
       return entry;
     },
 
+    updateEntry: async (ctx) => {
+      can(ctx, "timetable:manage");
+      const existing = await prisma.timetableEntry.findUnique({ where: { id: ctx.id } });
+      if (!existing) throw new Error("Entry not found");
+      const data: Record<string, unknown> = {};
+      const b = ctx.body;
+      if (b.subjectId !== undefined) data.subjectId = str(b.subjectId);
+      if (b.teacherId !== undefined) data.teacherId = str(b.teacherId);
+      if (b.classGroupId !== undefined) data.classGroupId = str(b.classGroupId);
+      if (b.termId !== undefined) data.termId = str(b.termId);
+      if (b.dayOfWeek !== undefined) data.dayOfWeek = num(b.dayOfWeek);
+      if (b.periodNumber !== undefined) data.periodNumber = num(b.periodNumber);
+      if (b.startTime !== undefined) data.startTime = str(b.startTime);
+      if (b.endTime !== undefined) data.endTime = str(b.endTime);
+      if (b.room !== undefined) data.room = str(b.room);
+      const entry = await prisma.timetableEntry.update({ where: { id: ctx.id }, data });
+      await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "timetable.updated", entityType: "TimetableEntry", entityId: ctx.id });
+      return entry;
+    },
+
     addExam: async (ctx) => {
       can(ctx, "timetable:manage");
       const schoolId = ctx.session.user.schoolId;
@@ -108,6 +138,31 @@ export const timetableModule: Module = {
           venue: str(ctx.body.venue),
         },
       });
+      return entry;
+    },
+
+    updateExam: async (ctx) => {
+      can(ctx, "timetable:manage");
+      const existing = await prisma.examTimetableEntry.findUnique({ where: { id: ctx.id } });
+      if (!existing) throw new Error("Exam entry not found");
+      const data: Record<string, unknown> = {};
+      const b = ctx.body;
+      if (b.subjectId !== undefined) data.subjectId = str(b.subjectId);
+      if (b.classGroupId !== undefined) data.classGroupId = str(b.classGroupId);
+      if (b.termId !== undefined) data.termId = str(b.termId);
+      if (b.date !== undefined) data.date = new Date(`${str(b.date)}T00:00:00Z`);
+      if (b.startTime !== undefined) data.startTime = str(b.startTime);
+      if (b.endTime !== undefined) data.endTime = str(b.endTime);
+      if (b.venue !== undefined) data.venue = str(b.venue);
+      const entry = await prisma.examTimetableEntry.update({ where: { id: ctx.id }, data });
+      await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "timetable.examUpdated", entityType: "ExamTimetableEntry", entityId: ctx.id });
+      return entry;
+    },
+
+    removeExam: async (ctx) => {
+      can(ctx, "timetable:manage");
+      const entry = await prisma.examTimetableEntry.delete({ where: { id: ctx.id } });
+      await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "timetable.examDeleted", entityType: "ExamTimetableEntry", entityId: ctx.id });
       return entry;
     },
   },

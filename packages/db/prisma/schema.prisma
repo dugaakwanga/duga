@@ -1636,6 +1636,11 @@ model LibraryBook {
   totalCopies    Int      @default(1)
   availableCopies Int     @default(1)
   coverUrl       String?
+  coverKey       String?
+  fileUrl        String?
+  fileKey        String?
+  fileMime       String?
+  fileSize       Int?
   description    String?
   addedByUserId  String?
   createdAt      DateTime @default(now())

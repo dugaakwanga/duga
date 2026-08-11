@@ -54,6 +54,7 @@ export default function PtaPage() {
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState<ModalKind>("executive");
+  const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
@@ -72,7 +73,26 @@ export default function PtaPage() {
 
   function openModal(kind: ModalKind) {
     setKind(kind);
+    setEditId(null);
     setForm({});
+    setOpen(true);
+  }
+
+  function openEdit(kind: ModalKind, id: string) {
+    const item = kind === "executive" ? data?.executives.find((e) => e.id === id) : kind === "meeting" ? data?.meetings.find((m) => m.id === id) : data?.contributions.find((c) => c.id === id);
+    if (!item) return;
+    setKind(kind);
+    setEditId(id);
+    if (kind === "executive") {
+      const e = item as Executive;
+      setForm({ name: e.name, role: e.role, phone: e.phone ?? "", email: e.email ?? "" });
+    } else if (kind === "meeting") {
+      const m = item as Meeting;
+      setForm({ title: m.title, date: m.date ? new Date(m.date).toISOString().slice(0, 10) : "", venue: m.venue ?? "", agenda: m.agenda ?? "" });
+    } else {
+      const c = item as Contribution;
+      setForm({ memberName: c.memberName, amount: String(c.amount), method: c.method, date: c.date ? new Date(c.date).toISOString().slice(0, 10) : "" });
+    }
     setOpen(true);
   }
 
@@ -80,14 +100,26 @@ export default function PtaPage() {
     setSaving(true);
     setError(null);
     try {
-      const path =
-        kind === "executive"
-          ? "pta/addExecutive"
-          : kind === "meeting"
-            ? "pta/addMeeting"
-            : "pta/addContribution";
+      let path: string;
+      if (editId) {
+        path =
+          kind === "executive"
+            ? `pta/${editId}/updateExecutive`
+            : kind === "meeting"
+              ? `pta/${editId}/updateMeeting`
+              : ""; // contributions have no update endpoint
+        if (!path) throw new Error("Contributions cannot be edited — remove and re-add instead.");
+      } else {
+        path =
+          kind === "executive"
+            ? "pta/addExecutive"
+            : kind === "meeting"
+              ? "pta/addMeeting"
+              : "pta/addContribution";
+      }
       await api(path, { method: "POST", body: form });
       setOpen(false);
+      setEditId(null);
       await load();
     } catch (e) {
       setError((e as Error).message);
@@ -116,7 +148,9 @@ export default function PtaPage() {
   if (loading || !data) return <Spinner size={28} />;
 
   const modalTitle =
-    kind === "executive" ? "Add executive" : kind === "meeting" ? "Add meeting" : "Add contribution";
+    editId
+      ? (kind === "executive" ? "Edit executive" : kind === "meeting" ? "Edit meeting" : "Add contribution")
+      : (kind === "executive" ? "Add executive" : kind === "meeting" ? "Add meeting" : "Add contribution");
 
   return (
     <div>
@@ -148,9 +182,10 @@ export default function PtaPage() {
                 {e.phone && <div style={{ fontSize: 13, color: "var(--duga-muted)", marginTop: 6 }}>{e.phone}</div>}
                 {e.email && <div style={{ fontSize: 13, color: "var(--duga-muted)" }}>{e.email}</div>}
                 {isStaff && (
-                  <Button variant="ghost" size="sm" style={{ marginTop: 10 }} onClick={() => remove("executive", e.id)}>
-                    Remove
-                  </Button>
+                  <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+                    <Button variant="ghost" size="sm" onClick={() => openEdit("executive", e.id)}>Edit</Button>
+                    <Button variant="ghost" size="sm" onClick={() => remove("executive", e.id)}>Remove</Button>
+                  </div>
                 )}
               </div>
             ))}
@@ -171,7 +206,10 @@ export default function PtaPage() {
                 <td style={{ maxWidth: 320, whiteSpace: "normal" }}>{m.agenda ?? "—"}</td>
                 {isStaff && (
                   <td>
-                    <Button variant="ghost" size="sm" onClick={() => remove("meeting", m.id)}>Remove</Button>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <Button variant="ghost" size="sm" onClick={() => openEdit("meeting", m.id)}>Edit</Button>
+                      <Button variant="ghost" size="sm" onClick={() => remove("meeting", m.id)}>Remove</Button>
+                    </div>
                   </td>
                 )}
               </tr>
@@ -205,7 +243,7 @@ export default function PtaPage() {
         </Card>
       )}
 
-      <Modal open={open} onClose={() => setOpen(false)} title={modalTitle}>
+      <Modal open={open} onClose={() => { setOpen(false); setEditId(null); }} title={modalTitle}>
         {kind === "executive" && (
           <>
             <Field label="Full name" required>
@@ -255,8 +293,8 @@ export default function PtaPage() {
           </>
         )}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
-          <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={submit} loading={saving}>Save</Button>
+          <Button variant="ghost" onClick={() => { setOpen(false); setEditId(null); }}>Cancel</Button>
+          <Button onClick={submit} loading={saving}>{editId ? "Save changes" : "Save"}</Button>
         </div>
       </Modal>
     </div>

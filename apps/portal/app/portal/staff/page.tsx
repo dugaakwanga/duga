@@ -24,6 +24,7 @@ export default function StaffPage() {
   const [form, setForm] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [editing, setEditing] = useState<StaffUser | null>(null);
 
   // Reset-password modal
   const [resetTarget, setResetTarget] = useState<StaffUser | null>(null);
@@ -50,17 +51,46 @@ export default function StaffPage() {
   async function save() {
     setSaving(true);
     try {
-      await api("staff", { method: "POST", body: form });
+      if (editing) {
+        await api(`staff/${editing.id}`, { method: "PATCH", body: form });
+        setNotice("Staff member updated.");
+      } else {
+        await api("staff", { method: "POST", body: form });
+        setNotice(form.tempPassword
+          ? `Staff member added. Temporary password: ${form.tempPassword} — they will be asked to change it on first login.`
+          : "Staff member added. They will be asked to set their own password on first login.");
+      }
       setOpen(false);
+      setEditing(null);
       setForm({});
-      setNotice(form.tempPassword
-        ? `Staff member added. Temporary password: ${form.tempPassword} — they will be asked to change it on first login.`
-        : "Staff member added. They will be asked to set their own password on first login.");
       load();
     } catch (e) {
       alert((e as Error).message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  function openEdit(u: StaffUser) {
+    setEditing(u);
+    setForm({
+      status: u.status,
+      phone: u.phone ?? "",
+      specialty: u.teacher?.specialty ?? "",
+      designation: u.teacher?.designation ?? u.admin?.designation ?? "",
+    });
+    setError(null);
+    setOpen(true);
+  }
+
+  async function removeStaff(u: StaffUser) {
+    if (!confirm(`Remove ${u.firstName} ${u.lastName}? Their account will be suspended.`)) return;
+    try {
+      await api(`staff/${u.id}`, { method: "DELETE" });
+      setNotice(`${u.firstName} ${u.lastName} has been removed.`);
+      load();
+    } catch (e) {
+      alert((e as Error).message);
     }
   }
 
@@ -108,9 +138,15 @@ export default function StaffPage() {
                 <td>{u.teacher?.staffNumber ?? u.admin?.designation ?? "—"}</td>
                 <td><Badge tone={u.status === "ACTIVE" ? "success" : "danger"}>{u.status}</Badge></td>
                 <td>
-                  <Button size="sm" variant="ghost" onClick={() => { setResetTarget(u); setTempPassword(""); setResetError(null); }}>
-                    Set password
-                  </Button>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <Button size="sm" variant="ghost" onClick={() => { setResetTarget(u); setTempPassword(""); setResetError(null); }}>
+                      Set password
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => openEdit(u)}>Edit</Button>
+                    {u.role !== "OWNER" && (
+                      <Button size="sm" variant="ghost" onClick={() => removeStaff(u)}>Remove</Button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -118,44 +154,63 @@ export default function StaffPage() {
         </Card>
       )}
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Add staff member">
-        <Alert tone="info" >Any one of email, phone or staff number works. The staff member signs in with that identifier and sets their own password on first login.</Alert>
+      <Modal open={open} onClose={() => { setOpen(false); setEditing(null); }} title={editing ? `Edit staff — ${editing.firstName} ${editing.lastName}` : "Add staff member"}>
+        {!editing && <Alert tone="info" >Any one of email, phone or staff number works. The staff member signs in with that identifier and sets their own password on first login.</Alert>}
         <div className="duga-form-grid" style={{ marginTop: 14 }}>
-          <Field label="Role" required>
-            <Select value={form.role ?? ""} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-              <option value="">Select…</option>
-              <option value="TEACHER">Teacher</option>
-              <option value="ADMIN">Admin</option>
-            </Select>
-          </Field>
-          <Field label="Designation">
-            <Input value={form.designation ?? ""} onChange={(e) => setForm({ ...form, designation: e.target.value })} placeholder="e.g. Senior Teacher" />
-          </Field>
-          <Field label="First name" required>
-            <Input value={form.firstName ?? ""} onChange={(e) => setForm({ ...form, firstName: e.target.value })} />
-          </Field>
-          <Field label="Last name" required>
-            <Input value={form.lastName ?? ""} onChange={(e) => setForm({ ...form, lastName: e.target.value })} />
-          </Field>
-          <Field label="Email">
-            <Input type="email" value={form.email ?? ""} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-          </Field>
-          <Field label="Phone">
-            <Input value={form.phone ?? ""} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-          </Field>
-          <Field label="Staff number">
-            <Input value={form.staffNumber ?? ""} onChange={(e) => setForm({ ...form, staffNumber: e.target.value })} placeholder="Auto if empty" />
-          </Field>
+          {!editing ? (
+            <>
+              <Field label="Role" required>
+                <Select value={form.role ?? ""} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+                  <option value="">Select…</option>
+                  <option value="TEACHER">Teacher</option>
+                  <option value="ADMIN">Admin</option>
+                </Select>
+              </Field>
+              <Field label="Designation">
+                <Input value={form.designation ?? ""} onChange={(e) => setForm({ ...form, designation: e.target.value })} placeholder="e.g. Senior Teacher" />
+              </Field>
+              <Field label="First name" required>
+                <Input value={form.firstName ?? ""} onChange={(e) => setForm({ ...form, firstName: e.target.value })} />
+              </Field>
+              <Field label="Last name" required>
+                <Input value={form.lastName ?? ""} onChange={(e) => setForm({ ...form, lastName: e.target.value })} />
+              </Field>
+              <Field label="Email">
+                <Input type="email" value={form.email ?? ""} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+              </Field>
+              <Field label="Phone">
+                <Input value={form.phone ?? ""} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+              </Field>
+              <Field label="Staff number">
+                <Input value={form.staffNumber ?? ""} onChange={(e) => setForm({ ...form, staffNumber: e.target.value })} placeholder="Auto if empty" />
+              </Field>
+            </>
+          ) : (
+            <>
+              <Field label="Status">
+                <Select value={form.status ?? "ACTIVE"} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                  <option value="ACTIVE">Active</option>
+                  <option value="SUSPENDED">Suspended</option>
+                  <option value="INACTIVE">Inactive</option>
+                </Select>
+              </Field>
+              <Field label="Phone">
+                <Input value={form.phone ?? ""} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+              </Field>
+            </>
+          )}
           <Field label="Specialty">
             <Input value={form.specialty ?? ""} onChange={(e) => setForm({ ...form, specialty: e.target.value })} />
           </Field>
+          {!editing && (
           <Field label="Temporary password" hint="Optional — leave empty to let them set their own password on first login.">
             <Input value={form.tempPassword ?? ""} onChange={(e) => setForm({ ...form, tempPassword: e.target.value })} placeholder="At least 8 characters" />
           </Field>
+          )}
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
-          <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={save} loading={saving}>Add staff</Button>
+          <Button variant="ghost" onClick={() => { setOpen(false); setEditing(null); }}>Cancel</Button>
+          <Button onClick={save} loading={saving}>{editing ? "Save changes" : "Add staff"}</Button>
         </div>
       </Modal>
 

@@ -237,6 +237,19 @@ export const feesModule: Module = {
       return { ok: true };
     },
 
+    deleteInvoice: async (ctx) => {
+      can(ctx, "fees:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const invoice = await prisma.invoice.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!invoice) throw new Error("Invoice not found");
+      const paid = Number(invoice.paidAmount);
+      const payments = await prisma.payment.count({ where: { invoiceId: ctx.id } });
+      if (paid > 0 || payments > 0) throw new Error("This invoice has payments recorded — delete the payments first");
+      await prisma.invoice.delete({ where: { id: ctx.id } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.invoiceDeleted", entityType: "Invoice", entityId: ctx.id });
+      return { ok: true };
+    },
+
     // Initiate a Paystack payment for an invoice
     initPayment: async (ctx) => {
       can(ctx, "payments:make");

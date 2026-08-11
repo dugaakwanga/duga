@@ -104,6 +104,18 @@ export const staffModule: Module = {
     return user;
   },
 
+  async remove(ctx) {
+    can(ctx, "staff:manage");
+    const schoolId = ctx.session.user.schoolId;
+    const target = await prisma.user.findFirst({ where: { id: ctx.id, schoolId } });
+    if (!target) throw new Error("Staff member not found");
+    if (target.role === "OWNER") throw new Error("The school owner cannot be removed");
+    if (target.id === ctx.session.user.id) throw new Error("You cannot remove your own account");
+    await prisma.user.update({ where: { id: ctx.id }, data: { status: "SUSPENDED" } });
+    await logAudit({ schoolId, userId: ctx.session.user.id, action: "staff.deleted", entityType: "User", entityId: ctx.id, meta: { role: target.role } });
+    return { ok: true };
+  },
+
   actions: {
     // Owner/admin can issue a temporary password so the staff member can sign
     // in; they must then change it on first login (mustChangePassword = true).
