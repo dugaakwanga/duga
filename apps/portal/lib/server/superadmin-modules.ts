@@ -538,19 +538,23 @@ export const saModules: Record<string, SAModule> = {
     },
 
     actions: {
-      // POST /api/superadmin/features/disable  { schoolId, ids: string[] }
+      // POST /api/superadmin/features/disable  { schoolId, ids: string[], subIds: string[] }
       disable: async (ctx) => {
         const schoolId = String(ctx.body.schoolId ?? "");
         const ids = Array.isArray(ctx.body.ids) ? ctx.body.ids.filter((x): x is string => typeof x === "string") : [];
+        const subIds = Array.isArray(ctx.body.subIds)
+          ? (ctx.body.subIds as string[]).filter((x): x is string => typeof x === "string")
+          : [];
         if (!schoolId) throw new Error("schoolId required");
         const cfg = await getFeatureConfig(schoolId);
         cfg.disabled = [...new Set(ids)];
+        cfg.disabledSubs = [...new Set(subIds)];
         await prisma.schoolSetting.upsert({
           where: { schoolId_key: { schoolId, key: FEATURE_SETTING_KEY } },
           update: { value: cfg as unknown as never },
           create: { schoolId, key: FEATURE_SETTING_KEY, value: cfg as unknown as never },
         });
-        await logActivity(ctx, "features.disable", { schoolId, disabled: cfg.disabled });
+        await logActivity(ctx, "features.disable", { schoolId, disabled: cfg.disabled, disabledSubs: cfg.disabledSubs });
         return { ok: true, config: cfg };
       },
 

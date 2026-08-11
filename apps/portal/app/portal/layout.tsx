@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@duga/core/server";
 import { PortalShell } from "@/components/PortalShell";
 import { prisma } from "@duga/core/server";
-import { featuresForRole } from "@/lib/server/features";
+import { featuresForRole, subfeaturesForRole } from "@/lib/server/features";
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
@@ -21,6 +21,7 @@ export default async function PortalLayout({ children }: { children: React.React
     financeAccess = row?.value === true || row?.value === "true";
   }
   const features = await featuresForRole(user.schoolId, user.role);
+  const subfeatures = await subfeaturesForRole(user.schoolId, user.role);
   return (
     <PortalShell
       user={{
@@ -30,6 +31,7 @@ export default async function PortalLayout({ children }: { children: React.React
         schoolId: user.schoolId,
         financeAccess,
         features,
+        subfeatures,
       }}
     >
       {children}

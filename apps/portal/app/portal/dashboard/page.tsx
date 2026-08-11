@@ -54,8 +54,8 @@ export default function DashboardPage() {
             <Stat label="Students" value={data.counts?.studentCount} />
             <Stat label="Staff" value={data.counts?.staffCount} />
             <Stat label="Classes" value={data.counts?.classCount} />
-            <Stat label="Fees collected" value={naira(data.feeSummary?.paid)} tone="success" />
-            <Stat label="Outstanding" value={naira(data.feeSummary?.balance)} tone="danger" />
+            {data.feeSummary && <Stat label="Fees collected" value={naira(data.feeSummary.paid)} tone="success" />}
+            {data.feeSummary && <Stat label="Outstanding" value={naira(data.feeSummary.balance)} tone="danger" />}
             <Stat label="New applications" value={data.counts?.applications} tone="info" />
             <Stat label="Attendance today" value={data.counts?.today} />
           </div>
@@ -137,28 +137,30 @@ export default function DashboardPage() {
               <EmptyState title="No linked children" />
             )}
           </Card>
-          <Card title="Outstanding fees">
-            {data.invoices?.length ? (
-              <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
-                {data.invoices.map((i) => (
-                  <li key={i.id} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid var(--duga-border)" }}>
-                    <span>
-                      <Badge tone={i.status === "PAID" ? "success" : i.status === "PARTIAL" ? "warning" : "danger"}>{i.status}</Badge>
-                      <div style={{ fontSize: 12, color: "var(--duga-muted)", marginTop: 2 }}>
-                        {i.student ? `${i.student.user.firstName} ${i.student.user.lastName}` : ""}
-                      </div>
-                    </span>
-                    <span>{naira(i.balance)}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <EmptyState title="No outstanding fees" />
-            )}
-            <Link href="/portal/fees" className="duga-btn duga-btn--outline duga-btn--sm" style={{ marginTop: 12, display: "inline-flex" }}>
-              Pay fees
-            </Link>
-          </Card>
+          {data.invoices !== null && (
+            <Card title="Outstanding fees">
+              {data.invoices?.length ? (
+                <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
+                  {data.invoices.map((i) => (
+                    <li key={i.id} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid var(--duga-border)" }}>
+                      <span>
+                        <Badge tone={i.status === "PAID" ? "success" : i.status === "PARTIAL" ? "warning" : "danger"}>{i.status}</Badge>
+                        <div style={{ fontSize: 12, color: "var(--duga-muted)", marginTop: 2 }}>
+                          {i.student ? `${i.student.user.firstName} ${i.student.user.lastName}` : ""}
+                        </div>
+                      </span>
+                      <span>{naira(i.balance)}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <EmptyState title="No outstanding fees" />
+              )}
+              <Link href="/portal/fees" className="duga-btn duga-btn--outline duga-btn--sm" style={{ marginTop: 12, display: "inline-flex" }}>
+                Pay fees
+              </Link>
+            </Card>
+          )}
         </div>
       ) : null}
 

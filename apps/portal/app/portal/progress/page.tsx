@@ -12,7 +12,7 @@ interface ProgressData {
   fees: {
     series: Array<{ label: string; value: number }>;
     summary: { total: number; paid: number; balance: number };
-  };
+  } | null;
   attendance: { series: Array<{ label: string; value: number }> };
   enrollment: { series: Array<{ label: string; value: number }> };
   scores: { series: Array<{ label: string; value: number; passRate: number }> };
@@ -34,8 +34,11 @@ export default function ProgressPage() {
   if (error) return <Alert tone="danger">{error}</Alert>;
   if (!data) return <Spinner size={28} />;
 
-  const collectionRate =
-    data.fees.summary.total > 0 ? Math.round((data.fees.summary.paid / data.fees.summary.total) * 100) : 0;
+  const collectionRate = data.fees
+    ? data.fees.summary.total > 0
+      ? Math.round((data.fees.summary.paid / data.fees.summary.total) * 100)
+      : 0
+    : 0;
   const lastAttendance = data.attendance.series[data.attendance.series.length - 1];
   const lastAvg = data.scores.series[data.scores.series.length - 1];
 
@@ -50,18 +53,20 @@ export default function ProgressPage() {
         <Stat label="Students" value={formatNumber(data.classes.studentCount)} />
         {data.role !== "STUDENT" && <Stat label="Staff" value={formatNumber(data.classes.teacherCount)} />}
         <Stat label="Classes" value={formatNumber(data.classes.classCount)} />
-        <Stat label="Fee collection rate" value={`${collectionRate}%`} tone={collectionRate >= 80 ? "success" : collectionRate >= 50 ? "warning" : "danger"} />
+        {data.fees && <Stat label="Fee collection rate" value={`${collectionRate}%`} tone={collectionRate >= 80 ? "success" : collectionRate >= 50 ? "warning" : "danger"} />}
         <Stat label="Attendance" value={lastAttendance ? `${lastAttendance.value}%` : "—"} tone="info" />
         {lastAvg && <Stat label="Average score" value={String(lastAvg.value)} tone="accent" />}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(340px,1fr))", gap: 18 }}>
-        <Card title="Fees collected (last 6 months)">
-          <BarChart points={data.fees.series} color="var(--duga-success, #1a8754)" format={naira} />
-          <div style={{ marginTop: 16 }}>
-            <Donut value={data.fees.summary.paid} total={data.fees.summary.total} label="Collected vs billed" color="var(--duga-success, #1a8754)" />
-          </div>
-        </Card>
+        {data.fees && (
+          <Card title="Fees collected (last 6 months)">
+            <BarChart points={data.fees.series} color="var(--duga-success, #1a8754)" format={naira} />
+            <div style={{ marginTop: 16 }}>
+              <Donut value={data.fees.summary.paid} total={data.fees.summary.total} label="Collected vs billed" color="var(--duga-success, #1a8754)" />
+            </div>
+          </Card>
+        )}
 
         <Card title="Attendance rate (last 7 days)">
           <BarChart points={data.attendance.series} color="var(--duga-info, #0d6efd)" format={(v) => `${v}%`} />

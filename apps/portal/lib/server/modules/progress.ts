@@ -1,5 +1,6 @@
 import { prisma } from "@duga/core/server";
 import type { Module } from ".";
+import { subfeatureEnabled } from "../features";
 
 // ---------------------------------------------------------------------------
 // School progress analytics — role-scoped statistical charts.
@@ -170,12 +171,13 @@ export const progressModule: Module = {
 
     const ids = role === "TEACHER" ? scopedStudentIds : role === "STUDENT" ? ownIds : undefined;
 
+    const financeOn = await subfeatureEnabled(schoolId, role, "finance");
     const [fees, attendance, enrollment, scores, summary, classes] = await Promise.all([
-      feesSeries(schoolId, ids),
+      financeOn ? feesSeries(schoolId, ids) : Promise.resolve([] as Array<{ label: string; value: number }>),
       attendanceSeries(schoolId, ids),
       enrollmentSeries(schoolId),
       scoreSeries(schoolId, ids),
-      feeSummary(schoolId, ids),
+      financeOn ? feeSummary(schoolId, ids) : Promise.resolve({ total: 0, paid: 0, balance: 0 }),
       classStats(schoolId, role === "TEACHER" ? teacher?.id : undefined, ids),
     ]);
 
@@ -183,7 +185,7 @@ export const progressModule: Module = {
       role,
       scoped: role === "OWNER" ? false : true,
       classes,
-      fees: { series: fees, summary },
+      fees: financeOn ? { series: fees, summary } : null,
       attendance: { series: attendance },
       enrollment: { series: enrollment },
       scores: { series: scores },

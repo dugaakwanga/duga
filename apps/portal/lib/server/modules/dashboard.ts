@@ -1,11 +1,13 @@
 import { prisma } from "@duga/core/server";
 import type { Module } from ".";
+import { subfeatureEnabled } from "../features";
 
 // Role-aware dashboard summaries.
 export const dashboardModule: Module = {
   async list(ctx) {
     const role = ctx.session.user.role;
     const schoolId = ctx.session.user.schoolId;
+    const financeOn = await subfeatureEnabled(schoolId, role, "finance");
 
     if (role === "OWNER" || role === "ADMIN") {
       const [studentCount, staffCount, classCount, invoiceStats, applications, unpaid, today] = await Promise.all([
@@ -18,12 +20,12 @@ export const dashboardModule: Module = {
         prisma.studentAttendance.count({ where: { schoolId, date: new Date() } }),
       ]);
       // Finance figures are owner-only by default; the admin sees them only if
-      // the owner granted finance access.
-      let finance = false;
-      if (role === "OWNER") finance = true;
-      else if (role === "ADMIN") {
+      // the owner granted finance access. The superadmin's finance master
+      // switch overrides both (finance off -> figures hidden for everyone).
+      let finance = financeOn;
+      if (role === "ADMIN") {
         const row = await prisma.schoolSetting.findUnique({ where: { schoolId_key: { schoolId, key: "adminFinanceAccess" } } });
-        finance = row?.value === true || row?.value === "true";
+        finance = financeOn && (row?.value === true || row?.value === "true");
       }
       return {
         role,
@@ -65,12 +67,15 @@ export const dashboardModule: Module = {
         include: { student: { include: { classGroup: { include: { level: true } } } } },
       });
       const childIds = children.map((c) => c.studentId);
-      const [invoices, announcements, reportCards] = await Promise.all([
-        prisma.invoice.findMany({ where: { schoolId, studentId: { in: childIds }, status: { in: ["UNPAID", "PARTIAL"] } }, take: 5 }),
-        prisma.announcement.findMany({ where: { schoolId }, orderBy: { createdAt: "desc" }, take: 3 }),
-        prisma.reportCard.findMany({ where: { schoolId, studentId: { in: childIds }, isPublished: true }, include: { student: { select: { id: true } } }, take: 3 }),
-      ]);
-      return { role, children, invoices, announcements, reportCards };
+      return {
+        role,
+        children,
+        invoices: financeOn
+          ? await prisma.invoice.findMany({ where: { schoolId, studentId: { in: childIds }, status: { in: ["UNPAID", "PARTIAL"] } }, take: 5 })
+          : null,
+        announcements: await prisma.announcement.findMany({ where: { schoolId }, orderBy: { createdAt: "desc" }, take: 3 }),
+        reportCards: await prisma.reportCard.findMany({ where: { schoolId, studentId: { in: childIds }, isPublished: true }, include: { student: { select: { id: true } } }, take: 3 }),
+      };
     }
 
     if (role === "STUDENT") {
@@ -88,7 +93,9 @@ export const dashboardModule: Module = {
           take: 5,
         }),
         prisma.reportCard.findFirst({ where: { studentId: student.id }, orderBy: { createdAt: "desc" } }),
-        prisma.invoice.findFirst({ where: { studentId: student.id }, orderBy: { createdAt: "desc" } }),
+        financeOn
+          ? prisma.invoice.findFirst({ where: { studentId: student.id }, orderBy: { createdAt: "desc" } })
+          : Promise.resolve(null),
       ]);
       return { role, classSubjects, assignments, live, reportCard, invoice };
     }

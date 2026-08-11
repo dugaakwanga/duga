@@ -3,8 +3,25 @@ import { jitsiRoomLink, logAudit, dispatchNotification, dispatchToMany } from "@
 import type { Module } from ".";
 import type { Ctx } from "@/app/api/v1/[...path]/route";
 import { can, str, num, pick, idArray, isAssignedTo } from "../helpers";
+import { assertSubfeature } from "../features";
 
 type Kind = "notes" | "assignments" | "tests" | "live";
+
+const subIdForKind: Record<string, string> = {
+  notes: "learning:notes",
+  note: "learning:notes",
+  assignments: "learning:assignments",
+  assignment: "learning:assignments",
+  tests: "learning:cbt",
+  test: "learning:cbt",
+  live: "learning:live",
+};
+
+/** Block the request unless the sub-feature behind a learning kind is on. */
+async function assertKindSubfeature(ctx: Ctx, kind: string): Promise<void> {
+  const subId = subIdForKind[kind];
+  if (subId) await assertSubfeature(ctx, subId);
+}
 
 async function visibleClassSubjectIds(ctx: Ctx): Promise<string[]> {
   const role = ctx.session.user.role;
@@ -41,6 +58,7 @@ export const learningModule: Module = {
   async list(ctx) {
     const kind = (ctx.query.get("kind") ?? "notes") as Kind;
     can(ctx, "learning:view");
+    await assertKindSubfeature(ctx, kind);
     const ids = await visibleClassSubjectIds(ctx);
     const where = { classSubjectId: { in: ids }, schoolId: ctx.session.user.schoolId };
 
@@ -93,6 +111,7 @@ export const learningModule: Module = {
   async get(ctx) {
     const kind = (ctx.query.get("kind") ?? "notes") as Kind;
     can(ctx, "learning:view");
+    await assertKindSubfeature(ctx, kind);
     if (kind === "notes") return prisma.lessonNote.findUnique({ where: { id: ctx.id }, include: includeBase });
     if (kind === "assignments") return prisma.assignment.findUnique({ where: { id: ctx.id }, include: { ...includeBase, submissions: { include: { student: { include: { user: { select: { firstName: true, lastName: true } } } } } } } });
     if (kind === "tests") {
@@ -118,6 +137,7 @@ export const learningModule: Module = {
       throw err;
     }
     can(ctx, "learning:manage");
+    await assertKindSubfeature(ctx, kind);
     const schoolId = ctx.session.user.schoolId;
     const classSubjectId = str(ctx.body.classSubjectId);
     if (!classSubjectId) throw new Error("classSubjectId required");
@@ -230,6 +250,7 @@ export const learningModule: Module = {
   async update(ctx) {
     const kind = (ctx.query.get("kind") ?? "note") as string;
     can(ctx, "learning:manage");
+    await assertKindSubfeature(ctx, kind);
     if (kind === "notes") return prisma.lessonNote.update({ where: { id: ctx.id }, data: pick(ctx.body, ["topic", "content", "week"]) });
     if (kind === "assignments") return prisma.assignment.update({ where: { id: ctx.id }, data: pick(ctx.body, ["title", "instructions", "dueAt", "isPublished", "maxScore", "targetStudentIds"]) });
     if (kind === "tests") {
@@ -251,6 +272,7 @@ export const learningModule: Module = {
     // Teacher publishes an assignment (notify targets) — also used to re-share.
     publishAssignment: async (ctx) => {
       can(ctx, "learning:manage");
+      await assertSubfeature(ctx, "learning:assignments");
       const schoolId = ctx.session.user.schoolId;
       const teacher = ctx.session.user.teacher!;
       const assignment = await prisma.assignment.findFirst({ where: { id: ctx.id, schoolId, teacherId: teacher.id } });
@@ -271,6 +293,7 @@ export const learningModule: Module = {
     publishTest: async (ctx) => {
       const schoolId = ctx.session.user.schoolId;
       const role = ctx.session.user.role;
+      await assertSubfeature(ctx, "learning:cbt");
       const teacher = ctx.session.user.teacher;
       if (role !== "OWNER" && role !== "ADMIN") {
         can(ctx, "learning:manage");
@@ -299,6 +322,7 @@ export const learningModule: Module = {
     // Teacher views all attempts/results for a CBT (or answers per attempt).
     testResults: async (ctx) => {
       can(ctx, "learning:grade");
+      await assertSubfeature(ctx, "learning:cbt");
       const schoolId = ctx.session.user.schoolId;
       const teacher = ctx.session.user.teacher!;
       const test = await prisma.test.findFirst({ where: { id: ctx.id, schoolId, teacherId: teacher.id } });
@@ -328,6 +352,7 @@ export const learningModule: Module = {
     // Share test results with all students who attempted it.
     shareResults: async (ctx) => {
       can(ctx, "learning:grade");
+      await assertSubfeature(ctx, "learning:cbt");
       const schoolId = ctx.session.user.schoolId;
       const teacher = ctx.session.user.teacher!;
       const test = await prisma.test.findFirst({ where: { id: ctx.id, schoolId, teacherId: teacher.id } });
@@ -347,6 +372,7 @@ export const learningModule: Module = {
     // Student submits an assignment
     submitAssignment: async (ctx) => {
       can(ctx, "assignments:submit");
+      await assertSubfeature(ctx, "learning:assignments");
       const student = ctx.session.user.student;
       if (!student) throw new Error("Only students can submit assignments");
       const submission = await prisma.assignmentSubmission.upsert({
@@ -367,6 +393,7 @@ export const learningModule: Module = {
     // Teacher grades a submission
     gradeAssignment: async (ctx) => {
       can(ctx, "learning:grade");
+      await assertSubfeature(ctx, "learning:assignments");
       const score = num(ctx.body.score);
       if (score === undefined) throw new Error("score required");
       const submission = await prisma.assignmentSubmission.update({
@@ -384,6 +411,7 @@ export const learningModule: Module = {
     // Student submits a test; auto-graded (CBT-style)
     submitTest: async (ctx) => {
       can(ctx, "tests:take");
+      await assertSubfeature(ctx, "learning:cbt");
       const student = ctx.session.user.student;
       if (!student) throw new Error("Only students can take tests");
       const test = await prisma.test.findUnique({ where: { id: ctx.id }, include: { questions: true } });
@@ -447,16 +475,19 @@ export const learningModule: Module = {
     // Live class control
     startLive: async (ctx) => {
       can(ctx, "live:schedule");
+      await assertSubfeature(ctx, "learning:live");
       const live = await prisma.liveClass.update({ where: { id: ctx.id }, data: { status: "LIVE" } });
       return live;
     },
     endLive: async (ctx) => {
       can(ctx, "live:schedule");
+      await assertSubfeature(ctx, "learning:live");
       const live = await prisma.liveClass.update({ where: { id: ctx.id }, data: { status: "ENDED" } });
       return live;
     },
     joinLive: async (ctx) => {
       can(ctx, "live:join");
+      await assertSubfeature(ctx, "learning:live");
       const student = ctx.session.user.student;
       const live = await prisma.liveClass.findUnique({ where: { id: ctx.id } });
       if (!live) throw new Error("Live class not found");

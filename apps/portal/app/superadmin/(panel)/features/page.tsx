@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Card, Badge, Button, Alert, Spinner, Select, Field } from "@duga/ui";
-import { FEATURES, type FeatureDef } from "@/lib/features";
+import { FEATURES, GLOBAL_SUBFEATURES, type FeatureDef } from "@/lib/features";
 import { WEB_PAGES, WEB_FEATURES } from "@duga/core";
 
 async function saApi<T = unknown>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
@@ -27,6 +27,7 @@ interface SchoolRow {
 
 interface FeatureConfig {
   disabled: string[];
+  disabledSubs: string[];
   admin: string[];
   teacher: string[];
   family: string[];
@@ -52,6 +53,11 @@ export default function SuperAdminFeatures() {
   const groups = useMemo(() => {
     const order = [...new Set(FEATURES.map((f) => f.group))];
     return order.map((g) => ({ group: g, features: FEATURES.filter((f) => f.group === g) }));
+  }, []);
+
+  const globalGroups = useMemo(() => {
+    const order = [...new Set(GLOBAL_SUBFEATURES.map((s) => s.group ?? "Student environment"))];
+    return order.map((g) => ({ group: g, subs: GLOBAL_SUBFEATURES.filter((s) => (s.group ?? "Student environment") === g) }));
   }, []);
 
   useEffect(() => {
@@ -89,6 +95,7 @@ export default function SuperAdminFeatures() {
   if (loading) return <Spinner size={28} />;
 
   const disabled = new Set(config?.disabled ?? []);
+  const disabledSubs = new Set(config?.disabledSubs ?? []);
 
   function toggle(f: FeatureDef) {
     if (!config) return;
@@ -100,13 +107,23 @@ export default function SuperAdminFeatures() {
     setSaved(false);
   }
 
+  function toggleSub(id: string) {
+    if (!config) return;
+    const on = disabledSubs.has(id);
+    const next = new Set(disabledSubs);
+    if (on) next.delete(id);
+    else next.add(id);
+    setConfig({ ...config, disabledSubs: [...next] });
+    setSaved(false);
+  }
+
   async function save() {
     if (!config) return;
     setBusy(true);
     setError(null);
     setSaved(false);
     try {
-      await saApi("features/disable", { method: "POST", body: { schoolId, ids: config.disabled } });
+      await saApi("features/disable", { method: "POST", body: { schoolId, ids: config.disabled, subIds: config.disabledSubs } });
       setSaved(true);
     } catch (e) {
       setError((e as Error).message);
@@ -310,14 +327,88 @@ export default function SuperAdminFeatures() {
                   <div style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--duga-muted)", marginBottom: 10 }}>
                     {group}
                   </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 10 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 10, alignItems: "start" }}>
                     {features.map((f) => {
                       const off = disabled.has(f.id);
                       return (
+                        <div key={f.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          <button
+                            type="button"
+                            onClick={() => toggle(f)}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: 10,
+                              padding: "10px 12px",
+                              border: `1px solid ${off ? "var(--duga-danger)" : "var(--duga-border)"}`,
+                              borderRadius: 10,
+                              background: off ? "var(--duga-danger-soft, rgba(220,53,69,0.08))" : "transparent",
+                              cursor: "pointer",
+                              textAlign: "left",
+                              fontSize: 13.5,
+                              fontWeight: 600,
+                            }}
+                          >
+                            <span>{f.label}</span>
+                            <Badge tone={off ? "danger" : "success"}>{off ? "Disabled" : "On"}</Badge>
+                          </button>
+                          {f.subfeatures && f.subfeatures.length > 0 && (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                              {(f.subfeatures ?? []).map((s) => {
+                                const subOff = disabledSubs.has(s.id);
+                                return (
+                                  <button
+                                    key={s.id}
+                                    type="button"
+                                    onClick={() => toggleSub(s.id)}
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "space-between",
+                                      gap: 10,
+                                      padding: "7px 10px",
+                                      border: `1px solid ${subOff ? "var(--duga-danger)" : "var(--duga-border)"}`,
+                                      borderRadius: 8,
+                                      background: subOff ? "var(--duga-danger-soft, rgba(220,53,69,0.08))" : off ? "rgba(0,0,0,0.04)" : "transparent",
+                                      cursor: off ? "not-allowed" : "pointer",
+                                      opacity: off ? 0.6 : 1,
+                                      textAlign: "left",
+                                      fontSize: 12.5,
+                                      fontWeight: 500,
+                                    }}
+                                    title={s.hint}
+                                  >
+                                    <span>{s.label}</span>
+                                    <Badge tone={off || subOff ? "danger" : "success"}>{off || subOff ? "Off" : "On"}</Badge>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+
+              {globalGroups.map(({ group, subs }) => (
+                <div key={group} style={{ marginBottom: 18, paddingTop: 18, borderTop: "1px solid var(--duga-border)" }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--duga-muted)", marginBottom: 10 }}>
+                    {group}
+                  </div>
+                  <div style={{ fontSize: 13, color: "var(--duga-muted)", marginBottom: 12 }}>
+                    Master switches that apply to the whole school regardless of role.
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 10, alignItems: "start" }}>
+                    {subs.map((s) => {
+                      const off = disabledSubs.has(s.id);
+                      return (
                         <button
-                          key={f.id}
+                          key={s.id}
                           type="button"
-                          onClick={() => toggle(f)}
+                          onClick={() => toggleSub(s.id)}
                           style={{
                             display: "flex",
                             alignItems: "center",
@@ -332,9 +423,13 @@ export default function SuperAdminFeatures() {
                             fontSize: 13.5,
                             fontWeight: 600,
                           }}
+                          title={s.hint}
                         >
-                          <span>{f.label}</span>
-                          <Badge tone={off ? "danger" : "success"}>{off ? "Disabled" : "On"}</Badge>
+                          <span>
+                            {s.label}
+                            {s.hint && <div style={{ fontSize: 11.5, fontWeight: 400, color: "var(--duga-muted)", marginTop: 2 }}>{s.hint}</div>}
+                          </span>
+                          <Badge tone={off ? "danger" : "success"}>{off ? "Off" : "On"}</Badge>
                         </button>
                       );
                     })}

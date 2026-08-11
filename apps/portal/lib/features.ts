@@ -16,6 +16,19 @@ export interface FeatureDef {
   resources: string[];
   /** Roles that use this feature by default (owner is always all-access). */
   roles: Role[];
+  /** Optional finer-grained sub-features the superadmin can switch off on top of the whole feature. */
+  subfeatures?: SubFeatureDef[];
+}
+
+export interface SubFeatureDef {
+  /** Fully-qualified sub-feature id, e.g. "learning:cbt". */
+  id: string;
+  label: string;
+  hint?: string;
+  /** Parent feature id when this sub-feature lives under a single feature. */
+  feature?: string;
+  /** Group heading in the superadmin UI (defaults to the feature's group). */
+  group?: string;
 }
 
 export const FEATURES: FeatureDef[] = [
@@ -60,6 +73,12 @@ export const FEATURES: FeatureDef[] = [
     group: "Academics",
     resources: ["learning", "teacher"],
     roles: ["ADMIN", "TEACHER", "PARENT", "STUDENT"],
+    subfeatures: [
+      { id: "learning:notes", label: "Lesson notes", hint: "Teachers' daily notes shared with students." },
+      { id: "learning:assignments", label: "Assignments", hint: "Assignments, submissions and grading." },
+      { id: "learning:cbt", label: "CBT / tests", hint: "Computer-based tests and exams." },
+      { id: "learning:live", label: "Live classes", hint: "Live video classes." },
+    ],
   },
   {
     id: "elearn",
@@ -163,6 +182,38 @@ export const FEATURES: FeatureDef[] = [
 
 export const FEATURE_BY_RESOURCE: Record<string, string> = {};
 for (const f of FEATURES) for (const r of f.resources) FEATURE_BY_RESOURCE[r] = f.id;
+
+/**
+ * Global sub-features that are not tied to a single portal feature but still
+ * narrow the platform for a whole school (superadmin-controlled).
+ */
+export const GLOBAL_SUBFEATURES: SubFeatureDef[] = [
+  {
+    id: "finance",
+    label: "Finance",
+    hint: "Master switch: when off, all finance-touching functions (fees, payments, reports, financial columns) are hidden and API-blocked for every role.",
+    group: "Student environment",
+  },
+];
+
+/** Every sub-feature in the platform (feature-nested ones plus global ones). */
+export const SUBFEATURES: SubFeatureDef[] = [
+  ...FEATURES.flatMap((f) => (f.subfeatures ?? []).map((s) => ({ ...s }))),
+  ...GLOBAL_SUBFEATURES,
+];
+
+export const SUBFEATURE_BY_ID: Record<string, SubFeatureDef> = {};
+for (const s of SUBFEATURES) SUBFEATURE_BY_ID[s.id] = s;
+
+/** Sub-feature id that gates a given resource, if any (e.g. fees -> finance). */
+export const SUBFEATURE_BY_RESOURCE: Record<string, string> = {
+  fees: "finance",
+  reports: "finance",
+};
+
+export function subfeatureById(id: string): SubFeatureDef | undefined {
+  return SUBFEATURE_BY_ID[id];
+}
 
 export function featureById(id: string): FeatureDef | undefined {
   return FEATURES.find((f) => f.id === id);

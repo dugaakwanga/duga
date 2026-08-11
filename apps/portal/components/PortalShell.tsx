@@ -16,6 +16,7 @@ interface NavItem {
   roles?: Role[];
   finance?: boolean;
   feature?: string;
+  subfeature?: string;
 }
 
 interface NavSection {
@@ -49,9 +50,9 @@ const STAFF_NAV: NavSection[] = [
     title: "My Teaching",
     items: [
       { href: "/portal/teacher", label: "Teaching Overview", icon: "home", perm: "learning:manage", feature: "learning" },
-      { href: "/portal/teacher/notes", label: "Lesson Notes", icon: "notes", perm: "learning:manage", feature: "learning" },
-      { href: "/portal/teacher/assignments", label: "Assignments", icon: "assignment", perm: "learning:manage", feature: "learning" },
-      { href: "/portal/teacher/cbt", label: "CBT Exams", icon: "quiz", perm: "learning:manage", feature: "learning" },
+      { href: "/portal/teacher/notes", label: "Lesson Notes", icon: "notes", perm: "learning:manage", feature: "learning", subfeature: "learning:notes" },
+      { href: "/portal/teacher/assignments", label: "Assignments", icon: "assignment", perm: "learning:manage", feature: "learning", subfeature: "learning:assignments" },
+      { href: "/portal/teacher/cbt", label: "CBT Exams", icon: "quiz", perm: "learning:manage", feature: "learning", subfeature: "learning:cbt" },
       { href: "/portal/teacher/attendance", label: "Take Attendance", icon: "attendance", perm: "attendance:take", feature: "attendance" },
     ],
   },
@@ -65,13 +66,13 @@ const STAFF_NAV: NavSection[] = [
   {
     title: "Operations",
     items: [
-      { href: "/portal/fees", label: "Fees & Payments", icon: "fees", perm: "fees:view", feature: "fees" },
+      { href: "/portal/fees", label: "Fees & Payments", icon: "fees", perm: "fees:view", feature: "fees", subfeature: "finance" },
       { href: "/portal/hostel", label: "Hostel", icon: "hostel", perm: "hostel:view", feature: "hostel" },
       { href: "/portal/transport", label: "Transport", icon: "bus", perm: "transport:view", feature: "transport" },
       { href: "/portal/applications", label: "Admissions", icon: "applications", perm: "applications:view", feature: "applications" },
       { href: "/portal/pta", label: "PTA", icon: "announcements", perm: "pta:view", feature: "pta" },
       { href: "/portal/library", label: "Library", icon: "notes", perm: "library:view", feature: "library" },
-      { href: "/portal/reports", label: "Reports", icon: "reports", finance: true, feature: "reports" },
+      { href: "/portal/reports", label: "Reports", icon: "reports", finance: true, feature: "reports", subfeature: "finance" },
     ],
   },
   {
@@ -111,9 +112,9 @@ const STUDENT_NAV: NavSection[] = [
   {
     title: "My Learning",
     items: [
-      { href: "/portal/learning?kind=tests", label: "My CBT Exams", icon: "quiz", perm: "tests:take", feature: "learning" },
-      { href: "/portal/learning?kind=assignments", label: "My Assignments", icon: "assignment", perm: "assignments:submit", feature: "learning" },
-      { href: "/portal/learning?kind=notes", label: "Lesson Notes", icon: "notes", perm: "learning:view", feature: "learning" },
+      { href: "/portal/learning?kind=tests", label: "My CBT Exams", icon: "quiz", perm: "tests:take", feature: "learning", subfeature: "learning:cbt" },
+      { href: "/portal/learning?kind=assignments", label: "My Assignments", icon: "assignment", perm: "assignments:submit", feature: "learning", subfeature: "learning:assignments" },
+      { href: "/portal/learning?kind=notes", label: "Lesson Notes", icon: "notes", perm: "learning:view", feature: "learning", subfeature: "learning:notes" },
       { href: "/portal/elearn", label: "E-Learning & Rewards", icon: "notes", perm: "elearn:view", feature: "elearn" },
       { href: "/portal/games", label: "Educational Games", icon: "quiz", perm: "games:play", feature: "games" },
     ],
@@ -124,7 +125,7 @@ const STUDENT_NAV: NavSection[] = [
       { href: "/portal/results", label: "My Results", icon: "results", perm: "results:view", feature: "results" },
       { href: "/portal/attendance", label: "My Attendance", icon: "attendance", perm: "attendance:view", feature: "attendance" },
       { href: "/portal/timetable", label: "My Timetable", icon: "timetable", perm: "timetable:view", feature: "timetable" },
-      { href: "/portal/fees", label: "My Fees", icon: "fees", perm: "fees:view", feature: "fees" },
+      { href: "/portal/fees", label: "My Fees", icon: "fees", perm: "fees:view", feature: "fees", subfeature: "finance" },
       { href: "/portal/pta", label: "PTA", icon: "announcements", perm: "pta:view", feature: "pta" },
       { href: "/portal/library", label: "Library", icon: "notes", perm: "library:view", feature: "library" },
       { href: "/portal/hostel", label: "Hostel", icon: "hostel", perm: "hostel:view", feature: "hostel" },
@@ -184,6 +185,7 @@ interface ShellUser {
   schoolId: string;
   financeAccess?: boolean;
   features?: string[];
+  subfeatures?: string[];
 }
 
 export function PortalShell({ user, children }: { user: ShellUser; children: React.ReactNode }) {
@@ -235,7 +237,8 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
           (!i.finance || user.role === "OWNER" || (user.role === "ADMIN" && user.financeAccess)) &&
           (!i.perm || hasPermission(user.role, i.perm)) &&
           (!i.roles || i.roles.includes(user.role)) &&
-          (!i.feature || !user.features || user.features.includes(i.feature)),
+          (!i.feature || !user.features || user.features.includes(i.feature)) &&
+          (!i.subfeature || !user.subfeatures || user.subfeatures.includes(i.subfeature)),
       ),
     }))
     .filter((s) => s.items.length > 0);

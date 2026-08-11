@@ -29,11 +29,20 @@ async function handle(
 
   // Feature gating: if the resource belongs to a feature that is disabled for
   // the caller's school/role, block it here (server-side, not just in the UI).
-  const { FEATURE_BY_RESOURCE } = await import("@/lib/features");
+  const { FEATURE_BY_RESOURCE, SUBFEATURE_BY_RESOURCE } = await import("@/lib/features");
   const featureId = FEATURE_BY_RESOURCE[resource];
   if (featureId) {
     const { featureEnabled } = await import("@/lib/server/features");
     const allowed = await featureEnabled(session.user.schoolId, session.user.role, featureId);
+    if (!allowed) {
+      return NextResponse.json({ ok: false, error: "This feature is not enabled for your role at this school." }, { status: 403 });
+    }
+  }
+  // Sub-feature gating (superadmin's fine-grained switches), e.g. finance.
+  const subId = SUBFEATURE_BY_RESOURCE[resource];
+  if (subId) {
+    const { subfeatureEnabled } = await import("@/lib/server/features");
+    const allowed = await subfeatureEnabled(session.user.schoolId, session.user.role, subId);
     if (!allowed) {
       return NextResponse.json({ ok: false, error: "This feature is not enabled for your role at this school." }, { status: 403 });
     }
