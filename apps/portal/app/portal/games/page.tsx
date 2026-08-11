@@ -72,7 +72,7 @@ export default function GamesPage() {
     try {
       const [data, cs] = await Promise.all([
         api<ApiList>("games"),
-        api<ClassOption[]>("teacher/classes", { method: "POST" }),
+        api<ClassOption[]>("teacher/classes", { method: "POST" }).catch(() => []),
       ]);
       setList(data);
       setClasses(cs);

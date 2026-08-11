@@ -68,7 +68,7 @@ export default function ElearnPage() {
     try {
       const [data, cs] = await Promise.all([
         api<ApiList>("elearn"),
-        api<ClassOption[]>("teacher/classes", { method: "POST" }),
+        api<ClassOption[]>("teacher/classes", { method: "POST" }).catch(() => []),
       ]);
       setList(data);
       setClasses(cs);
