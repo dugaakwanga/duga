@@ -44,7 +44,7 @@ export const teacherModule: Module = {
           role === "OWNER" || role === "ADMIN"
             ? { schoolId }
             : { classSubjects: { some: { teacherId: teacher!.id } } },
-        include: { level: true, _count: { select: { students: true, classSubjects: true } } },
+        include: { level: true, session: true, _count: { select: { students: true, classSubjects: true } } },
         orderBy: { createdAt: "asc" },
         take: 100,
       });
