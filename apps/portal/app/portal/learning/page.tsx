@@ -40,7 +40,7 @@ export default function LearningPage() {
     try {
       const [d, opts, me] = await Promise.all([
         api<{ items: Item[] }>(`learning?kind=${kind}`),
-        api<Array<{ id: string; subject: { name: string }; classGroup: { level: { name: string }; name: string } | null }>>("teacher"),
+        api<Array<{ id: string; subject: { name: string }; classGroup: { level: { name: string }; name: string } | null }>>("teacher").catch(() => []),
         api<{ role: string }>("auth/me").catch(() => null),
       ]);
       setItems(d.items);
