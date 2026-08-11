@@ -251,11 +251,22 @@ export const learningModule: Module = {
     const kind = (ctx.query.get("kind") ?? "note") as string;
     can(ctx, "learning:manage");
     await assertKindSubfeature(ctx, kind);
-    if (kind === "notes") return prisma.lessonNote.update({ where: { id: ctx.id }, data: pick(ctx.body, ["topic", "content", "week"]) });
-    if (kind === "assignments") return prisma.assignment.update({ where: { id: ctx.id }, data: pick(ctx.body, ["title", "instructions", "dueAt", "isPublished", "maxScore", "targetStudentIds"]) });
+    const schoolId = ctx.session.user.schoolId;
+    const teacher = ctx.session.user.teacher;
+    if (kind === "notes") {
+      const item = await prisma.lessonNote.findFirst({ where: { id: ctx.id, schoolId, ...(teacher ? { teacherId: teacher.id } : {}) } });
+      if (!item) throw new Error("Note not found");
+      return prisma.lessonNote.update({ where: { id: ctx.id }, data: pick(ctx.body, ["topic", "content", "week"]) });
+    }
+    if (kind === "assignments") {
+      const item = await prisma.assignment.findFirst({ where: { id: ctx.id, schoolId, ...(teacher ? { teacherId: teacher.id } : {}) } });
+      if (!item) throw new Error("Assignment not found");
+      return prisma.assignment.update({ where: { id: ctx.id }, data: pick(ctx.body, ["title", "instructions", "dueAt", "isPublished", "maxScore", "targetStudentIds"]) });
+    }
     if (kind === "tests") {
       const role = ctx.session.user.role;
-      const test = await prisma.test.findUnique({ where: { id: ctx.id } });
+      const test = await prisma.test.findFirst({ where: { id: ctx.id, schoolId, ...(teacher ? { teacherId: teacher.id } : {}) } });
+      if (!test) throw new Error("Test not found");
       if (test?.isExam && role !== "OWNER" && role !== "ADMIN") {
         // Exams can only be published (status -> PUBLISHED) by the owner/admin.
         return prisma.test.update({
@@ -476,14 +487,18 @@ export const learningModule: Module = {
     startLive: async (ctx) => {
       can(ctx, "live:schedule");
       await assertSubfeature(ctx, "learning:live");
-      const live = await prisma.liveClass.update({ where: { id: ctx.id }, data: { status: "LIVE" } });
-      return live;
+      const schoolId = ctx.session.user.schoolId;
+      const live = await prisma.liveClass.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!live) throw new Error("Live class not found");
+      return prisma.liveClass.update({ where: { id: ctx.id }, data: { status: "LIVE" } });
     },
     endLive: async (ctx) => {
       can(ctx, "live:schedule");
       await assertSubfeature(ctx, "learning:live");
-      const live = await prisma.liveClass.update({ where: { id: ctx.id }, data: { status: "ENDED" } });
-      return live;
+      const schoolId = ctx.session.user.schoolId;
+      const live = await prisma.liveClass.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!live) throw new Error("Live class not found");
+      return prisma.liveClass.update({ where: { id: ctx.id }, data: { status: "ENDED" } });
     },
     joinLive: async (ctx) => {
       can(ctx, "live:join");

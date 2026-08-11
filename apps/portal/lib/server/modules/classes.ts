@@ -61,14 +61,21 @@ export const classesModule: Module = {
 
   async update(ctx) {
     can(ctx, "classes:manage");
+    const schoolId = ctx.session.user.schoolId;
+    const existing = await prisma.classGroup.findFirst({ where: { id: ctx.id, schoolId } });
+    if (!existing) throw new Error("Class not found");
     const data: Record<string, unknown> = {};
     const b = ctx.body;
     if (b.name) data.name = String(b.name);
     if (b.room) data.room = String(b.room);
     if (b.formTeacherId === "none" || b.formTeacherId === "") data.formTeacherId = null;
     else if (b.formTeacherId) data.formTeacherId = String(b.formTeacherId);
+    if (data.formTeacherId) {
+      const ft = await prisma.teacher.findFirst({ where: { id: String(data.formTeacherId), schoolId } });
+      if (!ft) throw new Error("Form teacher not found");
+    }
     const cls = await prisma.classGroup.update({ where: { id: ctx.id }, data });
-    await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "class.updated", entityType: "ClassGroup", entityId: ctx.id, meta: data });
+    await logAudit({ schoolId, userId: ctx.session.user.id, action: "class.updated", entityType: "ClassGroup", entityId: ctx.id, meta: data });
     return cls;
   },
 
@@ -80,8 +87,12 @@ export const classesModule: Module = {
       const subjectId = str(ctx.body.subjectId);
       const teacherId = str(ctx.body.teacherId);
       if (!subjectId || !teacherId) throw new Error("subjectId and teacherId required");
+      const cls = await prisma.classGroup.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!cls) throw new Error("Class not found");
       const subject = await prisma.subject.findFirst({ where: { id: subjectId, schoolId } });
       if (!subject) throw new Error("Subject not found");
+      const teacher = await prisma.teacher.findFirst({ where: { id: teacherId, schoolId } });
+      if (!teacher) throw new Error("Teacher not found");
       const cs = await prisma.classSubject.upsert({
         where: { classGroupId_subjectId: { classGroupId: ctx.id!, subjectId } },
         update: { teacherId },

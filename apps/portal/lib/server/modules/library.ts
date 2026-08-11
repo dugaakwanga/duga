@@ -140,17 +140,16 @@ export const libraryModule: Module = {
       });
       await prisma.libraryBook.update({ where: { id: bookId }, data: { availableCopies: Math.max(book.availableCopies - 1, 0) } });
 
-      const student = await prisma.student.findUnique({ where: { id: studentId }, include: { user: true } });
-      if (student) {
-        await dispatchNotification({
-          schoolId,
-          userId: student.userId,
-          type: "library",
-          title: "Book issued",
-          body: `You borrowed "${book.title}". Please return it by ${due ? due.toLocaleDateString() : "the due date"}.`,
-          link: "/portal/library",
-        });
-      }
+      const student = await prisma.student.findFirst({ where: { id: studentId, schoolId }, include: { user: true } });
+      if (!student) throw new Error("Student not found");
+      await dispatchNotification({
+        schoolId,
+        userId: student.userId,
+        type: "library",
+        title: "Book issued",
+        body: `You borrowed "${book.title}". Please return it by ${due ? due.toLocaleDateString() : "the due date"}.`,
+        link: "/portal/library",
+      });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "library.loanCreated", entityType: "BookLoan", entityId: loan.id, meta: { bookId, studentId } });
       return loan;
     },

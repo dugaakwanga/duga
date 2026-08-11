@@ -65,10 +65,13 @@ export const hostelModule: Module = {
 
     addRoom: async (ctx) => {
       can(ctx, "hostel:manage");
+      const schoolId = ctx.session.user.schoolId;
       const hostelId = str(ctx.body.hostelId);
       const roomNumber = str(ctx.body.roomNumber);
       const capacity = Number(ctx.body.capacity) || 1;
       if (!hostelId || !roomNumber) throw new Error("hostelId and roomNumber required");
+      const hostel = await prisma.hostel.findFirst({ where: { id: hostelId, schoolId } });
+      if (!hostel) throw new Error("Hostel not found");
       const room = await prisma.hostelRoom.create({ data: { hostelId, roomNumber, capacity, floor: Number(ctx.body.floor) || undefined } });
       await prisma.hostelBed.createMany({
         data: Array.from({ length: capacity }, (_, i) => ({ roomId: room.id, bedNumber: String(i + 1) })),
@@ -83,7 +86,12 @@ export const hostelModule: Module = {
       const studentId = str(ctx.body.studentId);
       const bedId = str(ctx.body.bedId);
       if (!studentId || !bedId) throw new Error("studentId and bedId required");
-      const bed = await prisma.hostelBed.findUnique({ where: { id: bedId }, include: { room: { include: { hostel: true } }, allocations: { where: { status: "ACTIVE" } } } });
+      const student = await prisma.student.findFirst({ where: { id: studentId, schoolId } });
+      if (!student) throw new Error("Student not found");
+      const bed = await prisma.hostelBed.findFirst({
+        where: { id: bedId, room: { hostel: { schoolId } } },
+        include: { room: { include: { hostel: true } }, allocations: { where: { status: "ACTIVE" } } },
+      });
       if (!bed) throw new Error("Bed not found");
       if (bed.allocations.length > 0) throw new Error("Bed is occupied");
       const allocation = await prisma.hostelAllocation.create({
@@ -105,9 +113,12 @@ export const hostelModule: Module = {
 
     release: async (ctx) => {
       can(ctx, "hostel:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const existing = await prisma.hostelAllocation.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!existing) throw new Error("Allocation not found");
       const allocation = await prisma.hostelAllocation.update({ where: { id: ctx.id }, data: { status: "ENDED" } });
       await prisma.hostelBed.updateMany({ where: { id: allocation.bedId }, data: { isOccupied: false } });
-      await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "hostel.released", entityType: "HostelAllocation", entityId: ctx.id });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "hostel.released", entityType: "HostelAllocation", entityId: ctx.id });
       return allocation;
     },
 
