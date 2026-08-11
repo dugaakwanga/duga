@@ -62,6 +62,10 @@ export const classesModule: Module = {
       const ft = await prisma.teacher.findFirst({ where: { id: String(b.formTeacherId), schoolId } });
       if (!ft) throw new Error("Form teacher not found");
     }
+    const dup = await prisma.classGroup.findUnique({
+      where: { schoolId_sessionId_levelId_name: { schoolId, sessionId, levelId, name } },
+    });
+    if (dup) throw new Error(`A class "${name}" already exists for this level and session`);
     const cls = await prisma.classGroup.create({
       data: { schoolId, levelId, sessionId, name, room: str(b.room), formTeacherId: str(b.formTeacherId) },
     });
@@ -119,6 +123,10 @@ export const classesModule: Module = {
       const name = str(ctx.body.name);
       const section = str(ctx.body.section) as "PRIMARY" | "SECONDARY" | undefined;
       if (!name || !section) throw new Error("name and section required");
+      const dup = await prisma.subject.findUnique({
+        where: { schoolId_name_section: { schoolId, name, section } },
+      });
+      if (dup) throw new Error(`Subject "${name}" already exists for ${section.toLowerCase()}`);
       const subject = await prisma.subject.create({ data: { schoolId, name, code: str(ctx.body.code), section } });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "subject.created", entityType: "Subject", entityId: subject.id });
       return subject;
@@ -131,6 +139,10 @@ export const classesModule: Module = {
       const name = str(ctx.body.name);
       const section = str(ctx.body.section) as "PRIMARY" | "SECONDARY" | undefined;
       if (!name || !section) throw new Error("name and section required");
+      const dup = await prisma.classLevel.findUnique({
+        where: { schoolId_section_name: { schoolId, section, name } },
+      });
+      if (dup) throw new Error(`Level "${name}" already exists for ${section.toLowerCase()}`);
       const order = (await prisma.classLevel.count({ where: { schoolId } })) + 1;
       const level = await prisma.classLevel.create({ data: { schoolId, name, section, order } });
       return level;
@@ -141,6 +153,10 @@ export const classesModule: Module = {
       const schoolId = ctx.session.user.schoolId;
       const name = str(ctx.body.name);
       if (!name) throw new Error("name required");
+      const dup = await prisma.academicSession.findUnique({
+        where: { schoolId_name: { schoolId, name } },
+      });
+      if (dup) throw new Error(`Session "${name}" already exists`);
       const session = await prisma.academicSession.create({ data: { schoolId, name } });
       return session;
     },
