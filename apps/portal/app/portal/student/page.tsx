@@ -10,7 +10,7 @@ interface DashboardData {
   classSubjects?: Array<{ id: string; subject: { name: string }; teacher?: { user: { firstName: string; lastName: string } } | null }>;
   assignments?: Array<{ id: string; title: string; classSubject?: { subject: { name: string } } | null }>;
   live?: Array<{ id: string; title: string; scheduledAt: string }>;
-  reportCard?: { id: string; gradeAverage: number | null; isPublished: boolean } | null;
+  reportCard?: { id: string; average: number | null; isPublished: boolean } | null;
   invoice?: { id: string; status: string; balance: string | number } | null;
 }
 
@@ -57,7 +57,7 @@ export default function StudentHomePage() {
         <Stat label="My subjects" value={data.classSubjects?.length ?? 0} hint="across my class" />
         <Stat label="Assignments to do" value={dueAssignments} tone="info" hint="awaiting my work" />
         <Stat label="CBT exams" value={openTests.length} tone="warning" hint="available now" />
-        <Stat label="Average grade" value={data.reportCard?.gradeAverage != null ? `${data.reportCard.gradeAverage}%` : "—"} tone="success" hint="latest report card" />
+        <Stat label="Average grade" value={data.reportCard?.average != null ? `${data.reportCard.average}%` : "—"} tone="success" hint="latest report card" />
         <Stat label="Fees balance" value={feesOwing ? `₦${Number(invoice!.balance).toLocaleString()}` : "Clear"} tone={feesOwing ? "danger" : "success"} />
       </div>
 

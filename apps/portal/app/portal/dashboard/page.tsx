@@ -25,7 +25,7 @@ interface DashboardData {
   invoices?: InvoiceLike[];
   assignments?: Array<{ id: string; title: string; classSubject?: { subject: { name: string } } }>;
   live?: Array<{ id: string; title: string; scheduledAt: string }>;
-  reportCard?: { id: string; gradeAverage: number | null; isPublished: boolean };
+  reportCard?: { id: string; average: number | null; isPublished: boolean };
   invoice?: InvoiceLike;
   fee?: { feeAmount: string; feeDays: number; feePaidThrough: string | null; usedDays: number; daysRemaining: number; expired: boolean };
 }

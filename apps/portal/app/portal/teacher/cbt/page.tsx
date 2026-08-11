@@ -65,11 +65,14 @@ export default function TeacherCbtPage() {
       const [opts, res, me] = await Promise.all([
         api<ClassSubjectOption[]>("teacher"),
         api<{ items: Cbt[] }>("learning?kind=tests"),
-        api<{ user: { role: string } }>("auth/me").catch(() => null),
+        fetch("/api/auth/me")
+          .then((r) => r.json())
+          .then((j) => (j.ok ? j.user : null))
+          .catch(() => null),
       ]);
       setOptions(opts);
       setItems(res.items);
-      setRole(me?.user?.role ?? "");
+      setRole(me?.role ?? "");
     } catch (e) {
       setError((e as Error).message);
     } finally {

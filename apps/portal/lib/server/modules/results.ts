@@ -45,7 +45,7 @@ export const resultsModule: Module = {
           ...rc,
           access: access.allowed && !(student.feePaidThrough && student.feePaidThrough.getTime() < Date.now()) ? "granted" : "locked",
           gatedReason: student.feePaidThrough && student.feePaidThrough.getTime() < Date.now() ? "fee_expired" : access.reason,
-          items: access.allowed ? await prisma.reportCardItem.findMany({ where: { reportCardId: rc.id }, orderBy: { position: "asc" } }) : null,
+          items: access.allowed ? await prisma.reportCardItem.findMany({ where: { reportCardId: rc.id }, include: { subject: true }, orderBy: { position: "asc" } }) : null,
         });
       }
       return { role, reportCards: gated };

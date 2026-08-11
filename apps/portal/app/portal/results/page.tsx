@@ -8,14 +8,14 @@ interface ReportCard {
   id: string;
   status: string;
   isPublished: boolean;
-  gradeAverage: number | null;
+  average: number | null;
   position: number | null;
   term: { name: string } | null;
   student: { user: { firstName: string; lastName: string } };
   classGroup: { level: { name: string }; name: string } | null;
   access?: "granted" | "locked";
   gatedReason?: string | null;
-  items?: Array<{ id: string; subject: { name: string }; caScore: number; examScore: number; total: number; grade: string }> | null;
+  items?: Array<{ id: string; subject: { name: string }; ca: number | null; exam: number | null; total: number | null; grade: string | null }> | null;
 }
 
 interface TeacherClassSubject {
@@ -246,7 +246,7 @@ export default function ResultsPage() {
                 <Badge tone={rc.access === "granted" ? "success" : "warning"}>
                   {rc.access === "granted" ? "Unlocked" : "Locked"}
                 </Badge>
-                {rc.gradeAverage !== null && <Badge tone="accent">Average: {Number(rc.gradeAverage).toFixed(1)}</Badge>}
+                {rc.average !== null && <Badge tone="accent">Average: {Number(rc.average).toFixed(1)}</Badge>}
                 {rc.position !== null && <Badge tone="neutral">Position: {rc.position}</Badge>}
               </div>
               {rc.access === "locked" ? (
@@ -256,10 +256,10 @@ export default function ResultsPage() {
                   {(rc.items ?? []).map((i) => (
                     <tr key={i.id}>
                       <td>{i.subject.name}</td>
-                      <td>{i.caScore}</td>
-                      <td>{i.examScore}</td>
-                      <td>{i.total}</td>
-                      <td><Badge tone="neutral">{i.grade}</Badge></td>
+                      <td>{i.ca ?? "—"}</td>
+                      <td>{i.exam ?? "—"}</td>
+                      <td>{i.total ?? "—"}</td>
+                      <td><Badge tone="neutral">{i.grade ?? "—"}</Badge></td>
                     </tr>
                   ))}
                 </Table>
@@ -277,7 +277,7 @@ export default function ResultsPage() {
                 <td>{rc.student.user.firstName} {rc.student.user.lastName}</td>
                 <td>{rc.classGroup ? `${rc.classGroup.level.name} ${rc.classGroup.name}` : "—"}</td>
                 <td>{rc.term?.name}</td>
-                <td>{rc.gradeAverage !== null ? Number(rc.gradeAverage).toFixed(1) : "—"}</td>
+                <td>{rc.average !== null ? Number(rc.average).toFixed(1) : "—"}</td>
                 <td>{rc.position ?? "—"}</td>
                 <td><Badge tone={rc.isPublished ? "success" : "neutral"}>{rc.isPublished ? "Published" : "Draft"}</Badge></td>
               </tr>

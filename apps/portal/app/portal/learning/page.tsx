@@ -41,7 +41,10 @@ export default function LearningPage() {
       const [d, opts, me] = await Promise.all([
         api<{ items: Item[] }>(`learning?kind=${kind}`),
         api<Array<{ id: string; subject: { name: string }; classGroup: { level: { name: string }; name: string } | null }>>("teacher").catch(() => []),
-        api<{ role: string }>("auth/me").catch(() => null),
+        fetch("/api/auth/me")
+          .then((r) => r.json())
+          .then((j) => (j.ok ? j.user : null))
+          .catch(() => null),
       ]);
       setItems(d.items);
       setOptions(opts);
