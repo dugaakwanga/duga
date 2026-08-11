@@ -306,6 +306,9 @@ model Student {
   enrollmentDate    DateTime      @default(now())
   status            StudentStatus @default(ACTIVE)
   currentClassGroupId String?
+  feeAmount         Decimal       @default(0)
+  feeDays           Int           @default(0)
+  feePaidThrough    DateTime?
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 

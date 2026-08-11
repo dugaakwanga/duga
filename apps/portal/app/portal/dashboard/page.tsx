@@ -27,6 +27,7 @@ interface DashboardData {
   live?: Array<{ id: string; title: string; scheduledAt: string }>;
   reportCard?: { id: string; gradeAverage: number | null; isPublished: boolean };
   invoice?: InvoiceLike;
+  fee?: { feeAmount: string; feeDays: number; feePaidThrough: string | null; usedDays: number; daysRemaining: number; expired: boolean };
 }
 
 function naira(v: string | number | undefined): string {
@@ -47,6 +48,22 @@ export default function DashboardPage() {
   return (
     <div>
       <PageHeader title="Dashboard" subtitle={`Welcome back — you are signed in as ${data.role.toLowerCase()}.`} />
+
+      {data.role === "STUDENT" && data.fee && Number(data.fee.feeAmount) > 0 && (
+        data.fee.expired ? (
+          <div style={{ marginBottom: 18 }}>
+            <Alert tone="danger">
+              <strong>Access suspended.</strong> Your school fee period ended on {data.fee.feePaidThrough ? new Date(data.fee.feePaidThrough).toLocaleDateString() : "the set date"}. Please contact the school to renew your access.
+            </Alert>
+          </div>
+        ) : data.fee.daysRemaining <= 7 ? (
+          <div style={{ marginBottom: 18 }}>
+            <Alert tone="warning">
+              <strong>{data.fee.daysRemaining} day{data.fee.daysRemaining === 1 ? "" : "s"} of fee access remaining.</strong> Renew with the school before your access ends on {data.fee.feePaidThrough ? new Date(data.fee.feePaidThrough).toLocaleDateString() : ""}.
+            </Alert>
+          </div>
+        ) : null
+      )}
 
       {data.role === "OWNER" || data.role === "ADMIN" ? (
         <>

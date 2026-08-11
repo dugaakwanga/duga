@@ -1,7 +1,7 @@
 import { prisma } from "@duga/core/server";
 import { collateReportCards, resolveResultsAccess, logAudit, dispatchToMany } from "@duga/core/server";
 import type { Module } from ".";
-import { can, str, num, studentScope } from "../helpers";
+import { can, str, num, studentScope, assertFeeAccess } from "../helpers";
 
 export const resultsModule: Module = {
   async list(ctx) {
@@ -40,10 +40,11 @@ export const resultsModule: Module = {
       for (const rc of reportCards) {
         if (!rc.isPublished) continue;
         const access = await resolveResultsAccess(rc.studentId, rc.termId);
+        const student = rc.student;
         gated.push({
           ...rc,
-          access: access.allowed ? "granted" : "locked",
-          gatedReason: access.reason,
+          access: access.allowed && !(student.feePaidThrough && student.feePaidThrough.getTime() < Date.now()) ? "granted" : "locked",
+          gatedReason: student.feePaidThrough && student.feePaidThrough.getTime() < Date.now() ? "fee_expired" : access.reason,
           items: access.allowed ? await prisma.reportCardItem.findMany({ where: { reportCardId: rc.id }, orderBy: { position: "asc" } }) : null,
         });
       }
@@ -80,6 +81,11 @@ export const resultsModule: Module = {
     // Students/parents must also pass the fee gate (published + paid/overridden).
     if (role === "STUDENT" || role === "PARENT") {
       const access = await resolveResultsAccess(rc.studentId, rc.termId);
+      if (rc.student.feePaidThrough && rc.student.feePaidThrough.getTime() < Date.now()) {
+        const err = new Error("Access suspended — the school fee period has ended. Please contact the school to renew.") as Error & { status?: number };
+        err.status = 403;
+        throw err;
+      }
       if (!access.allowed) {
         const err = new Error("This report card is locked") as Error & { status?: number };
         err.status = 403;

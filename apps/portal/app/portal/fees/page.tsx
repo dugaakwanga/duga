@@ -116,9 +116,23 @@ export default function FeesPage() {
   async function pay(invoiceId: string) {
     setPaying(invoiceId);
     try {
-      const d = await api<{ authorizationUrl: string }>(`fees/${invoiceId}/initPayment`, { method: "POST", body: {} });
-      if (d.authorizationUrl) window.location.href = d.authorizationUrl;
-      else alert("Payment initialized (mock). Check the invoice status.");
+      const d = await api<{ authorization_url?: string; status?: string }>(`fees/${invoiceId}/initPayment`, { method: "POST", body: {} });
+      if (d.authorization_url) window.location.href = d.authorization_url;
+      else alert(d.status === "SUCCESS" ? "Payment recorded." : "Payment initialized. Check the invoice status.");
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setPaying(null);
+    }
+  }
+
+  async function recordManual(invoiceId: string) {
+    const amount = window.prompt("Amount received (₦)");
+    if (!amount || Number(amount) <= 0) return alert("Enter a valid amount");
+    setPaying(invoiceId);
+    try {
+      await api(`fees/${invoiceId}/recordManual`, { method: "POST", body: { amount: Number(amount) } });
+      await load();
     } catch (e) {
       alert((e as Error).message);
     } finally {
@@ -199,6 +213,9 @@ export default function FeesPage() {
                 <td>
                   {i.status !== "PAID" && i.status !== "OVERPAID" && (role === "STUDENT" || role === "PARENT") && (
                     <Button size="sm" loading={paying === i.id} onClick={() => pay(i.id)}>Pay</Button>
+                  )}
+                  {isStaff && (
+                    <Button size="sm" variant="outline" loading={paying === i.id} onClick={() => recordManual(i.id)}>Record payment</Button>
                   )}
                 </td>
               </tr>

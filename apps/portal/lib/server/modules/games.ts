@@ -1,7 +1,7 @@
 import { prisma, logAudit } from "@duga/core/server";
 import type { Module } from ".";
 import type { Ctx } from "@/app/api/v1/[...path]/route";
-import { can, str, num, idArray, isAssignedTo, resolveTargetStudentIds, ensureTeacher } from "../helpers";
+import { can, str, num, idArray, isAssignedTo, resolveTargetStudentIds, ensureTeacher, assertFeeAccess } from "../helpers";
 
 // Sync "assigned" game progress rows for the targeted students.
 async function syncGameTargets(schoolId: string, gameId: string, classGroupIds: string[], studentIds: string[]): Promise<void> {
@@ -192,6 +192,7 @@ export const gamesModule: Module = {
       can(ctx, "games:play");
       const student = ctx.session.user.student;
       if (!student) throw new Error("Only students can play games");
+      assertFeeAccess(student);
       const schoolId = ctx.session.user.schoolId;
       const item = await prisma.educationalGame.findFirst({ where: { id: ctx.id, schoolId, isPublished: true } });
       if (!item) throw new Error("Game not found or not published");

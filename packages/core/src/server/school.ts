@@ -76,18 +76,21 @@ export async function resolveResultsAccess(studentId: string, termId?: string) {
     },
     orderBy: { createdAt: "desc" },
   });
+  // A fee override only counts while it is active and, if an expiry is set,
+  // has not lapsed.
+  const overrideValid = override !== null && (!override.expiresAt || override.expiresAt.getTime() > Date.now());
   const invoice = await prisma.invoice.findFirst({
     where: { studentId, termId: termId ?? undefined },
   });
   const fullyPaid =
     invoice?.status === "PAID" || invoice?.status === "OVERPAID" || invoice?.status === "WAIVED";
-  const allowed = Boolean(override) || fullyPaid;
+  const allowed = overrideValid || fullyPaid;
   return {
     allowed,
-    override,
+    override: overrideValid ? override : null,
     invoice,
     reason: allowed
-      ? override
+      ? overrideValid
         ? "override"
         : "paid"
       : "unpaid",

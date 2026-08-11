@@ -2,7 +2,7 @@ import { prisma } from "@duga/core/server";
 import { jitsiRoomLink, logAudit, dispatchNotification, dispatchToMany } from "@duga/core/server";
 import type { Module } from ".";
 import type { Ctx } from "@/app/api/v1/[...path]/route";
-import { can, str, num, pick, idArray, isAssignedTo, ensureTeacher } from "../helpers";
+import { can, str, num, pick, idArray, isAssignedTo, ensureTeacher, assertFeeAccess } from "../helpers";
 import { assertSubfeature } from "../features";
 
 type Kind = "notes" | "assignments" | "tests" | "live";
@@ -385,6 +385,7 @@ export const learningModule: Module = {
       await assertSubfeature(ctx, "learning:assignments");
       const student = ctx.session.user.student;
       if (!student) throw new Error("Only students can submit assignments");
+      assertFeeAccess(student);
       const submission = await prisma.assignmentSubmission.upsert({
         where: { assignmentId_studentId: { assignmentId: ctx.id!, studentId: student.id } },
         update: { content: str(ctx.body.content), attachments: ctx.body.attachments ? ctx.body.attachments : undefined, submittedAt: new Date() },
@@ -424,6 +425,7 @@ export const learningModule: Module = {
       await assertSubfeature(ctx, "learning:cbt");
       const student = ctx.session.user.student;
       if (!student) throw new Error("Only students can take tests");
+      assertFeeAccess(student);
       const test = await prisma.test.findUnique({ where: { id: ctx.id }, include: { questions: true } });
       if (!test) throw new Error("Test not found");
       if (test.startsAt && new Date() < test.startsAt) throw new Error("This test has not started yet");
@@ -503,6 +505,7 @@ export const learningModule: Module = {
       can(ctx, "live:join");
       await assertSubfeature(ctx, "learning:live");
       const student = ctx.session.user.student;
+      if (student) assertFeeAccess(student);
       const live = await prisma.liveClass.findUnique({ where: { id: ctx.id } });
       if (!live) throw new Error("Live class not found");
       if (student) {

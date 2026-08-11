@@ -241,7 +241,7 @@ export const feesModule: Module = {
     initPayment: async (ctx) => {
       can(ctx, "payments:make");
       const schoolId = ctx.session.user.schoolId;
-      const invoiceId = str(ctx.body.invoiceId);
+      const invoiceId = str(ctx.body.invoiceId) ?? ctx.id;
       const amount = num(ctx.body.amount);
       const invoice = await prisma.invoice.findUnique({
         where: { id: invoiceId },
@@ -361,16 +361,18 @@ export const feesModule: Module = {
       can(ctx, "fees:collect");
       const schoolId = ctx.session.user.schoolId;
       const studentId = str(ctx.body.studentId);
-      const invoiceId = str(ctx.body.invoiceId);
+      const invoiceId = str(ctx.body.invoiceId) ?? ctx.id;
       const amount = num(ctx.body.amount);
-      if (!studentId || !invoiceId || amount === undefined) throw new Error("studentId, invoiceId and amount required");
+      if (!invoiceId || amount === undefined) throw new Error("invoiceId and amount required");
+      const invoiceRow = await prisma.invoice.findFirst({ where: { id: invoiceId, schoolId } });
+      if (!invoiceRow) throw new Error("Invoice not found");
       const reference = generateReference("MAN");
       const payment = await prisma.payment.create({
         data: {
           schoolId,
-          studentId,
+          studentId: studentId ?? invoiceRow.studentId,
           invoiceId,
-          termId: str(ctx.body.termId),
+          termId: invoiceRow.termId ?? str(ctx.body.termId),
           amount,
           method: (str(ctx.body.method) as "CASH") ?? "CASH",
           status: "SUCCESS",

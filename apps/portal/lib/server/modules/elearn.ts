@@ -1,7 +1,7 @@
 import { prisma, logAudit, dispatchNotification } from "@duga/core/server";
 import type { Module } from ".";
 import type { Ctx } from "@/app/api/v1/[...path]/route";
-import { can, str, num, idArray, isAssignedTo, resolveTargetStudentIds, ensureTeacher } from "../helpers";
+import { can, str, num, idArray, isAssignedTo, resolveTargetStudentIds, ensureTeacher, assertFeeAccess } from "../helpers";
 
 function isManager(ctx: Ctx): boolean {
   return ["OWNER", "ADMIN", "TEACHER"].includes(ctx.session.user.role);
@@ -226,6 +226,7 @@ export const elearnModule: Module = {
       can(ctx, "elearn:view");
       const student = ctx.session.user.student;
       if (!student) throw new Error("Only students can start content");
+      assertFeeAccess(student);
       const schoolId = ctx.session.user.schoolId;
       const item = await prisma.enrollmentContent.findFirst({ where: { id: ctx.id, schoolId, isPublished: true } });
       if (!item) throw new Error("Item not found or not published");
@@ -242,6 +243,7 @@ export const elearnModule: Module = {
       can(ctx, "elearn:view");
       const student = ctx.session.user.student;
       if (!student) throw new Error("Only students can complete content");
+      assertFeeAccess(student);
       const schoolId = ctx.session.user.schoolId;
       const item = await prisma.enrollmentContent.findFirst({ where: { id: ctx.id, schoolId, isPublished: true } });
       if (!item) throw new Error("Item not found or not published");

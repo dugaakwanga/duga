@@ -1,6 +1,7 @@
 import { prisma } from "@duga/core/server";
 import type { Module } from ".";
 import { subfeatureEnabled } from "../features";
+import { feeInfoOf } from "../helpers";
 
 // Role-aware dashboard summaries.
 export const dashboardModule: Module = {
@@ -97,7 +98,7 @@ export const dashboardModule: Module = {
           ? prisma.invoice.findFirst({ where: { studentId: student.id }, orderBy: { createdAt: "desc" } })
           : Promise.resolve(null),
       ]);
-      return { role, classSubjects, assignments, live, reportCard, invoice };
+      return { role, classSubjects, assignments, live, reportCard, invoice, fee: feeInfoOf(student) };
     }
 
     return { role };

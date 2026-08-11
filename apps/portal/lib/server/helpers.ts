@@ -131,6 +131,53 @@ export function isoDay(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+// ---------------------------------------------------------------------------
+// Per-child fee / access window helpers.
+// The admin sets a fee amount and the number of days it covers when a child is
+// enrolled. The app tracks the window (feePaidThrough) and computes how many
+// days remain; once the window passes the student's portal access is locked.
+// ---------------------------------------------------------------------------
+
+export interface StudentFeeInfo {
+  feeAmount: string;
+  feeDays: number;
+  feePaidThrough: string | null;
+  usedDays: number;
+  daysRemaining: number;
+  expired: boolean;
+}
+
+export function feeInfoOf(student: { feeAmount: { toString(): string } | string | null; feeDays: number | null; feePaidThrough: Date | null; enrollmentDate: Date }): StudentFeeInfo {
+  const amount = typeof student.feeAmount === "string" ? student.feeAmount : (student.feeAmount as { toString(): string })?.toString() ?? "0";
+  const feeDays = student.feeDays ?? 0;
+  const paidThrough = student.feePaidThrough;
+  const start = paidThrough ? new Date(paidThrough.getTime() - feeDays * 86400000) : student.enrollmentDate;
+  const now = Date.now();
+  const end = paidThrough ? paidThrough.getTime() : now;
+  const usedDays = Math.max(0, Math.floor((Math.min(now, end) - start.getTime()) / 86400000));
+  const daysRemaining = paidThrough ? Math.max(0, Math.ceil((end - now) / 86400000)) : feeDays;
+  const expired = !!paidThrough && now > end;
+  return {
+    feeAmount: amount,
+    feeDays,
+    feePaidThrough: paidThrough ? paidThrough.toISOString() : null,
+    usedDays,
+    daysRemaining,
+    expired,
+  };
+}
+
+// Throw 403 for STUDENT/PARENT callers when the child's fee window has lapsed.
+export function assertFeeAccess(student: { feePaidThrough: Date | null }): void {
+  if (student.feePaidThrough && student.feePaidThrough.getTime() < Date.now()) {
+    const err = new Error(
+      "Access suspended — the school fee period for this student has ended. Please contact the school to renew.",
+    ) as Error & { status?: number };
+    err.status = 403;
+    throw err;
+  }
+}
+
 /**
  * Ensure the caller has a Teacher record so they can author content that is
  * attributed to a teacher (lesson notes, tests, live classes, e-learning,
