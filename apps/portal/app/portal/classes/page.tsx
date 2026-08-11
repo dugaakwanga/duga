@@ -66,6 +66,30 @@ export default function ClassesPage() {
     if (!name) return;
     try {
       await api("classes/addSubject", { method: "POST", body: { name, section } });
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
+  async function addLevel() {
+    const name = window.prompt("Level name (e.g. Basic 1 or JSS 1)");
+    const section = window.prompt("Section (PRIMARY / SECONDARY)", "SECONDARY");
+    if (!name) return;
+    try {
+      await api("classes/addLevel", { method: "POST", body: { name, section } });
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
+  async function addSession() {
+    const name = window.prompt("Session name (e.g. 2025/2026)");
+    if (!name) return;
+    try {
+      await api("classes/addSession", { method: "POST", body: { name } });
+      load();
     } catch (e) {
       alert((e as Error).message);
     }
@@ -88,6 +112,8 @@ export default function ClassesPage() {
         actions={
           isAdmin ? (
             <>
+              <Button variant="outline" onClick={addSession} style={{ marginRight: 10 }}>Add session</Button>
+              <Button variant="outline" onClick={addLevel} style={{ marginRight: 10 }}>Add level</Button>
               <Button variant="outline" onClick={addSubject} style={{ marginRight: 10 }}>Add subject</Button>
               <Button onClick={() => setOpen(true)}><Icon name="plus" size={16} /> New class</Button>
             </>
@@ -130,6 +156,10 @@ export default function ClassesPage() {
       )}
 
       <Modal open={open} onClose={() => setOpen(false)} title="Create class group">
+        <div style={{ marginBottom: 12 }}>
+          {levels.length === 0 && <Alert tone="warning">No levels yet — add a level first (e.g. Basic 1, JSS 1) using the &quot;Add level&quot; button.</Alert>}
+          {sessions.length === 0 && <Alert tone="warning">No sessions yet — add a session first (e.g. 2025/2026) using the &quot;Add session&quot; button.</Alert>}
+        </div>
         <Field label="Level" required>
           <Select value={form.levelId ?? ""} onChange={(e) => setForm({ ...form, levelId: e.target.value })}>
             <option value="">Select level…</option>

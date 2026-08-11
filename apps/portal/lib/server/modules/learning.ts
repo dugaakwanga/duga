@@ -2,7 +2,7 @@ import { prisma } from "@duga/core/server";
 import { jitsiRoomLink, logAudit, dispatchNotification, dispatchToMany } from "@duga/core/server";
 import type { Module } from ".";
 import type { Ctx } from "@/app/api/v1/[...path]/route";
-import { can, str, num, pick, idArray, isAssignedTo } from "../helpers";
+import { can, str, num, pick, idArray, isAssignedTo, ensureTeacher } from "../helpers";
 import { assertSubfeature } from "../features";
 
 type Kind = "notes" | "assignments" | "tests" | "live";
@@ -130,24 +130,22 @@ export const learningModule: Module = {
 
   async create(ctx) {
     const kind = (str(ctx.body.kind) ?? "note") as string;
-    const teacher = ctx.session.user.teacher;
-    if (!teacher) {
-      const err = new Error("Only teachers can create learning content") as Error & { status?: number };
-      err.status = 403;
-      throw err;
-    }
+    const role = ctx.session.user.role;
     can(ctx, "learning:manage");
     await assertKindSubfeature(ctx, kind);
     const schoolId = ctx.session.user.schoolId;
+    // OWNER/ADMIN users author content on behalf of the subject's assigned
+    // teacher; regular teachers author only for their own class-subjects.
+    const teacher = role === "TEACHER" ? ctx.session.user.teacher! : await ensureTeacher(ctx);
     const classSubjectId = str(ctx.body.classSubjectId);
     if (!classSubjectId) throw new Error("classSubjectId required");
     const classSubject = await prisma.classSubject.findFirst({
-      where: { id: classSubjectId, teacherId: teacher.id },
+      where: { id: classSubjectId, schoolId, ...(role === "TEACHER" ? { teacherId: teacher.id } : {}) },
       include: { classGroup: { include: { level: true } } },
     });
     if (!classSubject) throw new Error("You can only add content to your own subjects");
-
-    const common = { schoolId, classSubjectId, teacherId: teacher.id, termId: str(ctx.body.termId) };
+    const ownerTeacherId = role === "TEACHER" ? teacher.id : classSubject.teacherId;
+    const common = { schoolId, classSubjectId, teacherId: ownerTeacherId, termId: str(ctx.body.termId) };
 
     if (kind === "note") {
       const note = await prisma.lessonNote.create({
@@ -252,20 +250,21 @@ export const learningModule: Module = {
     can(ctx, "learning:manage");
     await assertKindSubfeature(ctx, kind);
     const schoolId = ctx.session.user.schoolId;
+    const role = ctx.session.user.role;
     const teacher = ctx.session.user.teacher;
+    const teacherFilter = role === "TEACHER" && teacher ? { teacherId: teacher.id } : {};
     if (kind === "notes") {
-      const item = await prisma.lessonNote.findFirst({ where: { id: ctx.id, schoolId, ...(teacher ? { teacherId: teacher.id } : {}) } });
+      const item = await prisma.lessonNote.findFirst({ where: { id: ctx.id, schoolId, ...teacherFilter } });
       if (!item) throw new Error("Note not found");
       return prisma.lessonNote.update({ where: { id: ctx.id }, data: pick(ctx.body, ["topic", "content", "week"]) });
     }
     if (kind === "assignments") {
-      const item = await prisma.assignment.findFirst({ where: { id: ctx.id, schoolId, ...(teacher ? { teacherId: teacher.id } : {}) } });
+      const item = await prisma.assignment.findFirst({ where: { id: ctx.id, schoolId, ...teacherFilter } });
       if (!item) throw new Error("Assignment not found");
       return prisma.assignment.update({ where: { id: ctx.id }, data: pick(ctx.body, ["title", "instructions", "dueAt", "isPublished", "maxScore", "targetStudentIds"]) });
     }
     if (kind === "tests") {
-      const role = ctx.session.user.role;
-      const test = await prisma.test.findFirst({ where: { id: ctx.id, schoolId, ...(teacher ? { teacherId: teacher.id } : {}) } });
+      const test = await prisma.test.findFirst({ where: { id: ctx.id, schoolId, ...teacherFilter } });
       if (!test) throw new Error("Test not found");
       if (test?.isExam && role !== "OWNER" && role !== "ADMIN") {
         // Exams can only be published (status -> PUBLISHED) by the owner/admin.

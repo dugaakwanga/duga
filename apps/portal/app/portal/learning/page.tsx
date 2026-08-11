@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { PageHeader, Card, Badge, Button, Modal, Field, Input, Textarea, Alert, Spinner, EmptyState, Tabs, Icon } from "@duga/ui";
+import { PageHeader, Card, Badge, Button, Modal, Field, Input, Textarea, Alert, Spinner, EmptyState, Tabs, Icon, Select } from "@duga/ui";
 import { api } from "@/lib/client/api";
 
 type Kind = "notes" | "assignments" | "tests" | "live";
@@ -28,6 +28,7 @@ interface Item {
 export default function LearningPage() {
   const [kind, setKind] = useState<Kind>("notes");
   const [items, setItems] = useState<Item[]>([]);
+  const [options, setOptions] = useState<Array<{ id: string; subject: { name: string }; classGroup: { level: { name: string }; name: string } | null }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -37,9 +38,13 @@ export default function LearningPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const d = await api<{ items: Item[] }>(`learning?kind=${kind}`);
+      const [d, opts, me] = await Promise.all([
+        api<{ items: Item[] }>(`learning?kind=${kind}`),
+        api<Array<{ id: string; subject: { name: string }; classGroup: { level: { name: string }; name: string } | null }>>("teacher"),
+        api<{ role: string }>("auth/me").catch(() => null),
+      ]);
       setItems(d.items);
-      const me = await api<{ role: string }>("auth/me").catch(() => null);
+      setOptions(opts);
       setIsStudent(me?.role === "STUDENT");
     } catch (e) {
       setError((e as Error).message);
@@ -123,8 +128,15 @@ export default function LearningPage() {
         <Field label={kind === "notes" ? "Topic" : "Title"} required>
           <Input value={form.title ?? form.topic ?? ""} onChange={(e) => setForm({ ...form, title: e.target.value, topic: e.target.value })} />
         </Field>
-        <Field label="Class subject ID" required>
-          <Input value={form.classSubjectId ?? ""} onChange={(e) => setForm({ ...form, classSubjectId: e.target.value })} placeholder="ClassSubject ID" />
+        <Field label="Class subject" required>
+          <Select value={form.classSubjectId ?? ""} onChange={(e) => setForm({ ...form, classSubjectId: e.target.value })}>
+            <option value="">Select a class subject…</option>
+            {options.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.subject.name} — {o.classGroup?.level.name ?? ""} {o.classGroup?.name ?? ""}
+              </option>
+            ))}
+          </Select>
         </Field>
         {kind === "notes" && (
           <Field label="Content">

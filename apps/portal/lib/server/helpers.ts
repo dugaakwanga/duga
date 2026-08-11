@@ -130,3 +130,23 @@ export function todayUTC(): Date {
 export function isoDay(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
+
+/**
+ * Ensure the caller has a Teacher record so they can author content that is
+ * attributed to a teacher (lesson notes, tests, live classes, e-learning,
+ * games). TEACHER users already have one; OWNER/ADMIN users who manage content
+ * without being classroom teachers get one auto-created the first time.
+ */
+export async function ensureTeacher(ctx: Ctx): Promise<NonNullable<Ctx["session"]["user"]["teacher"]>> {
+  const existing = ctx.session.user.teacher;
+  if (existing) return existing;
+  const schoolId = ctx.session.user.schoolId;
+  return prisma.teacher.create({
+    data: {
+      userId: ctx.session.user.id,
+      schoolId,
+      staffNumber: `ADM-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
+      designation: ctx.session.user.role === "OWNER" ? "Proprietor" : "Administrator",
+    },
+  });
+}

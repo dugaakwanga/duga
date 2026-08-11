@@ -1,7 +1,7 @@
 import { prisma, logAudit } from "@duga/core/server";
 import type { Module } from ".";
 import type { Ctx } from "@/app/api/v1/[...path]/route";
-import { can, str, num, idArray, isAssignedTo, resolveTargetStudentIds } from "../helpers";
+import { can, str, num, idArray, isAssignedTo, resolveTargetStudentIds, ensureTeacher } from "../helpers";
 
 // Sync "assigned" game progress rows for the targeted students.
 async function syncGameTargets(schoolId: string, gameId: string, classGroupIds: string[], studentIds: string[]): Promise<void> {
@@ -93,8 +93,7 @@ export const gamesModule: Module = {
 
   async create(ctx) {
     can(ctx, "games:manage");
-    const teacher = ctx.session.user.teacher;
-    if (!teacher) throw new Error("Only teachers can create educational games");
+    const teacher = ctx.session.user.role === "TEACHER" ? ctx.session.user.teacher! : await ensureTeacher(ctx);
     const schoolId = ctx.session.user.schoolId;
     const title = str(ctx.body.title);
     if (!title) throw new Error("title required");

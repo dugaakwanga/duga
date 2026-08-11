@@ -1,7 +1,7 @@
 import { prisma, logAudit, dispatchNotification } from "@duga/core/server";
 import type { Module } from ".";
 import type { Ctx } from "@/app/api/v1/[...path]/route";
-import { can, str, num, idArray, isAssignedTo, resolveTargetStudentIds } from "../helpers";
+import { can, str, num, idArray, isAssignedTo, resolveTargetStudentIds, ensureTeacher } from "../helpers";
 
 function isManager(ctx: Ctx): boolean {
   return ["OWNER", "ADMIN", "TEACHER"].includes(ctx.session.user.role);
@@ -122,8 +122,7 @@ export const elearnModule: Module = {
 
   async create(ctx) {
     can(ctx, "elearn:manage");
-    const teacher = ctx.session.user.teacher;
-    if (!teacher) throw new Error("Only teachers can create learning content");
+    const teacher = ctx.session.user.role === "TEACHER" ? ctx.session.user.teacher! : await ensureTeacher(ctx);
     const schoolId = ctx.session.user.schoolId;
     const title = str(ctx.body.title);
     if (!title) throw new Error("title required");

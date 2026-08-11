@@ -52,6 +52,16 @@ export const classesModule: Module = {
     const sessionId = str(b.sessionId);
     const name = str(b.name);
     if (!levelId || !sessionId || !name) throw new Error("levelId, sessionId and name required");
+    const [level, session] = await Promise.all([
+      prisma.classLevel.findFirst({ where: { id: levelId, schoolId } }),
+      prisma.academicSession.findFirst({ where: { id: sessionId, schoolId } }),
+    ]);
+    if (!level) throw new Error("Level not found");
+    if (!session) throw new Error("Session not found");
+    if (b.formTeacherId) {
+      const ft = await prisma.teacher.findFirst({ where: { id: String(b.formTeacherId), schoolId } });
+      if (!ft) throw new Error("Form teacher not found");
+    }
     const cls = await prisma.classGroup.create({
       data: { schoolId, levelId, sessionId, name, room: str(b.room), formTeacherId: str(b.formTeacherId) },
     });
