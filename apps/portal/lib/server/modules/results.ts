@@ -1,7 +1,7 @@
 import { prisma } from "@duga/core/server";
 import { collateReportCards, resolveResultsAccess, logAudit, dispatchToMany } from "@duga/core/server";
 import type { Module } from ".";
-import { can, str, num } from "../helpers";
+import { can, str, num, studentScope } from "../helpers";
 
 export const resultsModule: Module = {
   async list(ctx) {
@@ -62,8 +62,14 @@ export const resultsModule: Module = {
 
   async get(ctx) {
     can(ctx, "reportcards:view");
-    const rc = await prisma.reportCard.findUnique({
-      where: { id: ctx.id },
+    const role = ctx.session.user.role;
+    const rc = await prisma.reportCard.findFirst({
+      where: {
+        id: ctx.id,
+        schoolId: ctx.session.user.schoolId,
+        // Students/parents can only reach their own published cards.
+        ...(role === "STUDENT" || role === "PARENT" ? { ...(await studentScope(ctx)), isPublished: true } : {}),
+      },
       include: {
         term: true,
         student: { include: { user: { select: { firstName: true, lastName: true } } } },
@@ -71,6 +77,15 @@ export const resultsModule: Module = {
       },
     });
     if (!rc) throw new Error("Report card not found");
+    // Students/parents must also pass the fee gate (published + paid/overridden).
+    if (role === "STUDENT" || role === "PARENT") {
+      const access = await resolveResultsAccess(rc.studentId, rc.termId);
+      if (!access.allowed) {
+        const err = new Error("This report card is locked") as Error & { status?: number };
+        err.status = 403;
+        throw err;
+      }
+    }
     return rc;
   },
 

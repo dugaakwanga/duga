@@ -32,8 +32,8 @@ export const messagingModule: Module = {
 
   async get(ctx) {
     can(ctx, "messaging:use");
-    const conversation = await prisma.conversation.findUnique({
-      where: { id: ctx.id },
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: ctx.id, participants: { some: { userId: ctx.session.user.id } } },
       include: {
         participants: { include: { user: { select: { id: true, firstName: true, lastName: true, role: true } } } },
         messages: {

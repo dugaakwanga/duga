@@ -181,6 +181,9 @@ export const gamesModule: Module = {
 
     unpublish: async (ctx) => {
       can(ctx, "games:manage");
+      const item = await prisma.educationalGame.findFirst({ where: { id: ctx.id, schoolId: ctx.session.user.schoolId } });
+      if (!item) throw new Error("Game not found");
+      if (ctx.session.user.role === "TEACHER" && item.teacherId !== ctx.session.user.teacher!.id) throw new Error("Not authorized");
       await prisma.educationalGame.update({ where: { id: ctx.id }, data: { isPublished: false, publishedAt: null } });
       return { ok: true };
     },

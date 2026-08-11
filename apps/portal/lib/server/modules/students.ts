@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import { prisma } from "@duga/core/server";
 import type { Module } from ".";
-import { can, pick, str } from "../helpers";
+import { can, pick, str, studentScope } from "../helpers";
 import { logAudit } from "@duga/core/server";
 
 export const studentsModule: Module = {
@@ -36,8 +36,14 @@ export const studentsModule: Module = {
 
   async get(ctx) {
     can(ctx, "students:view");
-    const student = await prisma.student.findUnique({
-      where: { id: ctx.id },
+    const role = ctx.session.user.role;
+    const student = await prisma.student.findFirst({
+      where: {
+        id: ctx.id,
+        schoolId: ctx.session.user.schoolId,
+        // Parents can only view their own children's profiles.
+        ...(role === "PARENT" ? await studentScope(ctx) : {}),
+      },
       include: {
         user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, status: true, mustChangePassword: true } },
         classGroup: { include: { level: true, session: true } },
@@ -159,10 +165,19 @@ export const studentsModule: Module = {
 
   async update(ctx) {
     can(ctx, "students:manage");
+    const schoolId = ctx.session.user.schoolId;
     const data = pick(ctx.body, ["gender", "dateOfBirth", "isBoarding", "status", "currentClassGroupId", "photoUrl", "admissionNumber"]);
     if (data.dateOfBirth) data.dateOfBirth = new Date(String(data.dateOfBirth));
+    // Must exist in the caller's school.
+    const existing = await prisma.student.findFirst({ where: { id: ctx.id, schoolId } });
+    if (!existing) throw new Error("Student not found");
+    // The destination class group must belong to the caller's school.
+    if (data.currentClassGroupId) {
+      const cg = await prisma.classGroup.findFirst({ where: { id: String(data.currentClassGroupId), schoolId } });
+      if (!cg) throw new Error("Class not found");
+    }
     const student = await prisma.student.update({ where: { id: ctx.id }, data });
-    await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "student.updated", entityType: "Student", entityId: ctx.id, meta: data });
+    await logAudit({ schoolId, userId: ctx.session.user.id, action: "student.updated", entityType: "Student", entityId: ctx.id, meta: data });
     return student;
   },
 
@@ -170,15 +185,18 @@ export const studentsModule: Module = {
   actions: {
     promote: async (ctx) => {
       can(ctx, "students:promote");
+      const schoolId = ctx.session.user.schoolId;
       const classGroupId = str(ctx.body.classGroupId);
       const reason = str(ctx.body.reason);
       if (!classGroupId) throw new Error("classGroupId required");
-      const student = await prisma.student.findUnique({ where: { id: ctx.id } });
+      const student = await prisma.student.findFirst({ where: { id: ctx.id, schoolId } });
       if (!student) throw new Error("Student not found");
+      const cg = await prisma.classGroup.findFirst({ where: { id: classGroupId, schoolId } });
+      if (!cg) throw new Error("Class not found");
       await prisma.student.update({ where: { id: ctx.id }, data: { currentClassGroupId: classGroupId } });
       await prisma.placementHistory.create({
         data: {
-          schoolId: ctx.session.user.schoolId,
+          schoolId,
           studentId: ctx.id!,
           fromClassGroupId: student.currentClassGroupId,
           toClassGroupId: classGroupId,
@@ -186,7 +204,7 @@ export const studentsModule: Module = {
           reason,
         },
       });
-      await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "student.promoted", entityType: "Student", entityId: ctx.id, meta: { classGroupId } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "student.promoted", entityType: "Student", entityId: ctx.id, meta: { classGroupId } });
       return { ok: true };
     },
   },

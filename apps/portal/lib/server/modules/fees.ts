@@ -1,7 +1,7 @@
 import { prisma, initializePayment, verifyPayment, logAudit, dispatchNotification } from "@duga/core/server";
 import { generateReference, formatNaira } from "@duga/core";
 import type { Module } from ".";
-import { can, str, num } from "../helpers";
+import { can, str, num, studentScope } from "../helpers";
 
 async function paystackConfigured(): Promise<boolean> {
   const key = process.env.PAYSTACK_SECRET_KEY;
@@ -79,10 +79,18 @@ export const feesModule: Module = {
 
   async get(ctx) {
     can(ctx, "fees:view");
-    return prisma.invoice.findUnique({
-      where: { id: ctx.id },
+    const role = ctx.session.user.role;
+    const invoice = await prisma.invoice.findFirst({
+      where: {
+        id: ctx.id,
+        schoolId: ctx.session.user.schoolId,
+        // Students/parents can only reach their own invoices.
+        ...(role === "STUDENT" || role === "PARENT" ? await studentScope(ctx) : {}),
+      },
       include: { items: true, payments: true, student: { include: { user: { select: { firstName: true, lastName: true } } } }, term: true },
     });
+    if (!invoice) throw new Error("Invoice not found");
+    return invoice;
   },
 
   actions: {

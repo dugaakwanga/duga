@@ -1,6 +1,5 @@
 import { prisma } from "@duga/core/server";
 import type { Module } from ".";
-import { can } from "../helpers";
 
 // The finance/reports dashboard is owner-only by default. The owner can grant
 // the admin access via the "adminFinanceAccess" school setting (settings page).
@@ -58,7 +57,11 @@ export const reportsModule: Module = {
   actions: {
     // Fee status per class/term for the fees dashboard
     feeStatus: async (ctx) => {
-      can(ctx, "fees:view");
+      if (!(await canViewFinance(ctx))) {
+        const err = new Error("Only the school owner can view the finance dashboard") as Error & { status?: number };
+        err.status = 403;
+        throw err;
+      }
       const schoolId = ctx.session.user.schoolId;
       const classGroups = await prisma.classGroup.findMany({
         where: { schoolId },

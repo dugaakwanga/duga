@@ -66,12 +66,12 @@ async function attendanceSeries(schoolId: string, studentIds?: string[]) {
   }));
 }
 
-async function enrollmentSeries(schoolId: string) {
+async function enrollmentSeries(schoolId: string, studentIds?: string[]) {
   const since = new Date();
   since.setMonth(since.getMonth() - 5);
   since.setDate(1);
   const rows = await prisma.student.findMany({
-    where: { schoolId, createdAt: { gte: since } },
+    where: { schoolId, createdAt: { gte: since }, ...(studentIds ? { id: { in: studentIds } } : {}) },
     select: { createdAt: true },
   });
   const buckets = new Map<string, number>();
@@ -169,13 +169,23 @@ export const progressModule: Module = {
       ownIds = [ctx.session.user.student.id];
     }
 
-    const ids = role === "TEACHER" ? scopedStudentIds : role === "STUDENT" ? ownIds : undefined;
+    // Parent scope: only the children linked to this parent.
+    let parentIds: string[] | undefined;
+    if (role === "PARENT" && ctx.session.user.parent) {
+      const links = await prisma.studentParent.findMany({
+        where: { parentId: ctx.session.user.parent.id },
+        select: { studentId: true },
+      });
+      parentIds = links.map((l) => l.studentId);
+    }
+
+    const ids = role === "TEACHER" ? scopedStudentIds : role === "STUDENT" ? ownIds : role === "PARENT" ? parentIds : undefined;
 
     const financeOn = await subfeatureEnabled(schoolId, role, "finance");
     const [fees, attendance, enrollment, scores, summary, classes] = await Promise.all([
       financeOn ? feesSeries(schoolId, ids) : Promise.resolve([] as Array<{ label: string; value: number }>),
       attendanceSeries(schoolId, ids),
-      enrollmentSeries(schoolId),
+      enrollmentSeries(schoolId, ids),
       scoreSeries(schoolId, ids),
       financeOn ? feeSummary(schoolId, ids) : Promise.resolve({ total: 0, paid: 0, balance: 0 }),
       classStats(schoolId, role === "TEACHER" ? teacher?.id : undefined, ids),

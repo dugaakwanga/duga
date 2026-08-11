@@ -89,14 +89,18 @@ export const staffModule: Module = {
 
   async update(ctx) {
     can(ctx, "staff:manage");
+    const schoolId = ctx.session.user.schoolId;
+    const target = await prisma.user.findFirst({ where: { id: ctx.id, schoolId } });
+    if (!target) throw new Error("Staff member not found");
+    if (!["TEACHER", "ADMIN", "OWNER"].includes(target.role)) throw new Error("Not a staff member");
     const data: Record<string, unknown> = {};
     const b = ctx.body;
     if (b.status) data.status = String(b.status);
     if (b.phone) data.phone = String(b.phone);
     const user = await prisma.user.update({ where: { id: ctx.id }, data });
-    if (b.specialty) await prisma.teacher.updateMany({ where: { userId: ctx.id }, data: { specialty: String(b.specialty) } });
-    if (b.designation) await prisma.teacher.updateMany({ where: { userId: ctx.id }, data: { designation: String(b.designation) } });
-    await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "staff.updated", entityType: "User", entityId: ctx.id, meta: data });
+    if (b.specialty) await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { specialty: String(b.specialty) } });
+    if (b.designation) await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { designation: String(b.designation) } });
+    await logAudit({ schoolId, userId: ctx.session.user.id, action: "staff.updated", entityType: "User", entityId: ctx.id, meta: data });
     return user;
   },
 

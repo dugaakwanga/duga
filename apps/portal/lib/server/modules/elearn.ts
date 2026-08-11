@@ -94,14 +94,29 @@ export const elearnModule: Module = {
 
   async get(ctx) {
     can(ctx, "elearn:view");
+    const role = ctx.session.user.role;
     const item = await prisma.enrollmentContent.findFirst({
-      where: { id: ctx.id, schoolId: ctx.session.user.schoolId },
+      where: {
+        id: ctx.id,
+        schoolId: ctx.session.user.schoolId,
+        // Students/parents can only reach published content that is assigned to them.
+        ...(role !== "OWNER" && role !== "ADMIN" && role !== "TEACHER" ? { isPublished: true } : {}),
+      },
       include: {
         teacher: { include: { user: { select: { firstName: true, lastName: true } } } },
-        progress: { include: { student: { include: { user: { select: { firstName: true, lastName: true } } } } } },
+        ...(role === "OWNER" || role === "ADMIN" || role === "TEACHER"
+          ? { progress: { include: { student: { include: { user: { select: { firstName: true, lastName: true } } } } } } }
+          : {}),
       },
     });
     if (!item) throw new Error("Content not found");
+    // Consumers must be a target of the content (self or linked child).
+    if (role === "STUDENT" || role === "PARENT") {
+      const student = ctx.session.user.student;
+      const myIds = student ? [student.id] : await childrenOfParent(ctx);
+      const classGroupId = student?.currentClassGroupId ?? null;
+      if (!myIds.some((sid) => isAssignedTo(item, sid, classGroupId))) throw new Error("Content not found");
+    }
     return item;
   },
 
@@ -200,6 +215,9 @@ export const elearnModule: Module = {
 
     unpublish: async (ctx) => {
       can(ctx, "elearn:manage");
+      const item = await prisma.enrollmentContent.findFirst({ where: { id: ctx.id, schoolId: ctx.session.user.schoolId } });
+      if (!item) throw new Error("Content not found");
+      if (ctx.session.user.role === "TEACHER" && item.teacherId !== ctx.session.user.teacher!.id) throw new Error("Not authorized");
       await prisma.enrollmentContent.update({ where: { id: ctx.id }, data: { isPublished: false, publishedAt: null } });
       return { ok: true };
     },
