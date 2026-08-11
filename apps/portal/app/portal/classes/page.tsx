@@ -30,6 +30,9 @@ export default function ClassesPage() {
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
+  const [addKind, setAddKind] = useState<"" | "subject" | "level" | "session">("");
+  const [addForm, setAddForm] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
   const [assignTarget, setAssignTarget] = useState<ClassGroup | null>(null);
   const [assignForm, setAssignForm] = useState<Record<string, string>>({});
   const isAdmin = role === "OWNER" || role === "ADMIN";
@@ -65,38 +68,29 @@ export default function ClassesPage() {
     }
   }
 
-  async function addSubject() {
-    const name = window.prompt("Subject name");
-    const section = window.prompt("Section (PRIMARY / SECONDARY)", "SECONDARY");
-    if (!name) return;
-    try {
-      await api("classes/addSubject", { method: "POST", body: { name, section } });
-      load();
-    } catch (e) {
-      alert((e as Error).message);
-    }
+  function openAdd(kind: "subject" | "level" | "session") {
+    setAddKind(kind);
+    setAddForm(kind === "session" ? {} : { section: "SECONDARY" });
   }
 
-  async function addLevel() {
-    const name = window.prompt("Level name (e.g. Basic 1 or JSS 1)");
-    const section = window.prompt("Section (PRIMARY / SECONDARY)", "SECONDARY");
-    if (!name) return;
+  async function saveAdd() {
+    if (!addKind) return;
+    setSaving(true);
     try {
-      await api("classes/addLevel", { method: "POST", body: { name, section } });
+      const endpoint = addKind === "subject" ? "classes/addSubject" : addKind === "level" ? "classes/addLevel" : "classes/addSession";
+      const body =
+        addKind === "session"
+          ? addForm
+          : { name: addForm.name, section: (addForm.section ?? "SECONDARY") as "PRIMARY" | "SECONDARY" };
+      if (!(body as { name?: string }).name) throw new Error("Name is required");
+      await api(endpoint, { method: "POST", body });
+      setAddKind("");
+      setAddForm({});
       load();
     } catch (e) {
       alert((e as Error).message);
-    }
-  }
-
-  async function addSession() {
-    const name = window.prompt("Session name (e.g. 2025/2026)");
-    if (!name) return;
-    try {
-      await api("classes/addSession", { method: "POST", body: { name } });
-      load();
-    } catch (e) {
-      alert((e as Error).message);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -130,9 +124,9 @@ export default function ClassesPage() {
         actions={
           isAdmin ? (
             <>
-              <Button variant="outline" onClick={addSession} style={{ marginRight: 10 }}>Add session</Button>
-              <Button variant="outline" onClick={addLevel} style={{ marginRight: 10 }}>Add level</Button>
-              <Button variant="outline" onClick={addSubject} style={{ marginRight: 10 }}>Add subject</Button>
+              <Button variant="outline" onClick={() => openAdd("session")} style={{ marginRight: 10 }}>Add session</Button>
+              <Button variant="outline" onClick={() => openAdd("level")} style={{ marginRight: 10 }}>Add level</Button>
+              <Button variant="outline" onClick={() => openAdd("subject")} style={{ marginRight: 10 }}>Add subject</Button>
               <Button onClick={() => setOpen(true)}><Icon name="plus" size={16} /> New class</Button>
             </>
           ) : undefined
@@ -238,6 +232,42 @@ export default function ClassesPage() {
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <Button variant="ghost" onClick={() => setAssignTarget(null)}>Cancel</Button>
           <Button onClick={assignSubject}>Assign</Button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!addKind}
+        onClose={() => setAddKind("")}
+        title={addKind === "subject" ? "Add subject" : addKind === "level" ? "Add level" : "Add session"}
+      >
+        {addKind === "level" && (
+          <div style={{ marginBottom: 12 }}>
+            <Alert tone="info">Levels group classes by stage, e.g. Basic 1, JSS 1, SS 1.</Alert>
+          </div>
+        )}
+        {addKind === "session" && (
+          <div style={{ marginBottom: 12 }}>
+            <Alert tone="info">Sessions are school years, e.g. 2025/2026.</Alert>
+          </div>
+        )}
+        <Field label={addKind === "session" ? "Session name" : "Name"} required>
+          <Input
+            value={addForm.name ?? ""}
+            onChange={(e) => setAddForm({ ...addForm, name: e.target.value })}
+            placeholder={addKind === "session" ? "e.g. 2025/2026" : addKind === "level" ? "e.g. Basic 1" : "e.g. Mathematics"}
+          />
+        </Field>
+        {addKind !== "session" && (
+          <Field label="Section" required>
+            <Select value={addForm.section ?? "SECONDARY"} onChange={(e) => setAddForm({ ...addForm, section: e.target.value })}>
+              <option value="PRIMARY">Primary</option>
+              <option value="SECONDARY">Secondary</option>
+            </Select>
+          </Field>
+        )}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+          <Button variant="ghost" onClick={() => setAddKind("")}>Cancel</Button>
+          <Button onClick={saveAdd} loading={saving}>Save</Button>
         </div>
       </Modal>
     </div>
