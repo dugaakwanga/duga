@@ -7,6 +7,7 @@ import { api } from "@/lib/client/api";
 interface Level { id: string; name: string; section: string; order: number }
 interface Session { id: string; name: string }
 interface Teacher { id: string; firstName: string; lastName: string }
+interface Subject { id: string; name: string; section: string }
 interface ClassGroup {
   id: string;
   name: string;
@@ -22,20 +23,24 @@ export default function ClassesPage() {
   const [classes, setClasses] = useState<ClassGroup[]>([]);
   const [levels, setLevels] = useState<Level[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [role, setRole] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
+  const [assignTarget, setAssignTarget] = useState<ClassGroup | null>(null);
+  const [assignForm, setAssignForm] = useState<Record<string, string>>({});
   const isAdmin = role === "OWNER" || role === "ADMIN";
 
   const load = useCallback(async () => {
     try {
-      const d = await api<{ items: ClassGroup[]; levels: Level[]; sessions: Session[]; teachers: Teacher[]; role: string }>("classes");
+      const d = await api<{ items: ClassGroup[]; levels: Level[]; sessions: Session[]; subjects: Subject[]; teachers: Teacher[]; role: string }>("classes");
       setClasses(d.items);
       setLevels(d.levels);
       setSessions(d.sessions);
+      setSubjects(d.subjects ?? []);
       setTeachers(d.teachers ?? []);
       setRole(d.role);
     } catch (e) {
@@ -104,6 +109,19 @@ export default function ClassesPage() {
     }
   }
 
+  async function assignSubject() {
+    if (!assignTarget) return;
+    if (!assignForm.subjectId || !assignForm.teacherId) return alert("Choose a subject and a teacher");
+    try {
+      await api(`classes/${assignTarget.id}/assignSubject`, { method: "POST", body: assignForm });
+      setAssignTarget(null);
+      setAssignForm({});
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -141,13 +159,14 @@ export default function ClassesPage() {
                 Class teacher: {c.formTeacher ? `${c.formTeacher.user.firstName} ${c.formTeacher.user.lastName}` : "Not set"}
               </div>
               {isAdmin && (
-                <div style={{ marginTop: 10 }}>
+                <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
                   <Select value={c.formTeacher?.id ?? ""} onChange={(e) => assignFormTeacher(c, e.target.value)}>
                     <option value="">— Select class teacher —</option>
                     {teachers.map((t) => (
                       <option key={t.id} value={t.id}>{t.firstName} {t.lastName}</option>
                     ))}
                   </Select>
+                  <Button size="sm" variant="outline" onClick={() => { setAssignTarget(c); setAssignForm({}); }}><Icon name="quiz" size={14} /> Assign subject</Button>
                 </div>
               )}
             </Card>
@@ -193,6 +212,32 @@ export default function ClassesPage() {
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
           <Button onClick={addClass}>Create</Button>
+        </div>
+      </Modal>
+
+      <Modal open={!!assignTarget} onClose={() => setAssignTarget(null)} title={assignTarget ? `Assign subject — ${assignTarget.level.name} ${assignTarget.name}` : ""}>
+        <div style={{ marginBottom: 12 }}>
+          {subjects.length === 0 && <Alert tone="warning">No subjects yet — create one with the &quot;Add subject&quot; button first.</Alert>}
+        </div>
+        <Field label="Subject" required>
+          <Select value={assignForm.subjectId ?? ""} onChange={(e) => setAssignForm({ ...assignForm, subjectId: e.target.value })}>
+            <option value="">Select subject…</option>
+            {subjects.map((s) => (
+              <option key={s.id} value={s.id}>{s.name} ({s.section.toLowerCase()})</option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Teacher" required>
+          <Select value={assignForm.teacherId ?? ""} onChange={(e) => setAssignForm({ ...assignForm, teacherId: e.target.value })}>
+            <option value="">Select teacher…</option>
+            {teachers.map((t) => (
+              <option key={t.id} value={t.id}>{t.firstName} {t.lastName}</option>
+            ))}
+          </Select>
+        </Field>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+          <Button variant="ghost" onClick={() => setAssignTarget(null)}>Cancel</Button>
+          <Button onClick={assignSubject}>Assign</Button>
         </div>
       </Modal>
     </div>
