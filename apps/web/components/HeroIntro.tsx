@@ -18,10 +18,12 @@ export default function HeroIntro({
   eyebrow,
   lead,
   stats,
+  show = "all",
 }: {
   eyebrow?: string;
   lead?: string;
   stats?: SiteStat[];
+  show?: "all" | "eyebrow" | "details";
 }) {
   const { content } = useSiteContent();
   const hero = content?.hero;
@@ -34,18 +36,22 @@ export default function HeroIntro({
 
   return (
     <>
-      <span className="mkt-eyebrow mkt-fade-in">{showEyebrow}</span>
-      <p className="lead mkt-fade-in mkt-fade-in--2">{showLead}</p>
-      <div className="mkt-hero-stats mkt-fade-in mkt-fade-in--4">
-        {showStats.map((s) => (
-          <div key={s.label}>
-            <strong>
-              <Counter to={s.value} suffix={s.suffix} />
-            </strong>
-            <span>{s.label}</span>
+      {show !== "details" && <span className="mkt-eyebrow mkt-fade-in">{showEyebrow}</span>}
+      {show !== "eyebrow" && (
+        <>
+          <p className="lead mkt-fade-in mkt-fade-in--2">{showLead}</p>
+          <div className="mkt-hero-stats mkt-fade-in mkt-fade-in--4">
+            {showStats.map((s) => (
+              <div key={s.label}>
+                <strong>
+                  <Counter to={s.value} suffix={s.suffix} />
+                </strong>
+                <span>{s.label}</span>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </>
+      )}
     </>
   );
 }

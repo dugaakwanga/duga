@@ -554,6 +554,81 @@ body {
 @media (max-width: 560px) {
   .mkt-hero .hero-line { overflow: visible; }
 }
+
+/* ===========================================================================
+   Premium homepage direction — fewer visual effects, more certainty and space
+   =========================================================================== */
+.mkt-grain, .mkt-blob, .mkt-wave { display: none; }
+.mkt-main { overflow: hidden; }
+.mkt-header-top .mkt-nav a:nth-child(n + 7) { display: none; }
+.mkt-header-top .mkt-nav::after {
+  content: "More";
+  color: var(--duga-muted);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 9px 8px;
+}
+.mkt-hero {
+  min-height: 625px;
+  isolation: isolate;
+  background: #fbfaf8;
+}
+.mkt-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    radial-gradient(780px 460px at 92% 18%, rgba(240, 86, 74, .11), transparent 62%),
+    radial-gradient(540px 320px at 4% 105%, rgba(31, 184, 173, .09), transparent 62%);
+  pointer-events: none;
+}
+.mkt-hero-video { opacity: .13; filter: grayscale(.3) saturate(.7); }
+.mkt-hero-video-overlay { background: linear-gradient(90deg, rgba(251,250,248,.98) 0%, rgba(251,250,248,.93) 48%, rgba(251,250,248,.74) 100%); }
+.mkt-hero .mkt-container {
+  z-index: 3;
+  min-height: 625px;
+  display: flex;
+  justify-content: center;
+  text-align: center;
+  padding: 85px 20px 70px;
+}
+.mkt-hero-copy { max-width: 790px; }
+.mkt-hero h1 { max-width: 760px; margin: 18px auto 20px; font-size: clamp(48px, 6.3vw, 82px); letter-spacing: -.075em; }
+.mkt-hero p.lead { margin: 0 auto; max-width: 680px; color: var(--duga-muted); font-size: 16px; font-weight: 550; }
+.mkt-hero-cta { justify-content: center; }
+.mkt-hero-stats { margin: 35px auto 0; justify-content: center; text-align: left; }
+.mkt-eyebrow { color: var(--duga-primary); background: #fff; font-weight: 800; }
+.mkt-section { padding: 88px 0; }
+.mkt-section--paper { background: #fff; }
+.mkt-section--soft { background: #faf8f5; }
+.mkt-section-head { margin-bottom: 42px; }
+.mkt-section-head--center { max-width: 680px; }
+.mkt-h2 { font-size: clamp(32px, 4vw, 50px); }
+.mkt-feature, .mkt-card, .mkt-offer, .mkt-graduate, .mkt-form-card {
+  border-color: rgba(36,48,71,.10);
+  box-shadow: 0 12px 30px -28px rgba(20,29,46,.55);
+}
+.mkt-feature { border-radius: 16px; }
+.mkt-feature:hover, .mkt-offer:hover { transform: translateY(-3px); box-shadow: 0 20px 36px -28px rgba(20,29,46,.48); }
+.mkt-feature-media { border-bottom-width: 1px; }
+.mkt-feature-body h3, .mkt-offer-title { font-family: var(--duga-font-sans); font-weight: 800; letter-spacing: -.035em; }
+.mkt-card { border-radius: 16px; }
+.mkt-card--numbered { border-top: 1px solid rgba(36,48,71,.10); }
+.mkt-icon { width: 44px; height: 44px; border-radius: 12px; box-shadow: none; }
+.mkt-ticker { background: var(--duga-primary-ink); padding-block: 12px; }
+.mkt-ticker-track span { font-family: var(--duga-font-sans); font-size: 14px; font-style: normal; font-weight: 750; }
+
+@media (max-width: 980px) {
+  .mkt-header-top .mkt-nav::after { display: none; }
+  .mkt-hero .mkt-container { min-height: 590px; padding-top: 72px; }
+}
+@media (max-width: 560px) {
+  .mkt-hero .mkt-container { min-height: 0; padding: 68px 18px 58px; }
+  .mkt-hero h1 { font-size: clamp(43px, 13vw, 59px); }
+  .mkt-hero-stats { width: 100%; gap: 12px; }
+  .mkt-section { padding: 68px 0; }
+}
 .mkt-hero .hero-word {
   display: inline-block;
   transform: translateY(112%);

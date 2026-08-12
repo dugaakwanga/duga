@@ -4,7 +4,7 @@ import Photo from "@/components/Photo";
 import { school as fallbackSchool, portalUrl } from "@/lib/content";
 import { getSiteData, mergeContent } from "@/lib/site-data";
 import { WEB_FEATURE_IDS } from "@duga/core";
-import { Reveal, Counter, Tilt, HeroHeadline } from "@/components/motion";
+import { Reveal, Counter, HeroHeadline } from "@/components/motion";
 import HomeGalleryPreview from "@/components/HomeGalleryPreview";
 import HomeNewsPreview from "@/components/HomeNewsPreview";
 import TestimonialCarousel from "@/components/TestimonialCarousel";
@@ -56,11 +56,12 @@ export default async function HomePage() {
         <div className="mkt-blob mkt-blob--1" aria-hidden="true" />
         <div className="mkt-blob mkt-blob--2" aria-hidden="true" />
         <div className="mkt-container">
-          <div>
-            <HeroIntro eyebrow={content.hero.eyebrow} lead={content.hero.lead} stats={content.stats} />
+          <div className="mkt-hero-copy">
+            <HeroIntro eyebrow={content.hero.eyebrow} show="eyebrow" />
             <h1>
               <HeroHeadline lines={["De  Ultimate  Glory", "Academy"]} accent="Academy" />
             </h1>
+            <HeroIntro lead={content.hero.lead} stats={content.stats} show="details" />
             <div className="mkt-hero-cta mkt-fade-in mkt-fade-in--3">
               <Link href="/apply" className="duga-btn duga-btn--primary duga-btn--lg duga-btn--arrow">
                 Apply for Admission <ArrowRight size={17} className="mkt-arrow" />
@@ -69,13 +70,6 @@ export default async function HomePage() {
                 Explore Academics <ArrowRight size={17} className="mkt-arrow" />
               </Link>
             </div>
-          </div>
-
-          <div className="mkt-hero-media mkt-fade-in mkt-fade-in--5">
-            <Tilt max={5}>
-              <Photo src="/images/primarypupil.png" alt="A primary pupil of De Ultimate Glory Academy" ratio="portrait" caption="Primary · Nursery to P6" className="mkt-hero-main-photo" />
-              <Photo src="/images/group 1 sec.png" alt="Secondary students of De Ultimate Glory Academy" ratio="wide" caption="Secondary · JSS1 to SSS3" className="mkt-hero-photo-2" />
-            </Tilt>
           </div>
         </div>
       </section>
