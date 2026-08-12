@@ -1,0 +1,100 @@
+/* Final public-site design layer: compact, calm, and image-led. */
+
+.mkt-grain, .mkt-blob, .mkt-wave { display: none; }
+
+/* Hero: the carousel remains clearly visible behind the message. */
+.mkt-hero { min-height: 650px; background: #263047; }
+.mkt-hero::after { background: linear-gradient(90deg, rgba(24,32,50,.72), rgba(24,32,50,.42) 52%, rgba(24,32,50,.13)); }
+.mkt-hero-video { opacity: 1; filter: none; }
+.mkt-hero-video-overlay { background: linear-gradient(90deg, rgba(20,28,45,.62), rgba(20,28,45,.28) 55%, rgba(20,28,45,.04)); }
+.mkt-hero .mkt-container {
+  min-height: 650px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  align-items: center;
+  gap: clamp(28px, 5vw, 72px);
+  padding: 74px max(24px, 5vw);
+  text-align: left;
+}
+.mkt-hero-copy { max-width: 630px; }
+.mkt-hero h1 { margin: 16px 0 18px; color: #fff; font-size: clamp(44px, 5.8vw, 76px); }
+.mkt-hero h1 em, .mkt-hero .hero-word.is-accent { color: var(--duga-gold); }
+.mkt-hero p.lead { margin: 0; max-width: 575px; color: rgba(255,255,255,.9); font-size: 14px; line-height: 1.7; font-weight: 500; }
+.mkt-hero .mkt-eyebrow { color: #fff; background: rgba(255,255,255,.13); border-color: rgba(255,255,255,.3); box-shadow: none; }
+.mkt-hero-cta, .mkt-hero-stats { justify-content: flex-start; }
+.mkt-hero-stats { margin: 28px 0 0; padding-top: 18px; border-color: rgba(255,255,255,.25); }
+.mkt-hero-stats div strong { color: #fff; font-size: 27px; }
+.mkt-hero-stats div span { color: rgba(255,255,255,.72); font-size: 9px; }
+.mkt-hero .duga-btn--outline { color: #fff; border-color: rgba(255,255,255,.6); background: rgba(255,255,255,.08); }
+
+/* Original hero photos: a clean rail, never overlapping. */
+.mkt-hero-photos {
+  position: static;
+  z-index: 4;
+  width: 300px;
+  height: auto;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  transform: none;
+  pointer-events: auto;
+}
+.mkt-hero-photos .mkt-photo,
+.mkt-hero-photos .mkt-hero-main-photo,
+.mkt-hero-photos .mkt-hero-photo-2 {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.55);
+  border-radius: 14px;
+  box-shadow: 0 16px 34px -20px rgba(0,0,0,.58);
+}
+.mkt-hero-photos .mkt-photo-caption { padding: 7px 9px; font-size: 9px; }
+
+/* Shared typography and surfaces across all public pages. */
+.mkt-section { padding: 82px 0; }
+.mkt-section--paper { background: #fff; }
+.mkt-section--soft { background: #faf8f5; }
+.mkt-page-hero { padding: 72px 0 62px; background: linear-gradient(135deg, #fff, #faf8f5); border-bottom: 1px solid rgba(36,48,71,.09); }
+.mkt-page-hero h1, .mkt-h2 { font-family: var(--duga-font-sans); font-weight: 850; letter-spacing: -.055em; line-height: 1.03; }
+.mkt-page-hero h1 { font-size: clamp(34px, 4.5vw, 56px); }
+.mkt-h2 { font-size: clamp(30px, 3.7vw, 46px); }
+.mkt-page-hero p, .mkt-section-head p { font-size: 14px; line-height: 1.65; font-weight: 500; color: var(--duga-muted); }
+.mkt-kicker, .mkt-breadcrumb { font-size: 10px; font-weight: 800; letter-spacing: .12em; }
+.mkt-card p, .mkt-feature-body p, .mkt-timeline-item p, .mkt-graduate-ach, .mkt-check-list li, .mkt-newsletter p { font-size: 13px; line-height: 1.65; font-weight: 500; }
+.mkt-feature-meta span, .mkt-offer-sub, .mkt-photo-caption, .mkt-quote footer span, .mkt-contact-item span { font-size: 11px; font-weight: 650; }
+.mkt-feature-body h3, .mkt-offer-title, .mkt-card h3 { font-family: var(--duga-font-sans); font-size: 18px; font-weight: 800; letter-spacing: -.035em; }
+.mkt-feature-meta { margin: 0; gap: 7px 14px; }
+.mkt-feature-body { padding: 22px; gap: 8px; }
+.mkt-feature-cta { padding-top: 13px; }
+.mkt-card, .mkt-feature, .mkt-offer, .mkt-form-card, .mkt-quote, .mkt-graduate { border-width: 1px; border-radius: 14px; box-shadow: 0 14px 32px -29px rgba(20,29,46,.5); }
+.mkt-card:hover, .mkt-feature:hover, .mkt-offer:hover { transform: translateY(-3px); box-shadow: 0 19px 36px -28px rgba(20,29,46,.48); }
+.mkt-quote { padding: 30px; }
+.mkt-quote p, .mkt-quote blockquote { font-size: 15px; line-height: 1.65; font-weight: 500; }
+.mkt-form-card { padding: 26px; }
+.duga-btn { font-size: 13px; font-weight: 750; }
+.duga-input, .duga-select, .duga-textarea { font-size: 14px; font-weight: 500; }
+.duga-field__label { font-size: 12px; }
+.mkt-footer { background: #182033; border-top: 1px solid rgba(255,255,255,.12); }
+
+@media (max-width: 820px) {
+  .mkt-hero .mkt-container { min-height: auto; grid-template-columns: 1fr; padding: 66px 24px 44px; text-align: center; }
+  .mkt-hero-copy { margin: 0 auto; }
+  .mkt-hero p.lead { margin-inline: auto; }
+  .mkt-hero-cta, .mkt-hero-stats { justify-content: center; }
+  .mkt-hero-photos { width: min(100%, 560px); grid-template-columns: repeat(2, 1fr); margin: 4px auto 0; }
+}
+@media (max-width: 560px) {
+  .mkt-hero .mkt-container { padding: 58px 18px 28px; }
+  .mkt-hero h1 { font-size: clamp(40px, 12vw, 56px); }
+  .mkt-hero p.lead { font-size: 13px; }
+  .mkt-hero-photos { display: grid; gap: 10px; }
+  .mkt-hero-photos .mkt-photo-caption { font-size: 8px; padding: 5px 7px; }
+  .mkt-section { padding: 62px 0; }
+  .mkt-page-hero { padding: 54px 0 46px; }
+  .mkt-page-hero p, .mkt-section-head p { font-size: 13px; }
+  .mkt-card p, .mkt-feature-body p, .mkt-timeline-item p, .mkt-graduate-ach, .mkt-check-list li { font-size: 12.5px; }
+}

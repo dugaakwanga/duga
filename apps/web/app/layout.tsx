@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Baloo_2, Manrope } from "next/font/google";
 import "./globals.css";
+import "./sleek.css";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import { school, siteUrl } from "@/lib/content";
