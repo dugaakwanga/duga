@@ -91,27 +91,21 @@ export default function SiteHeader() {
             </Link>
 
             <div className="mkt-header-actions">
-              <a
-                className="duga-btn duga-btn--ghost duga-btn--sm"
-                href={`mailto:${schoolInfo.email}`}
-                style={{ paddingLeft: 8, paddingRight: 8 }}
-                aria-label={`Email ${schoolInfo.email}`}
-              >
+              <a className="mkt-icon-link" href={`mailto:${schoolInfo.email}`} aria-label={`Email ${schoolInfo.email}`}>
                 <Mail size={16} />
               </a>
               <a
-                className="duga-btn duga-btn--ghost duga-btn--sm"
+                className="mkt-icon-link"
                 href={`tel:${schoolInfo.phone.replace(/\s/g, "")}`}
-                style={{ paddingLeft: 8, paddingRight: 8 }}
                 aria-label={`Call ${schoolInfo.phone}`}
               >
                 <Phone size={16} />
               </a>
-              <Link className="duga-btn duga-btn--primary duga-btn--arrow" href="/apply">
-                Apply Now <ArrowRight size={15} className="mkt-arrow" />
-              </Link>
               <Link className="duga-btn duga-btn--outline duga-btn--sm" href={portalUrl}>
                 Portal
+              </Link>
+              <Link className="duga-btn duga-btn--primary duga-btn--arrow" href="/apply">
+                Apply Now <ArrowRight size={15} className="mkt-arrow" />
               </Link>
             </div>
           </div>
@@ -123,21 +117,21 @@ export default function SiteHeader() {
               </Link>
             ))}
           </nav>
+        </div>
 
-          <div className={`mkt-mobile-menu${open ? " open" : ""}`}>
-            {navLinks.map((n) => (
-              <Link key={n.href} href={n.href} onClick={() => setOpen(false)}>
-                {n.label}
-              </Link>
-            ))}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10, marginTop: 10 }}>
-              <Link className="duga-btn duga-btn--primary duga-btn--block" href="/apply" onClick={() => setOpen(false)}>
-                Apply Now
-              </Link>
-              <Link className="duga-btn duga-btn--outline duga-btn--block" href={portalUrl} onClick={() => setOpen(false)}>
-                Portal Login
-              </Link>
-            </div>
+        <div className={`mkt-mobile-menu${open ? " open" : ""}`}>
+          {navLinks.map((n) => (
+            <Link key={n.href} href={n.href} onClick={() => setOpen(false)}>
+              {n.label}
+            </Link>
+          ))}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10, marginTop: 10 }}>
+            <Link className="duga-btn duga-btn--primary duga-btn--block" href="/apply" onClick={() => setOpen(false)}>
+              Apply Now
+            </Link>
+            <Link className="duga-btn duga-btn--outline duga-btn--block" href={portalUrl} onClick={() => setOpen(false)}>
+              Portal Login
+            </Link>
           </div>
         </div>
       </header>

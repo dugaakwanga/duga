@@ -1609,3 +1609,511 @@ body {
   line-height: 1.7;
   margin: 10px 0 22px;
 }
+
+/* ==========================================================================
+   IntelS-inspired container adaptation
+   Keeps Duga's color palette, fonts and text sizes. Restyles only the
+   structural containers (header, nav, cards, sections, footer) to match
+   the cleaner IntelS language: glass blur nav bar, refined card surfaces,
+   soft shadows, pill badges and a clear section rhythm.
+   Appended so these overrides cascade — keep content untouched.
+   ========================================================================== */
+
+/* ---------- Refined radius & shadow tokens ---------- */
+:root {
+  --duga-radius-sm: 12px;
+  --duga-radius: 18px;
+  --duga-radius-lg: 26px;
+  --duga-shadow-sm: 0 2px 8px rgba(36, 48, 71, 0.06);
+  --duga-shadow: 0 6px 20px -6px rgba(36, 48, 71, 0.1);
+  --duga-shadow-md: 0 14px 34px -10px rgba(36, 48, 71, 0.16);
+  --duga-shadow-lg: 0 24px 50px -16px rgba(36, 48, 71, 0.2);
+  --duga-shadow-xl: 0 40px 80px -28px rgba(36, 48, 71, 0.28);
+}
+
+/* ---------- Announcement / top bar → IntelS dark top-bar ---------- */
+.mkt-announce {
+  background: linear-gradient(90deg, var(--duga-primary-ink) 0%, var(--duga-primary-dark) 60%, var(--duga-primary) 100%);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 13px;
+  letter-spacing: 0.03em;
+}
+.mkt-announce-track span::after { color: var(--duga-yellow); }
+
+/* ---------- Header → IntelS glass navbar ---------- */
+.mkt-header {
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid rgba(36, 48, 71, 0.08);
+  box-shadow: none;
+}
+.mkt-header.is-scrolled {
+  background: rgba(255, 255, 255, 0.94);
+  border-bottom-color: rgba(36, 48, 71, 0.1);
+  box-shadow: 0 8px 28px -14px rgba(36, 48, 71, 0.16);
+}
+.mkt-scroll-progress {
+  height: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(90deg, var(--duga-primary), var(--duga-teal) 60%, var(--duga-yellow));
+}
+.mkt-header-top { padding: 16px 0 12px; }
+.mkt-logo--brand img { height: 56px; border-radius: 14px; box-shadow: var(--duga-shadow-sm); }
+.mkt-logo-name { font-size: 22px; }
+.mkt-logo-sub { letter-spacing: 0.16em; }
+
+/* nav links — IntelS underline-on-hover, pill hover */
+.mkt-nav { gap: 2px; padding-bottom: 12px; }
+.mkt-nav a {
+  padding: 8px 14px;
+  font-weight: 700;
+  color: var(--duga-ink-2);
+  border-radius: 999px;
+  font-size: 13.5px;
+  letter-spacing: 0.01em;
+}
+.mkt-nav a:hover {
+  color: var(--duga-primary);
+  background: var(--duga-primary-soft);
+  transform: none;
+}
+
+/* ---------- Primary button → IntelS gradient pill with lift ---------- */
+.mkt-announce .duga-btn,
+.mkt-header .duga-btn { border-radius: 999px; }
+.duga-btn--primary {
+  background: linear-gradient(135deg, var(--duga-primary) 0%, var(--duga-primary-dark) 100%);
+  box-shadow: 0 10px 24px -10px rgba(240, 86, 74, 0.45);
+}
+.duga-btn--primary:hover {
+  background: linear-gradient(135deg, var(--duga-primary-light) 0%, var(--duga-primary) 100%);
+  box-shadow: 0 16px 32px -12px rgba(240, 86, 74, 0.5);
+}
+.duga-btn--outline {
+  background: #fff;
+  border: 1.5px solid var(--duga-coral-2);
+  color: var(--duga-primary-dark);
+}
+.duga-btn--outline:hover {
+  background: var(--duga-primary-soft);
+  border-color: var(--duga-primary);
+}
+
+/* ---------- Sections — clean rhythm ---------- */
+.mkt-section { padding: 92px 0; }
+.mkt-section--soft { background: linear-gradient(180deg, var(--duga-surface) 0%, #fff 100%); }
+.mkt-section--paper { background: #fff; }
+
+/* kicker → IntelS section-label pill */
+.mkt-kicker {
+  color: var(--duga-primary);
+  background: var(--duga-primary-soft);
+  font-weight: 800;
+}
+.mkt-kicker::before {
+  background: var(--duga-primary);
+  width: 18px;
+}
+.mkt-kicker--light {
+  color: var(--duga-yellow);
+  background: rgba(255, 205, 60, 0.16);
+}
+.mkt-kicker--light::before { background: var(--duga-yellow); }
+
+/* ---------- Cards — refined IntelS surface ---------- */
+.mkt-card {
+  background: #fff;
+  border: 1px solid rgba(36, 48, 71, 0.08);
+  border-radius: var(--duga-radius-lg);
+  padding: 30px;
+  box-shadow: var(--duga-shadow-sm);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.35s ease, border-color 0.3s ease;
+}
+.mkt-card:hover {
+  transform: translateY(-6px);
+  box-shadow: var(--duga-shadow-md);
+  border-color: rgba(240, 86, 74, 0.18);
+}
+.mkt-card--numbered {
+  border-top: 3px solid var(--duga-primary);
+}
+.mkt-card--numbered .mkt-card-num {
+  color: var(--duga-primary-pale);
+}
+.mkt-card--numbered:hover .mkt-card-num { color: var(--duga-primary); }
+.mkt-icon {
+  background: linear-gradient(135deg, var(--duga-teal), var(--duga-sky));
+  box-shadow: 0 10px 20px -8px rgba(31, 184, 173, 0.4);
+}
+.mkt-card:hover .mkt-icon { background: linear-gradient(135deg, var(--duga-coral-2), var(--duga-primary)); }
+
+/* ---------- Feature / offer cards ---------- */
+.mkt-feature {
+  background: #fff;
+  border: 1px solid rgba(36, 48, 71, 0.08);
+  border-radius: var(--duga-radius-lg);
+  box-shadow: var(--duga-shadow-sm);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.35s ease, border-color 0.3s ease;
+}
+.mkt-feature:hover {
+  transform: translateY(-6px);
+  box-shadow: var(--duga-shadow-md);
+  border-color: rgba(31, 184, 173, 0.25);
+}
+.mkt-feature-media { border-radius: var(--duga-radius-lg) var(--duga-radius-lg) 0 0; }
+.mkt-offer {
+  background: #fff;
+  border: 1px solid rgba(36, 48, 71, 0.08);
+  border-radius: var(--duga-radius-lg);
+  box-shadow: var(--duga-shadow-sm);
+  padding: 22px 24px;
+}
+.mkt-offer:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--duga-shadow-md);
+  border-color: rgba(240, 86, 74, 0.2);
+}
+.mkt-offer-icon {
+  background: var(--duga-primary-soft);
+  color: var(--duga-primary);
+}
+.mkt-offer:hover .mkt-offer-icon { background: var(--duga-teal); }
+
+/* ---------- Stat band / dark band ---------- */
+.mkt-section--dark {
+  background:
+    radial-gradient(900px 420px at 12% -20%, rgba(31, 184, 173, 0.24), transparent 60%),
+    radial-gradient(800px 500px at 105% 115%, rgba(240, 86, 74, 0.22), transparent 55%),
+    linear-gradient(135deg, var(--duga-primary-ink) 0%, var(--duga-primary-dark) 100%);
+}
+.mkt-stat-band strong { color: var(--duga-yellow); }
+.mkt-stat-band .mkt-stat { border-left: 4px solid rgba(255, 205, 60, 0.6); }
+
+/* ---------- Page hero → IntelS clean band ---------- */
+.mkt-page-hero {
+  background:
+    radial-gradient(800px 360px at 92% -20%, rgba(255, 205, 60, 0.18), transparent 60%),
+    radial-gradient(600px 320px at 0% 110%, rgba(31, 184, 173, 0.16), transparent 55%),
+    var(--duga-surface);
+  border-bottom: 1px solid rgba(36, 48, 71, 0.08);
+  padding: 80px 0 68px;
+}
+.mkt-breadcrumb {
+  background: #fff;
+  border: 1px solid rgba(36, 48, 71, 0.08);
+  color: var(--duga-primary);
+  box-shadow: var(--duga-shadow-sm);
+  font-size: 11.5px;
+  letter-spacing: 0.14em;
+}
+.mkt-breadcrumb::before {
+  content: "";
+  width: 18px;
+  height: 2px;
+  border-radius: 99px;
+  background: var(--duga-teal);
+  margin-right: 4px;
+}
+
+/* ---------- Testimonial ---------- */
+.mkt-quote {
+  background: #fff;
+  border: 1px solid rgba(36, 48, 71, 0.08);
+  border-radius: var(--duga-radius-lg);
+  box-shadow: var(--duga-shadow-md);
+}
+.mkt-avatar {
+  background: linear-gradient(135deg, var(--duga-coral-2), var(--duga-primary)) !important;
+}
+
+/* ---------- Newsletter ---------- */
+.mkt-newsletter {
+  border-radius: var(--duga-radius-lg);
+  box-shadow: var(--duga-shadow-lg);
+}
+
+/* ---------- Footer → refined light footer ---------- */
+.mkt-footer {
+  background: linear-gradient(180deg, var(--duga-primary-ink) 0%, #161d2e 100%);
+  color: rgba(255, 255, 255, 0.78);
+  border-top: 4px solid var(--duga-gold);
+}
+.mkt-footer h4 { color: var(--duga-yellow); }
+.mkt-footer a:not(.duga-btn):hover { color: var(--duga-yellow); }
+.mkt-footer-bottom { border-top: 1px solid rgba(255, 205, 60, 0.25); }
+
+/* ---------- Maintenance screen stays playful ---------- */
+.mkt-maintenance {
+  background:
+    radial-gradient(1100px 600px at 80% -10%, rgba(31, 184, 173, 0.12), transparent 60%),
+    radial-gradient(900px 500px at 10% 110%, rgba(240, 86, 74, 0.12), transparent 60%),
+    var(--duga-surface);
+}
+.mkt-maintenance-card { border: 1px solid rgba(36, 48, 71, 0.08); border-radius: var(--duga-radius-lg); }
+
+/* ==========================================================================
+   IntelS polish — compact navbar, footer anatomy, refined containers
+   ========================================================================== */
+
+/* ---------- Accessible focus states ---------- */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--duga-primary);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* ---------- IntelS navbar (logo/actions row + centered nav row) ---------- */
+.mkt-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 0 12px;
+}
+.mkt-header-top .mkt-logo--brand { flex-shrink: 0; }
+.mkt-header-top .mkt-logo--brand img { height: 50px; border-radius: 12px; }
+.mkt-header-top .mkt-header-actions {
+  position: static;
+  transform: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.mkt-header-top .mkt-icon-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  border: 1px solid rgba(36, 48, 71, 0.12);
+  background: #fff;
+  color: var(--duga-ink-2);
+  transition: color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.mkt-header-top .mkt-icon-link:hover {
+  color: var(--duga-primary);
+  border-color: rgba(240, 86, 74, 0.35);
+  box-shadow: var(--duga-shadow-sm);
+}
+.mkt-header-top .mkt-header-actions .duga-btn--outline {
+  color: var(--duga-ink-2);
+  border-color: rgba(36, 48, 71, 0.18);
+  background: transparent;
+  border-radius: 999px;
+}
+.mkt-header-top .mkt-header-actions .duga-btn--outline:hover {
+  color: var(--duga-primary-dark);
+  border-color: var(--duga-primary);
+  background: var(--duga-primary-soft);
+}
+.mkt-header-top .mkt-header-actions .duga-btn--primary { border-radius: 999px; box-shadow: 0 10px 24px -10px rgba(240, 86, 74, 0.45); }
+.mkt-header-top .mkt-burger {
+  position: static;
+  transform: none;
+  display: none;
+  flex-shrink: 0;
+  border-radius: 12px;
+  border: 1px solid rgba(36, 48, 71, 0.14);
+  box-shadow: var(--duga-shadow-sm);
+}
+.mkt-nav { padding-bottom: 14px; }
+.mkt-nav a {
+  padding: 9px 15px;
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+
+@media (max-width: 1180px) {
+  .mkt-header-top { gap: 12px; }
+  .mkt-header-top .mkt-icon-link { display: none; }
+  .mkt-nav a { padding: 9px 12px; font-size: 13px; }
+}
+
+@media (max-width: 980px) {
+  .mkt-header-top { gap: 10px; padding: 12px 0; justify-content: flex-start; }
+  .mkt-header-top .mkt-nav { display: none; }
+  .mkt-header { border-bottom: 1px solid rgba(36, 48, 71, 0.08); }
+  .mkt-header-top .mkt-header-actions { display: none; }
+  .mkt-header-top .mkt-burger { display: inline-flex; }
+  .mkt-header-top .mkt-logo--brand img { height: 44px; }
+  .mkt-header-top .mkt-logo--brand .mkt-logo-name { font-size: 20px; }
+}
+
+@media (max-width: 480px) {
+  .mkt-header-top .mkt-logo--brand .mkt-logo-name { font-size: 17px; }
+  .mkt-header-top .mkt-logo--brand .mkt-logo-sub { font-size: 9.5px; letter-spacing: 0.12em; }
+  .mkt-header-top .mkt-logo--brand img { height: 40px; }
+}
+
+/* ---------- Mobile menu → clean glass panel ---------- */
+.mkt-mobile-menu {
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-top: 1px solid rgba(36, 48, 71, 0.08);
+  box-shadow: var(--duga-shadow-md);
+  max-height: calc(100vh - 72px);
+  overflow-y: auto;
+}
+.mkt-mobile-menu a {
+  background: transparent;
+  border-radius: 12px;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+.mkt-mobile-menu a:hover { background: var(--duga-primary-soft); color: var(--duga-primary); }
+
+/* ---------- Footer → IntelS anatomy with CTA strip ---------- */
+.mkt-footer {
+  background: linear-gradient(180deg, var(--duga-primary-ink) 0%, #141a29 100%);
+  border-top: 3px solid var(--duga-gold);
+}
+.mkt-footer::before {
+  background:
+    radial-gradient(800px 360px at 100% -10%, rgba(31, 184, 173, 0.14), transparent 60%),
+    radial-gradient(640px 340px at 0% 110%, rgba(240, 86, 74, 0.12), transparent 55%);
+  opacity: 0.8;
+}
+.mkt-footer-cta {
+  position: relative;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.mkt-footer-cta-inner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+  padding-top: 40px;
+  padding-bottom: 40px;
+}
+.mkt-footer-cta h3 {
+  font-family: var(--duga-font-display);
+  font-size: clamp(21px, 2.8vw, 30px);
+  font-weight: 700;
+  line-height: 1.15;
+  color: #fff;
+  margin-top: 6px;
+  text-wrap: balance;
+}
+.mkt-footer-cta p {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 13.5px;
+  font-weight: 600;
+  margin-top: 8px;
+  letter-spacing: 0.01em;
+}
+.mkt-footer-cta-actions { display: flex; gap: 12px; flex-shrink: 0; flex-wrap: wrap; align-items: center; }
+.mkt-footer-grid { padding: 52px 0 40px; grid-template-columns: 1.5fr 1fr 1fr 1.25fr; gap: 40px; }
+.mkt-footer-brand p { font-size: 13.5px; line-height: 1.75; max-width: 320px; margin-top: 16px; color: rgba(255, 255, 255, 0.7); font-weight: 500; }
+.mkt-footer h4 {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  margin-bottom: 16px;
+}
+.mkt-footer a:not(.duga-btn) {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 13.5px;
+  padding: 5px 0;
+}
+.mkt-footer a:not(.duga-btn):hover { color: var(--duga-gold); }
+.mkt-footer-col p { font-size: 13.5px; color: rgba(255, 255, 255, 0.78); line-height: 1.6; font-weight: 500; }
+.mkt-footer-bottom {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 20px 0 26px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+}
+.mkt-footer .mkt-btn--light { color: var(--duga-primary-ink); }
+.mkt-footer .mkt-btn--glass { background: rgba(255, 255, 255, 0.14); border: 1px solid rgba(255, 255, 255, 0.35); color: #fff; }
+.mkt-footer .mkt-btn--glass:hover { background: rgba(255, 255, 255, 0.22); border-color: rgba(255, 255, 255, 0.6); }
+
+@media (max-width: 820px) {
+  .mkt-footer-cta-inner { flex-direction: column; align-items: flex-start; gap: 16px; }
+  .mkt-footer-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 520px) {
+  .mkt-footer-grid { grid-template-columns: 1fr; gap: 28px; }
+  .mkt-footer-cta-inner { padding-top: 32px; padding-bottom: 32px; }
+}
+
+/* ---------- Page hero → refined Intel band ---------- */
+.mkt-page-hero {
+  background:
+    radial-gradient(700px 340px at 88% -18%, rgba(255, 205, 60, 0.16), transparent 60%),
+    radial-gradient(560px 300px at 0% 112%, rgba(31, 184, 173, 0.16), transparent 55%),
+    linear-gradient(180deg, #fff 0%, var(--duga-surface) 100%);
+  border-bottom: 1px solid rgba(36, 48, 71, 0.08);
+}
+.mkt-page-hero h1 { color: var(--duga-primary-ink); max-width: 760px; }
+.mkt-page-hero p { color: var(--duga-ink-2); }
+.mkt-breadcrumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border: 1px solid rgba(36, 48, 71, 0.1);
+  color: var(--duga-primary);
+  box-shadow: var(--duga-shadow-sm);
+  letter-spacing: 0.12em;
+  padding: 7px 15px;
+}
+
+/* ---------- Refined grids & surfaces ---------- */
+.mkt-grid { gap: 30px; }
+.mkt-section-head { margin-bottom: 56px; }
+.mkt-kicker { letter-spacing: 0.12em; }
+.mkt-card {
+  background: #fff;
+  border: 1px solid rgba(36, 48, 71, 0.08);
+  border-radius: var(--duga-radius-lg);
+  padding: 28px;
+}
+.mkt-card--numbered { border-top: 3px solid var(--duga-primary); }
+.mkt-card--photo { overflow: hidden; }
+.mkt-icon {
+  background: linear-gradient(135deg, var(--duga-teal), var(--duga-sky));
+  box-shadow: 0 10px 20px -8px rgba(31, 184, 173, 0.4);
+}
+.mkt-card:hover .mkt-icon { background: linear-gradient(135deg, var(--duga-coral-2), var(--duga-primary)); box-shadow: 0 10px 20px -8px rgba(240, 86, 74, 0.4); }
+.mkt-graduate {
+  background: #fff;
+  border: 1px solid rgba(36, 48, 71, 0.08);
+  border-radius: var(--duga-radius-lg);
+  box-shadow: var(--duga-shadow-sm);
+}
+.mkt-form-card {
+  background: #fff;
+  border: 1px solid rgba(36, 48, 71, 0.08);
+  border-radius: var(--duga-radius-lg);
+  box-shadow: var(--duga-shadow);
+}
+.mkt-contact-icon {
+  background: var(--duga-primary-soft);
+  color: var(--duga-primary);
+  border-radius: 12px;
+}
+.mkt-map { border: 1px solid rgba(36, 48, 71, 0.1); border-radius: var(--duga-radius-lg); box-shadow: var(--duga-shadow-sm); }
+.mkt-timeline-item h4 { color: var(--duga-primary-ink); }
+
+/* ---------- Primary CTA mirrors Intel pill ---------- */
+.duga-btn--primary {
+  background: linear-gradient(135deg, var(--duga-primary), var(--duga-primary-dark));
+  box-shadow: 0 12px 26px -10px rgba(240, 86, 74, 0.5);
+}
+.duga-btn--primary:hover {
+  background: linear-gradient(135deg, var(--duga-primary-light), var(--duga-primary));
+  box-shadow: 0 18px 34px -12px rgba(240, 86, 74, 0.55);
+}
+.duga-btn--primary,
+.duga-btn--outline { border-radius: 999px; }

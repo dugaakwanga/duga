@@ -26,9 +26,27 @@ export default function SiteFooter() {
 
   return (
     <footer className="mkt-footer">
+      <div className="mkt-footer-cta">
+        <div className="mkt-container mkt-footer-cta-inner">
+          <div>
+            <span className="mkt-kicker mkt-kicker--light">Admissions Open · 2025/2026</span>
+            <h3>Give your child a glorious start</h3>
+            <p>{info.phone} · {info.email}</p>
+          </div>
+          <div className="mkt-footer-cta-actions">
+            <Link href={show("apply") ? "/apply" : "/contact"} className="duga-btn mkt-btn--light duga-btn--arrow">
+              Start Application <ArrowRight size={15} className="mkt-arrow" />
+            </Link>
+            <Link href="/contact" className="duga-btn mkt-btn--glass duga-btn--arrow">
+              Contact Us <ArrowRight size={15} className="mkt-arrow" />
+            </Link>
+          </div>
+        </div>
+      </div>
+
       <div className="mkt-container">
         <div className="mkt-footer-grid">
-          <div>
+          <div className="mkt-footer-brand">
             <Link href="/" aria-label="De Ultimate Glory Academy home" className="mkt-logo">
               <span className="mkt-logo-badge">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -39,12 +57,10 @@ export default function SiteFooter() {
                 <span className="mkt-logo-sub">{info.motto}</span>
               </span>
             </Link>
-            <p style={{ fontSize: 14, marginTop: 18, maxWidth: 320, lineHeight: 1.7 }}>
-              {info.about}
-            </p>
+            <p>{info.about}</p>
           </div>
 
-          <div>
+          <div className="mkt-footer-col">
             <h4>Explore</h4>
             {show("about") && <Link href="/about">About Us</Link>}
             {show("academics") && <Link href="/academics">Academics</Link>}
@@ -54,8 +70,8 @@ export default function SiteFooter() {
             {show("news") && <Link href="/news">News &amp; Events</Link>}
           </div>
 
-          <div>
-            <h4>Quick Links</h4>
+          <div className="mkt-footer-col">
+            <h4>Portals</h4>
             {show("apply") && <Link href="/apply">Apply Online</Link>}
             <Link href={portalUrl}>Parent Portal</Link>
             <Link href={portalUrl}>Student Portal</Link>
@@ -63,23 +79,20 @@ export default function SiteFooter() {
             {show("contact") && <Link href="/contact">Contact Us</Link>}
           </div>
 
-          <div>
+          <div className="mkt-footer-col">
             <h4>Contact</h4>
-            <p style={{ fontSize: 13.5, display: "flex", gap: 9, alignItems: "flex-start" }}>
+            <p style={{ display: "flex", gap: 9, alignItems: "flex-start" }}>
               <Pin size={15} style={{ marginTop: 2, flexShrink: 0 }} /> {info.address}
             </p>
-            <p style={{ fontSize: 13.5, display: "flex", gap: 9, alignItems: "center", marginTop: 8 }}>
+            <p style={{ display: "flex", gap: 9, alignItems: "center", marginTop: 8 }}>
               <Phone size={15} /> {info.phone}
             </p>
-            <p style={{ fontSize: 13.5, display: "flex", gap: 9, alignItems: "center", marginTop: 8 }}>
+            <p style={{ display: "flex", gap: 9, alignItems: "center", marginTop: 8 }}>
               <Mail size={15} /> {info.email}
             </p>
-            <p style={{ fontSize: 13.5, display: "flex", gap: 9, alignItems: "center", marginTop: 8 }}>
+            <p style={{ display: "flex", gap: 9, alignItems: "center", marginTop: 8 }}>
               <Clock size={15} /> {info.hours}
             </p>
-            <Link href={show("apply") ? "/apply" : "/contact"} className="duga-btn mkt-btn--light duga-btn--sm duga-btn--arrow" style={{ marginTop: 18, display: "inline-flex" }}>
-              Start Application <ArrowRight size={15} className="mkt-arrow" />
-            </Link>
           </div>
         </div>
 
