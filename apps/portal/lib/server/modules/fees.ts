@@ -3,6 +3,42 @@ import { generateReference, formatNaira } from "@duga/core";
 import type { Module } from ".";
 import { can, str, num, studentScope } from "../helpers";
 
+const ADMIN_PAYMENT_VISIBILITY_KEY = "finance.adminCanViewPayments";
+
+async function canViewPaymentRecords(schoolId: string, role: string): Promise<boolean> {
+  if (role === "OWNER") return true;
+  if (role !== "ADMIN") return true;
+  const setting = await prisma.schoolSetting.findUnique({ where: { schoolId_key: { schoolId, key: ADMIN_PAYMENT_VISIBILITY_KEY } } });
+  return setting?.value === true;
+}
+
+// Grant only the number of days that this payment covers. Subsequent payments
+// extend from the current expiry, so an instalment never overwrites unused days.
+async function grantFeeAccessForPayment(schoolId: string, studentId: string, amount: number) {
+  const student = await prisma.student.findFirst({ where: { id: studentId, schoolId } });
+  if (!student || Number(student.feeAmount) <= 0 || student.feeDays <= 0) return { daysGranted: 0, paidThrough: student?.feePaidThrough ?? null };
+  const daysGranted = Math.floor((amount / Number(student.feeAmount)) * student.feeDays);
+  if (daysGranted <= 0) return { daysGranted: 0, paidThrough: student.feePaidThrough };
+  const start = student.feePaidThrough && student.feePaidThrough > new Date() ? student.feePaidThrough : new Date();
+  const paidThrough = new Date(start.getTime() + daysGranted * 86400000);
+  await prisma.student.update({ where: { id: student.id }, data: { feePaidThrough: paidThrough } });
+  return { daysGranted, paidThrough };
+}
+
+async function notifyParentsOfBalance(schoolId: string, studentId: string, invoice: { invoiceNumber: string; balance: unknown }) {
+  const links = await prisma.studentParent.findMany({ where: { schoolId, studentId }, include: { parent: true } });
+  await Promise.all(links.map((link) => dispatchNotification({
+    schoolId,
+    userId: link.parent.userId,
+    type: "fee_reminder",
+    title: "Outstanding school fees",
+    body: `Outstanding balance: ${formatNaira(Number(invoice.balance))} for ${invoice.invoiceNumber}.`,
+    link: "/portal/fees",
+    channels: ["IN_APP", "EMAIL", "SMS"],
+  })));
+  return links.length;
+}
+
 async function paystackConfigured(): Promise<boolean> {
   const key = process.env.PAYSTACK_SECRET_KEY;
   return Boolean(key && !key.startsWith("sk_test_xxx"));
@@ -45,6 +81,7 @@ export const feesModule: Module = {
       return { role, invoices };
     }
 
+    const paymentRecordsVisible = await canViewPaymentRecords(schoolId, role);
     const agg = await prisma.invoice.aggregate({
       where: { schoolId },
       _sum: { totalAmount: true, paidAmount: true, balance: true },
@@ -64,10 +101,13 @@ export const feesModule: Module = {
       prisma.classLevel.findMany({ where: { schoolId }, orderBy: [{ section: "asc" }, { order: "asc" }] }),
       prisma.classGroup.findMany({ where: { schoolId }, include: { level: true } }),
     ]);
+    const protectedInvoices = paymentRecordsVisible ? invoices : invoices.map(({ payments: _payments, paidAmount: _paidAmount, ...invoice }) => invoice);
     return {
       role,
-      summary: { total: totalAmount ?? 0, paid: paidAmount ?? 0, balance: balance ?? 0 },
-      invoices,
+      paymentRecordsVisible,
+      adminPaymentVisibility: role === "OWNER" ? (await canViewPaymentRecords(schoolId, "ADMIN")) : undefined,
+      summary: { total: totalAmount ?? 0, ...(paymentRecordsVisible ? { paid: paidAmount ?? 0 } : {}), balance: balance ?? 0 },
+      invoices: protectedInvoices,
       feeTypes,
       feeStructures,
       overrides,
@@ -94,6 +134,21 @@ export const feesModule: Module = {
   },
 
   actions: {
+    setAdminPaymentVisibility: async (ctx) => {
+      if (ctx.session.user.role !== "OWNER") {
+        const err = new Error("Only the owner can change payment-record visibility") as Error & { status?: number };
+        err.status = 403;
+        throw err;
+      }
+      const enabled = ctx.body.enabled === true;
+      await prisma.schoolSetting.upsert({
+        where: { schoolId_key: { schoolId: ctx.session.user.schoolId, key: ADMIN_PAYMENT_VISIBILITY_KEY } },
+        update: { value: enabled },
+        create: { schoolId: ctx.session.user.schoolId, key: ADMIN_PAYMENT_VISIBILITY_KEY, value: enabled },
+      });
+      await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "fees.adminPaymentVisibility", entityType: "SchoolSetting", meta: { enabled } });
+      return { enabled };
+    },
     // Admin/owner: generate invoices for all students of a class (or level) from fee structures
     generateInvoices: async (ctx) => {
       can(ctx, "fees:manage");
@@ -107,22 +162,30 @@ export const feesModule: Module = {
         ? await prisma.student.findMany({ where: { schoolId, currentClassGroupId: classGroupId, status: "ACTIVE" } })
         : await prisma.student.findMany({ where: { schoolId, status: "ACTIVE" } });
 
+      // Avoid two database round trips per student when generating a whole
+      // school's invoices. This is a common source of slow admin responses.
+      const [classGroups, existingInvoices] = await Promise.all([
+        prisma.classGroup.findMany({ where: { schoolId, id: { in: students.map((s) => s.currentClassGroupId).filter((id): id is string => Boolean(id)) } }, select: { id: true, levelId: true } }),
+        prisma.invoice.findMany({ where: { schoolId, termId, studentId: { in: students.map((s) => s.id) } }, select: { studentId: true } }),
+      ]);
+      const levelByClassGroup = new Map(classGroups.map((group) => [group.id, group.levelId]));
+      const invoicedStudentIds = new Set(existingInvoices.map((invoice) => invoice.studentId));
+
       let created = 0;
       let invoiceSeq = (await prisma.invoice.count({ where: { schoolId } })) + 1;
 
       for (const student of students) {
         // determine applicable structures by level/section/class
-        const studentClass = await prisma.classGroup.findUnique({ where: { id: student.currentClassGroupId ?? "" }, include: { level: true } });
+        const studentLevelId = student.currentClassGroupId ? levelByClassGroup.get(student.currentClassGroupId) : undefined;
         const applicable = structures.filter(
           (s) =>
             (!s.classGroupId || s.classGroupId === student.currentClassGroupId) &&
-            (!s.levelId || s.levelId === studentClass?.levelId) &&
+            (!s.levelId || s.levelId === studentLevelId) &&
             (!s.section || s.section === student.section),
         );
         if (applicable.length === 0) continue;
 
-        const existing = await prisma.invoice.findFirst({ where: { schoolId, studentId: student.id, termId } });
-        if (existing) continue;
+        if (invoicedStudentIds.has(student.id)) continue;
 
         const totalAmount = applicable.reduce((a, s) => a + Number(s.amount), 0);
         await prisma.invoice.create({
@@ -256,8 +319,8 @@ export const feesModule: Module = {
       const schoolId = ctx.session.user.schoolId;
       const invoiceId = str(ctx.body.invoiceId) ?? ctx.id;
       const amount = num(ctx.body.amount);
-      const invoice = await prisma.invoice.findUnique({
-        where: { id: invoiceId },
+      const invoice = await prisma.invoice.findFirst({
+        where: { id: invoiceId, schoolId },
         include: { student: { include: { user: true } } },
       });
       if (!invoice) throw new Error("Invoice not found");
@@ -272,6 +335,7 @@ export const feesModule: Module = {
 
       const payAmount = amount ?? Number(invoice.balance);
       if (payAmount <= 0) throw new Error("Invoice already settled");
+      if (payAmount > Number(invoice.balance)) throw new Error("Payment amount cannot exceed the outstanding balance");
       const reference = generateReference("PYM");
 
       const payment = await prisma.payment.create({
@@ -292,14 +356,15 @@ export const feesModule: Module = {
       if (!(await paystackConfigured())) {
         // Development mock: treat as success immediately and return a mock URL.
         await prisma.payment.update({ where: { id: payment.id }, data: { status: "SUCCESS", paidAt: new Date(), gatewayRef: `MOCK-${reference}`, receiptNumber: `RCPT-${reference.slice(-6)}` } });
-        await refreshInvoice(invoice.id);
+        const access = await grantFeeAccessForPayment(schoolId, invoice.studentId, payAmount);
         await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.paymentMocked", entityType: "Payment", entityId: payment.id, meta: { reference, amount: payAmount } });
         const updated = await refreshInvoice(invoice.id);
+        if (Number(updated?.balance ?? 0) > 0 && updated) await notifyParentsOfBalance(schoolId, invoice.studentId, updated);
         const student = await prisma.student.findUnique({ where: { id: invoice.studentId }, include: { user: true } });
         if (student) {
           await dispatchNotification({ schoolId, userId: student.userId, type: "payment", title: "Payment received", body: `₦${payAmount.toLocaleString()} received. Balance: ₦${(updated?.balance ?? 0).toLocaleString()}`, link: "/portal/fees" });
         }
-        return { mock: true, reference, authorization_url: "/portal/fees", status: "SUCCESS" };
+        return { mock: true, reference, authorization_url: "/portal/fees", status: "SUCCESS", access };
       }
 
       const data = await initializePayment({
@@ -317,8 +382,14 @@ export const feesModule: Module = {
       can(ctx, "payments:make");
       const reference = str(ctx.body.reference) ?? str(ctx.query.get("reference"));
       if (!reference) throw new Error("reference required");
-      const payment = await prisma.payment.findUnique({ where: { reference } });
+      const payment = await prisma.payment.findFirst({ where: { reference, schoolId: ctx.session.user.schoolId } });
       if (!payment) throw new Error("Payment not found");
+      const role = ctx.session.user.role;
+      if (role === "STUDENT" && payment.studentId !== ctx.session.user.student?.id) throw new Error("Not your payment");
+      if (role === "PARENT") {
+        const linked = await prisma.studentParent.findFirst({ where: { parentId: ctx.session.user.parent?.id, studentId: payment.studentId } });
+        if (!linked) throw new Error("Not your payment");
+      }
       if (payment.status === "SUCCESS") return { status: "SUCCESS", payment };
 
       if (!(await paystackConfigured())) {
@@ -334,12 +405,14 @@ export const feesModule: Module = {
       }
 
       const invoice = await refreshInvoice(payment.invoiceId!);
+      const access = await grantFeeAccessForPayment(ctx.session.user.schoolId, payment.studentId, Number(payment.amount));
+      if (invoice && Number(invoice.balance) > 0) await notifyParentsOfBalance(ctx.session.user.schoolId, payment.studentId, invoice);
       await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "fees.paymentVerified", entityType: "Payment", entityId: payment.id, meta: { reference } });
       const student = await prisma.student.findUnique({ where: { id: payment.studentId }, include: { user: true } });
       if (student) {
         await dispatchNotification({ schoolId: ctx.session.user.schoolId, userId: student.userId, type: "payment", title: "Payment confirmed", body: `₦${Number(payment.amount).toLocaleString()} confirmed. Balance: ₦${(invoice?.balance ?? 0).toLocaleString()}`, link: "/portal/fees" });
       }
-      return { status: "SUCCESS", payment, invoice };
+      return { status: "SUCCESS", payment, invoice, access };
     },
 
     // Send fee reminders to parents with unpaid/partial invoices
@@ -373,17 +446,19 @@ export const feesModule: Module = {
     recordManual: async (ctx) => {
       can(ctx, "fees:collect");
       const schoolId = ctx.session.user.schoolId;
-      const studentId = str(ctx.body.studentId);
       const invoiceId = str(ctx.body.invoiceId) ?? ctx.id;
       const amount = num(ctx.body.amount);
       if (!invoiceId || amount === undefined) throw new Error("invoiceId and amount required");
       const invoiceRow = await prisma.invoice.findFirst({ where: { id: invoiceId, schoolId } });
       if (!invoiceRow) throw new Error("Invoice not found");
+      if (amount <= 0 || amount > Number(invoiceRow.balance)) throw new Error("Amount must be greater than zero and no more than the outstanding balance");
       const reference = generateReference("MAN");
       const payment = await prisma.payment.create({
         data: {
           schoolId,
-          studentId: studentId ?? invoiceRow.studentId,
+          // An invoice belongs to exactly one student; never accept a client
+          // supplied student id here, which could misapply fee access.
+          studentId: invoiceRow.studentId,
           invoiceId,
           termId: invoiceRow.termId ?? str(ctx.body.termId),
           amount,
@@ -397,8 +472,10 @@ export const feesModule: Module = {
         },
       });
       const invoice = await refreshInvoice(invoiceId);
+      const access = await grantFeeAccessForPayment(schoolId, payment.studentId, amount);
+      if (invoice && Number(invoice.balance) > 0) await notifyParentsOfBalance(schoolId, payment.studentId, invoice);
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.manualPayment", entityType: "Payment", entityId: payment.id, meta: { amount } });
-      return { payment, invoice };
+      return { payment, invoice, access };
     },
   },
 };

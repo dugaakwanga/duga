@@ -19,8 +19,15 @@ export const resultsModule: Module = {
         }),
         prisma.term.findMany({ where: { schoolId }, include: { session: true }, orderBy: [{ session: { createdAt: "desc" } }, { termNumber: "asc" }] }),
       ]);
+      const classGroupIds = [...new Set(classSubjects.map((subject) => subject.classGroupId))];
+      const reportCards = await prisma.reportCard.findMany({
+        where: { schoolId, classGroupId: { in: classGroupIds } },
+        include: { term: true, student: { include: { user: { select: { firstName: true, lastName: true } } } }, classGroup: { include: { level: true } }, items: { include: { subject: true }, orderBy: { position: "asc" } } },
+        orderBy: { createdAt: "desc" },
+        take: 500,
+      });
       const activeTerm = terms.find((t) => t.status === "ACTIVE") ?? terms[0];
-      return { role, classSubjects, terms, activeTermId: activeTerm?.id };
+      return { role, classSubjects, terms, reportCards, activeTermId: activeTerm?.id };
     }
 
     if (role === "STUDENT" || role === "PARENT") {
@@ -43,8 +50,8 @@ export const resultsModule: Module = {
         const student = rc.student;
         gated.push({
           ...rc,
-          access: access.allowed && !(student.feePaidThrough && student.feePaidThrough.getTime() < Date.now()) ? "granted" : "locked",
-          gatedReason: student.feePaidThrough && student.feePaidThrough.getTime() < Date.now() ? "fee_expired" : access.reason,
+          access: access.allowed && !(Number(student.feeAmount) > 0 && student.feeDays > 0 && (!student.feePaidThrough || student.feePaidThrough.getTime() < Date.now())) ? "granted" : "locked",
+          gatedReason: Number(student.feeAmount) > 0 && student.feeDays > 0 && (!student.feePaidThrough || student.feePaidThrough.getTime() < Date.now()) ? "fee_expired" : access.reason,
           items: access.allowed ? await prisma.reportCardItem.findMany({ where: { reportCardId: rc.id }, include: { subject: true }, orderBy: { position: "asc" } }) : null,
         });
       }
@@ -54,7 +61,7 @@ export const resultsModule: Module = {
     // Admin / owner
     const reportCards = await prisma.reportCard.findMany({
       where: { schoolId },
-      include: { term: true, student: { include: { user: { select: { firstName: true, lastName: true } } } }, classGroup: { include: { level: true } } },
+      include: { term: true, student: { include: { user: { select: { firstName: true, lastName: true } } } }, classGroup: { include: { level: true } }, items: { include: { subject: true }, orderBy: { position: "asc" } } },
       orderBy: { createdAt: "desc" },
       take: 500,
     });
@@ -81,11 +88,7 @@ export const resultsModule: Module = {
     // Students/parents must also pass the fee gate (published + paid/overridden).
     if (role === "STUDENT" || role === "PARENT") {
       const access = await resolveResultsAccess(rc.studentId, rc.termId);
-      if (rc.student.feePaidThrough && rc.student.feePaidThrough.getTime() < Date.now()) {
-        const err = new Error("Access suspended — the school fee period has ended. Please contact the school to renew.") as Error & { status?: number };
-        err.status = 403;
-        throw err;
-      }
+      assertFeeAccess(rc.student);
       if (!access.allowed) {
         const err = new Error("This report card is locked") as Error & { status?: number };
         err.status = 403;
@@ -96,6 +99,32 @@ export const resultsModule: Module = {
   },
 
   actions: {
+    // Principal/admin remarks and non-academic assessment displayed on the
+    // printable report card. Objects use a simple label -> rating format.
+    updateDetails: async (ctx) => {
+      const card = await prisma.reportCard.findFirst({ where: { id: ctx.id, schoolId: ctx.session.user.schoolId } });
+      if (!card) throw new Error("Report card not found");
+      const role = ctx.session.user.role;
+      if (role === "TEACHER") {
+        const teacherId = ctx.session.user.teacher?.id;
+        const teachesClass = teacherId && card.classGroupId && await prisma.classSubject.findFirst({ where: { teacherId, classGroupId: card.classGroupId } });
+        if (!teachesClass) {
+          const err = new Error("You can only rate students in classes you teach") as Error & { status?: number };
+          err.status = 403;
+          throw err;
+        }
+      } else {
+        can(ctx, "results:publish");
+      }
+      const psychomotor = ctx.body.psychomotor && typeof ctx.body.psychomotor === "object" ? ctx.body.psychomotor : undefined;
+      const coCurricular = ctx.body.coCurricular && typeof ctx.body.coCurricular === "object" ? ctx.body.coCurricular : undefined;
+      const updated = await prisma.reportCard.update({
+        where: { id: card.id },
+        data: { psychomotor, coCurricular, attendanceRemark: str(ctx.body.attendanceRemark), remark: str(ctx.body.remark) },
+      });
+      await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "results.detailsUpdated", entityType: "ReportCard", entityId: card.id });
+      return updated;
+    },
     // Bulk entry of CA + exam scores for a class subject
     saveScores: async (ctx) => {
       can(ctx, "results:enter");

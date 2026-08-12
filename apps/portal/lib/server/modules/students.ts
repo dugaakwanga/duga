@@ -101,10 +101,9 @@ export const studentsModule: Module = {
       },
     });
 
-    // Fee window: if the admin sets an amount + days, the paid-through date is
-    // today + days. The app auto-calculates remaining days and locks access on
-    // expiry. If no fee is set, the student is not gated.
-    const feePaidThrough = feeAmount > 0 && feeDays > 0 ? new Date(Date.now() + feeDays * 86400000) : null;
+    // This config is a price and duration, not a payment. Access begins only
+    // when a successful payment is recorded.
+    const feePaidThrough = null;
 
     const student = await prisma.student.create({
       data: {
@@ -188,11 +187,12 @@ export const studentsModule: Module = {
       const cg = await prisma.classGroup.findFirst({ where: { id: String(data.currentClassGroupId), schoolId } });
       if (!cg) throw new Error("Class not found");
     }
-    // If the fee amount/days changed, extend the paid-through window from now.
+    // Changing the plan must not silently grant free access. A later payment
+    // calculates and grants the appropriate number of days.
     if (data.feeAmount !== undefined || data.feeDays !== undefined) {
       const feeDays = (data.feeDays as number) ?? existing.feeDays;
       const feeAmount = (data.feeAmount as number) ?? Number(existing.feeAmount);
-      data.feePaidThrough = feeAmount > 0 && feeDays > 0 ? new Date(Date.now() + feeDays * 86400000) : existing.feePaidThrough;
+      if (feeAmount <= 0 || feeDays <= 0) data.feePaidThrough = null;
     }
     const student = await prisma.student.update({ where: { id: ctx.id }, data });
     await logAudit({ schoolId, userId: ctx.session.user.id, action: "student.updated", entityType: "Student", entityId: ctx.id, meta: data });
@@ -215,7 +215,7 @@ export const studentsModule: Module = {
 
   // Promote / change class
   actions: {
-    // Set / renew a student's fee window (amount, days) and reopen access.
+    // Configure a student's fee plan. Payments, not configuration, reopen access.
     setFee: async (ctx) => {
       can(ctx, "students:manage");
       const schoolId = ctx.session.user.schoolId;
@@ -223,10 +223,9 @@ export const studentsModule: Module = {
       const feeDays = Math.max(0, num(ctx.body.feeDays) ?? 0);
       const student = await prisma.student.findFirst({ where: { id: ctx.id, schoolId } });
       if (!student) throw new Error("Student not found");
-      const paidThrough = feeAmount > 0 && feeDays > 0 ? new Date(Date.now() + feeDays * 86400000) : null;
       const updated = await prisma.student.update({
         where: { id: ctx.id },
-        data: { feeAmount, feeDays, feePaidThrough: paidThrough },
+        data: { feeAmount, feeDays, ...(feeAmount <= 0 || feeDays <= 0 ? { feePaidThrough: null } : {}) },
       });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "student.fee.set", entityType: "Student", entityId: ctx.id, meta: { feeAmount, feeDays } });
       return { ...updated, fee: feeInfoOf(updated) };

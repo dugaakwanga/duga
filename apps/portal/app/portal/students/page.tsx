@@ -253,7 +253,7 @@ export default function StudentsPage() {
         </div>
         {Number(form.feeDays) > 0 && (
           <div style={{ marginTop: 10 }}>
-            <Alert tone="info">This child's portal access will expire {new Date(Date.now() + Number(form.feeDays) * 86400000).toLocaleDateString()} — {form.feeDays} days from today. Renew by setting the fee again.</Alert>
+            <Alert tone="info">This sets the fee plan: {form.feeDays} days of access when the full amount is paid. Access begins after payment; part-payments grant proportional days.</Alert>
           </div>
         )}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
@@ -319,7 +319,7 @@ export default function StudentsPage() {
         </div>
         {Number(feeForm.feeDays) > 0 && (
           <div style={{ marginTop: 10 }}>
-            <Alert tone="info">Access will be valid until {new Date(Date.now() + Number(feeForm.feeDays) * 86400000).toLocaleDateString()}.</Alert>
+            <Alert tone="info">This updates the fee plan. Access begins only after payment, and a part-payment grants the matching proportion of days.</Alert>
           </div>
         )}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>

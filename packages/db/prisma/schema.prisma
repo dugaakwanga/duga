@@ -933,6 +933,9 @@ model ReportCard {
   classSize   Int?
   subjectCount Int?
   remark      String?
+  psychomotor Json?
+  coCurricular Json?
+  attendanceRemark String?
   isPaidGated Boolean   @default(true)
   feeOverrideApplied Boolean @default(false)
   createdAt   DateTime  @default(now())

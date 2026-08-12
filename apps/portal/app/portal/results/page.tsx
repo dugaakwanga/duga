@@ -6,6 +6,8 @@ import { api } from "@/lib/client/api";
 
 interface ReportCard {
   id: string;
+  termId?: string;
+  classGroupId?: string | null;
   status: string;
   isPublished: boolean;
   average: number | null;
@@ -16,6 +18,10 @@ interface ReportCard {
   access?: "granted" | "locked";
   gatedReason?: string | null;
   items?: Array<{ id: string; subject: { name: string }; ca: number | null; exam: number | null; total: number | null; grade: string | null }> | null;
+  psychomotor?: Record<string, string> | null;
+  coCurricular?: Record<string, string> | null;
+  attendanceRemark?: string | null;
+  remark?: string | null;
 }
 
 interface TeacherClassSubject {
@@ -55,6 +61,40 @@ export default function ResultsPage() {
   const [rankMsg, setRankMsg] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [printClassId, setPrintClassId] = useState("");
+  const [printTermId, setPrintTermId] = useState("");
+
+  function esc(value: unknown) {
+    return String(value ?? "—").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] ?? c));
+  }
+
+  function printableCard(rc: ReportCard) {
+    const student = `${rc.student.user.firstName} ${rc.student.user.lastName}`;
+    const rows = (rc.items ?? []).map((item) => `<tr><td>${esc(item.subject.name)}</td><td>${esc(item.ca)}</td><td>${esc(item.exam)}</td><td>${esc(item.total)}</td><td>${esc(item.grade)}</td></tr>`).join("");
+    const ratings = (title: string, values?: Record<string, string> | null) => values && Object.keys(values).length
+      ? `<section><h3>${esc(title)}</h3><table><tbody>${Object.entries(values).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("")}</tbody></table></section>` : "";
+    return `<article class="report"><h1>Student Report Card</h1><h2>${esc(student)}</h2><p><b>Term:</b> ${esc(rc.term?.name)} &nbsp; <b>Average:</b> ${rc.average == null ? "—" : esc(Number(rc.average).toFixed(1))}% &nbsp; <b>Position:</b> ${esc(rc.position)}</p><table><thead><tr><th>Subject</th><th>CA</th><th>Exam</th><th>Total</th><th>Grade</th></tr></thead><tbody>${rows}</tbody></table>${ratings("Psychomotor development", rc.psychomotor)}${ratings("Co-curricular activities", rc.coCurricular)}<section><h3>Teacher's remark</h3><p>${esc(rc.remark)}</p><h3>Attendance / conduct</h3><p>${esc(rc.attendanceRemark)}</p></section></article>`;
+  }
+
+  function printCards(selected: ReportCard[]) {
+    if (!selected.length) return alert("There are no report cards to print for this selection.");
+    const popup = window.open("", "_blank", "noopener,noreferrer");
+    if (!popup) return alert("Please allow pop-ups to print report cards.");
+    popup.document.write(`<!doctype html><html><head><title>Report cards</title><style>body{font-family:Arial,sans-serif;color:#18202a;margin:24px}.report{max-width:800px;margin:0 auto 36px;padding:12px}h1{text-align:center;margin-bottom:6px}h2{text-align:center;font-size:18px}table{width:100%;border-collapse:collapse;margin:12px 0}th,td{border:1px solid #9aa4b2;padding:7px;text-align:left}th{background:#edf2f7}section{margin-top:18px}section table{width:55%}@media print{.report{page-break-after:always}.report:last-child{page-break-after:auto}}</style></head><body>${selected.map(printableCard).join("")}<script>window.onload=()=>window.print()</script></body></html>`);
+    popup.document.close();
+  }
+
+  async function editDetails(rc: ReportCard) {
+    const psychomotorText = window.prompt("Psychomotor ratings (one per line: Skill: Rating)", Object.entries(rc.psychomotor ?? {}).map(([k, v]) => `${k}: ${v}`).join("\n"));
+    if (psychomotorText === null) return;
+    const activitiesText = window.prompt("Co-curricular activities (one per line: Activity: Rating)", Object.entries(rc.coCurricular ?? {}).map(([k, v]) => `${k}: ${v}`).join("\n"));
+    if (activitiesText === null) return;
+    const toRatings = (text: string) => Object.fromEntries(text.split("\n").map((line) => line.split(":")).filter(([k, v]) => k?.trim() && v?.trim()).map(([k, v]) => [k.trim(), v.trim()]));
+    try {
+      await api(`results/${rc.id}/updateDetails`, { method: "POST", body: { psychomotor: toRatings(psychomotorText), coCurricular: toRatings(activitiesText), attendanceRemark: window.prompt("Attendance / conduct remark", rc.attendanceRemark ?? "") ?? "", remark: window.prompt("Teacher's remark", rc.remark ?? "") ?? "" } });
+      setCards((old) => old.map((card) => card.id === rc.id ? { ...card, psychomotor: toRatings(psychomotorText), coCurricular: toRatings(activitiesText) } : card));
+    } catch (e) { alert((e as Error).message); }
+  }
 
   useEffect(() => {
     api<{ role: string; reportCards?: ReportCard[]; classSubjects?: TeacherClassSubject[]; terms?: TermOption[]; activeTermId?: string }>("results")
@@ -127,6 +167,9 @@ export default function ResultsPage() {
   if (loading) return <Spinner size={28} />;
 
   const activeTerm = terms.find((t) => t.id === activeTermId);
+  const displayedCards = cards.filter((rc) => (!printClassId || rc.classGroupId === printClassId) && (!printTermId || rc.termId === printTermId));
+  const printClasses = Array.from(new Map(cards.filter((rc) => rc.classGroupId && rc.classGroup).map((rc) => [rc.classGroupId!, rc.classGroup!])).entries());
+  const printTerms = Array.from(new Map(cards.filter((rc) => rc.termId && rc.term).map((rc) => [rc.termId!, rc.term!])).entries());
 
   return (
     <div>
@@ -264,6 +307,7 @@ export default function ResultsPage() {
                   ))}
                 </Table>
               )}
+              {rc.access === "granted" && <div style={{ marginTop: 12 }}><Button size="sm" variant="outline" onClick={() => printCards([rc])}>Print result</Button></div>}
             </Card>
           ))
         )
@@ -271,8 +315,13 @@ export default function ResultsPage() {
         <EmptyState title="No report cards published yet" />
       ) : (
         <Card>
-          <Table headers={["Student", "Class", "Term", "Average", "Position", "Status"]}>
-            {cards.map((rc) => (
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(180px,1fr) minmax(180px,1fr) auto", gap: 10, alignItems: "end", marginBottom: 12 }}>
+            <Field label="Class to print"><Select value={printClassId} onChange={(e) => setPrintClassId(e.target.value)}><option value="">All classes</option>{printClasses.map(([id, group]) => <option key={id} value={id}>{group.level.name} {group.name}</option>)}</Select></Field>
+            <Field label="Term to print"><Select value={printTermId} onChange={(e) => setPrintTermId(e.target.value)}><option value="">All terms</option>{printTerms.map(([id, term]) => <option key={id} value={id}>{term.name}</option>)}</Select></Field>
+            <Button variant="outline" onClick={() => printCards(displayedCards)}>Print selected results</Button>
+          </div>
+          <Table headers={["Student", "Class", "Term", "Average", "Position", "Status", ""]}>
+            {displayedCards.map((rc) => (
               <tr key={rc.id}>
                 <td>{rc.student.user.firstName} {rc.student.user.lastName}</td>
                 <td>{rc.classGroup ? `${rc.classGroup.level.name} ${rc.classGroup.name}` : "—"}</td>
@@ -280,6 +329,7 @@ export default function ResultsPage() {
                 <td>{rc.average !== null ? Number(rc.average).toFixed(1) : "—"}</td>
                 <td>{rc.position ?? "—"}</td>
                 <td><Badge tone={rc.isPublished ? "success" : "neutral"}>{rc.isPublished ? "Published" : "Draft"}</Badge></td>
+                <td><div style={{ display: "flex", gap: 6 }}><Button size="sm" variant="outline" onClick={() => printCards([rc])}>Print</Button>{(role === "TEACHER" || role === "ADMIN" || role === "OWNER") && <Button size="sm" variant="ghost" onClick={() => editDetails(rc)}>Rate extras</Button>}</div></td>
               </tr>
             ))}
           </Table>

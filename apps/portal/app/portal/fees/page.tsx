@@ -74,6 +74,8 @@ export default function FeesPage() {
   const [editingSetupId, setEditingSetupId] = useState<string | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
   const [paying, setPaying] = useState<string | null>(null);
+  const [paymentRecordsVisible, setPaymentRecordsVisible] = useState(true);
+  const [adminPaymentVisibility, setAdminPaymentVisibility] = useState(false);
 
   const isStaff = role === "ADMIN" || role === "OWNER";
 
@@ -87,6 +89,8 @@ export default function FeesPage() {
       terms: Term[];
       levels: ClassLevel[];
       classGroups: ClassGroup[];
+      paymentRecordsVisible?: boolean;
+      adminPaymentVisibility?: boolean;
     }>("fees");
     setRole(d.role);
     setInvoices(d.invoices);
@@ -96,6 +100,8 @@ export default function FeesPage() {
     setTerms(d.terms ?? []);
     setLevels(d.levels ?? []);
     setClassGroups(d.classGroups ?? []);
+    setPaymentRecordsVisible(d.paymentRecordsVisible !== false);
+    setAdminPaymentVisibility(d.adminPaymentVisibility === true);
   }
 
   useEffect(() => {
@@ -151,6 +157,15 @@ export default function FeesPage() {
       alert((e as Error).message);
     } finally {
       setPaying(null);
+    }
+  }
+
+  async function setAdminVisibility(enabled: boolean) {
+    try {
+      await api("fees/setAdminPaymentVisibility", { method: "POST", body: { enabled } });
+      setAdminPaymentVisibility(enabled);
+    } catch (e) {
+      alert((e as Error).message);
     }
   }
 
@@ -236,7 +251,7 @@ export default function FeesPage() {
       {summary && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 14, marginBottom: 20 }}>
           <Stat label="Total billed" value={naira(summary.total)} />
-          <Stat label="Collected" value={naira(summary.paid)} tone="success" />
+          {paymentRecordsVisible && <Stat label="Collected" value={naira(summary.paid)} tone="success" />}
           <Stat label="Outstanding" value={naira(summary.balance)} tone="danger" />
         </div>
       )}
@@ -245,14 +260,14 @@ export default function FeesPage() {
         <EmptyState title="No invoices yet" />
       ) : (
         <Card>
-          <Table headers={["Invoice", "Student", "Term", "Amount", "Paid", "Balance", "Status", ""]}>
+          <Table headers={paymentRecordsVisible ? ["Invoice", "Student", "Term", "Amount", "Paid", "Balance", "Status", ""] : ["Invoice", "Student", "Term", "Amount", "Balance", "Status", ""]}>
             {invoices.map((i) => (
               <tr key={i.id}>
                 <td>{i.invoiceNumber}</td>
                 <td>{i.student ? `${i.student.user.firstName} ${i.student.user.lastName}` : "—"}</td>
                 <td>{i.term?.name}</td>
                 <td>{naira(i.totalAmount)}</td>
-                <td>{naira(i.paidAmount)}</td>
+                {paymentRecordsVisible && <td>{naira(i.paidAmount)}</td>}
                 <td>{naira(i.balance)}</td>
                 <td>
                   <Badge tone={i.status === "PAID" || i.status === "OVERPAID" ? "success" : i.status === "PARTIAL" ? "warning" : "danger"}>{i.status}</Badge>
@@ -276,6 +291,14 @@ export default function FeesPage() {
 
       {isStaff && (
         <>
+          {role === "OWNER" && (
+            <Card title="Payment record visibility" style={{ marginTop: 20 }}>
+              <p style={{ marginTop: 0 }}>Only you can view money collected by default. You can allow all administrators to view payment records and collection totals.</p>
+              <Button variant={adminPaymentVisibility ? "outline" : "primary"} onClick={() => setAdminVisibility(!adminPaymentVisibility)}>
+                {adminPaymentVisibility ? "Restrict payment records to owner" : "Allow administrators to view payment records"}
+              </Button>
+            </Card>
+          )}
           <Card title="Fee types" style={{ marginTop: 20 }}>
             {feeTypes.length === 0 ? (
               <EmptyState title="No fee types yet" hint="Add fee types (e.g. Tuition, Transport) then attach amounts per class." />

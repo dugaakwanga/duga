@@ -156,7 +156,9 @@ export function feeInfoOf(student: { feeAmount: { toString(): string } | string 
   const end = paidThrough ? paidThrough.getTime() : now;
   const usedDays = Math.max(0, Math.floor((Math.min(now, end) - start.getTime()) / 86400000));
   const daysRemaining = paidThrough ? Math.max(0, Math.ceil((end - now) / 86400000)) : feeDays;
-  const expired = !!paidThrough && now > end;
+  // A configured fee plan requires a successful payment before access starts.
+  // Schools which have not configured a plan (zero amount/days) remain ungated.
+  const expired = feeDays > 0 && Number(amount) > 0 && (!paidThrough || now > end);
   return {
     feeAmount: amount,
     feeDays,
@@ -168,10 +170,12 @@ export function feeInfoOf(student: { feeAmount: { toString(): string } | string 
 }
 
 // Throw 403 for STUDENT/PARENT callers when the child's fee window has lapsed.
-export function assertFeeAccess(student: { feePaidThrough: Date | null }): void {
-  if (student.feePaidThrough && student.feePaidThrough.getTime() < Date.now()) {
+export function assertFeeAccess(student: { feeAmount: { toString(): string } | string | null; feeDays: number | null; feePaidThrough: Date | null }): void {
+  const feeAmount = Number(student.feeAmount ?? 0);
+  const configured = feeAmount > 0 && (student.feeDays ?? 0) > 0;
+  if (configured && (!student.feePaidThrough || student.feePaidThrough.getTime() < Date.now())) {
     const err = new Error(
-      "Access suspended — the school fee period for this student has ended. Please contact the school to renew.",
+      "Access suspended — payment is required or the school fee period has ended. Please contact the school to renew.",
     ) as Error & { status?: number };
     err.status = 403;
     throw err;
