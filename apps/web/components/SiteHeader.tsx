@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { school as fallbackSchool, portalUrl } from "@/lib/content";
 import { useSiteContent } from "@/lib/use-site";
-import { Menu, Close, Phone, Mail, ArrowRight } from "@/components/icons";
+import { Menu, Close, ArrowRight } from "@/components/icons";
 
 const NAV = [
   { href: "/", label: "Home" },
@@ -64,9 +64,13 @@ export default function SiteHeader() {
     <>
       {tickerOn && content.tickerEnabled !== false && (
         <div className="mkt-announce">
-          <div className="mkt-announce-track">
-            <span>{tickerLine}</span>
-            <span aria-hidden="true">{tickerLine}</span>
+          <div className="mkt-container mkt-announce-inner">
+            <span className="mkt-announce-message">{tickerItems[0] ?? tickerLine}</span>
+            <span className="mkt-announce-contact">
+              <a href={`mailto:${schoolInfo.email}`}>{schoolInfo.email}</a>
+              <span aria-hidden="true">·</span>
+              <a href={`tel:${schoolInfo.phone.replace(/\s/g, "")}`}>{schoolInfo.phone}</a>
+            </span>
           </div>
         </div>
       )}
@@ -90,17 +94,15 @@ export default function SiteHeader() {
               </span>
             </Link>
 
+            <nav className="mkt-nav" aria-label="Primary">
+              {navLinks.map((n) => (
+                <Link key={n.href} href={n.href}>
+                  {n.label}
+                </Link>
+              ))}
+            </nav>
+
             <div className="mkt-header-actions">
-              <a className="mkt-icon-link" href={`mailto:${schoolInfo.email}`} aria-label={`Email ${schoolInfo.email}`}>
-                <Mail size={16} />
-              </a>
-              <a
-                className="mkt-icon-link"
-                href={`tel:${schoolInfo.phone.replace(/\s/g, "")}`}
-                aria-label={`Call ${schoolInfo.phone}`}
-              >
-                <Phone size={16} />
-              </a>
               <Link className="duga-btn duga-btn--outline duga-btn--sm" href={portalUrl}>
                 Portal
               </Link>
@@ -109,14 +111,6 @@ export default function SiteHeader() {
               </Link>
             </div>
           </div>
-
-          <nav className="mkt-nav" aria-label="Primary">
-            {navLinks.map((n) => (
-              <Link key={n.href} href={n.href}>
-                {n.label}
-              </Link>
-            ))}
-          </nav>
         </div>
 
         <div className={`mkt-mobile-menu${open ? " open" : ""}`}>

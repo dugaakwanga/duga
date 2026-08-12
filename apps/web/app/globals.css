@@ -2117,3 +2117,85 @@ textarea:focus-visible {
 }
 .duga-btn--primary,
 .duga-btn--outline { border-radius: 999px; }
+
+/* ===========================================================================
+   Homepage refinement — calm, editorial hierarchy while retaining DUGA colour
+   =========================================================================== */
+.mkt-announce {
+  background: var(--duga-primary-ink);
+  font-size: 11px;
+  letter-spacing: .01em;
+}
+.mkt-announce-inner {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+.mkt-announce-message { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mkt-announce-contact { display: flex; gap: 9px; flex-shrink: 0; opacity: .9; }
+.mkt-announce-contact a { color: inherit; text-decoration: none; }
+.mkt-announce-contact a:hover { color: var(--duga-gold); }
+
+.mkt-header {
+  border-bottom: 1px solid rgba(36, 48, 71, .10);
+  background: rgba(255, 255, 255, .92);
+}
+.mkt-header-top { min-height: 82px; padding: 10px 0; }
+.mkt-header-top .mkt-logo--brand img { height: 48px; border-radius: 10px; }
+.mkt-header-top .mkt-logo--brand .mkt-logo-name { font-size: 20px; letter-spacing: -.035em; }
+.mkt-header-top .mkt-logo--brand .mkt-logo-sub { margin-top: 2px; font-size: 8px; letter-spacing: .14em; }
+.mkt-header-top .mkt-nav { display: flex; align-items: center; justify-content: center; gap: 2px; padding: 0; margin-left: auto; }
+.mkt-header-top .mkt-nav a { color: var(--duga-ink-2); padding: 9px 9px; font-size: 12px; font-weight: 700; }
+.mkt-header-top .mkt-nav a::after { bottom: 3px; }
+.mkt-header-top .mkt-header-actions { margin-left: 12px; gap: 8px; }
+.mkt-header-top .mkt-header-actions .duga-btn { min-height: 40px; padding-inline: 15px; font-size: 12px; }
+
+.mkt-hero {
+  min-height: 670px;
+  background: linear-gradient(115deg, rgba(255, 248, 236, .95) 0%, rgba(255, 255, 255, .80) 48%, rgba(255, 248, 236, .38) 100%);
+}
+.mkt-hero-video-overlay {
+  background: linear-gradient(90deg, rgba(255, 248, 236, .96) 0%, rgba(255, 255, 255, .82) 47%, rgba(255, 248, 236, .18) 100%);
+}
+.mkt-hero .mkt-container { min-height: 670px; grid-template-columns: minmax(0, 1.05fr) minmax(330px, .95fr); gap: 52px; align-items: center; padding-top: 72px; padding-bottom: 72px; }
+.mkt-hero h1 { font-family: var(--duga-font-sans); font-size: clamp(42px, 5.4vw, 74px); font-weight: 850; line-height: .98; letter-spacing: -.065em; max-width: 680px; margin: 18px 0; }
+.mkt-hero h1 em, .mkt-hero .hero-word.is-accent { font-style: normal; color: var(--duga-primary); }
+.mkt-hero p.lead { max-width: 620px; font-size: 16px; line-height: 1.72; font-weight: 600; }
+.mkt-eyebrow { border-radius: 999px; background: rgba(255,255,255,.86); border: 1px solid rgba(36,48,71,.12); box-shadow: 0 7px 18px -14px rgba(36,48,71,.35); }
+.mkt-hero-cta { margin-top: 28px; }
+.mkt-hero-stats { margin-top: 34px; padding-top: 21px; border-top: 1px solid rgba(36,48,71,.14); }
+.mkt-hero-stats div strong { font-family: var(--duga-font-sans); font-size: 29px; font-weight: 850; color: var(--duga-primary-ink); letter-spacing: -.055em; }
+.mkt-hero-stats div span { font-size: 10px; }
+.mkt-hero-media { min-height: 475px; }
+.mkt-hero-main-photo { width: 68%; box-shadow: 0 24px 54px -24px rgba(36,48,71,.30); }
+.mkt-hero-photo-2 { width: 48%; box-shadow: 0 22px 44px -25px rgba(36,48,71,.36); }
+
+.mkt-section { padding: 96px 0; }
+.mkt-section-head { margin-bottom: 44px; }
+.mkt-h2 { font-family: var(--duga-font-sans); font-weight: 850; letter-spacing: -.055em; line-height: 1.04; }
+.mkt-section-head p { font-size: 15.5px; font-weight: 550; color: var(--duga-muted); }
+.mkt-kicker { color: var(--duga-primary); font-size: 11px; font-weight: 800; }
+.mkt-feature-grid { gap: 24px; }
+.mkt-feature { border-radius: 20px; box-shadow: 0 16px 32px -28px rgba(36,48,71,.45); }
+.mkt-feature:hover { transform: translateY(-5px); box-shadow: 0 24px 38px -28px rgba(36,48,71,.40); }
+.mkt-card { border-radius: 18px; box-shadow: 0 14px 28px -26px rgba(36,48,71,.45); }
+
+@media (max-width: 1120px) {
+  .mkt-header-top .mkt-nav a { padding-inline: 7px; font-size: 11px; }
+  .mkt-header-top .mkt-header-actions .duga-btn--outline { display: none; }
+}
+@media (max-width: 980px) {
+  .mkt-announce-contact { display: none; }
+  .mkt-announce-inner { justify-content: center; }
+  .mkt-hero, .mkt-hero .mkt-container { min-height: auto; }
+  .mkt-hero .mkt-container { grid-template-columns: 1fr; padding-top: 60px; padding-bottom: 64px; }
+}
+@media (max-width: 560px) {
+  .mkt-announce-inner { min-height: 31px; }
+  .mkt-hero h1 { font-size: clamp(38px, 12vw, 54px); }
+  .mkt-hero p.lead { font-size: 15px; }
+  .mkt-section { padding: 70px 0; }
+  .mkt-hero-media { height: 360px; min-height: 0; }
+}
