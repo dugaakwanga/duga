@@ -2232,12 +2232,12 @@ textarea:focus-visible {
   background: linear-gradient(115deg, rgba(255, 248, 236, .95) 0%, rgba(255, 255, 255, .80) 48%, rgba(255, 248, 236, .38) 100%);
 }
 .mkt-hero-video-overlay {
-  background: linear-gradient(90deg, rgba(255, 248, 236, .96) 0%, rgba(255, 255, 255, .82) 47%, rgba(255, 248, 236, .18) 100%);
+  background: linear-gradient(90deg, rgba(255, 248, 236, .88) 0%, rgba(255, 255, 255, .66) 47%, rgba(255, 248, 236, .12) 100%);
 }
 .mkt-hero .mkt-container { min-height: 670px; grid-template-columns: minmax(0, 1.05fr) minmax(330px, .95fr); gap: 52px; align-items: center; padding-top: 72px; padding-bottom: 72px; }
 .mkt-hero h1 { font-family: var(--duga-font-sans); font-size: clamp(42px, 5.4vw, 74px); font-weight: 850; line-height: .98; letter-spacing: -.065em; max-width: 680px; margin: 18px 0; }
 .mkt-hero h1 em, .mkt-hero .hero-word.is-accent { font-style: normal; color: var(--duga-primary); }
-.mkt-hero p.lead { max-width: 620px; font-size: 16px; line-height: 1.72; font-weight: 600; }
+.mkt-hero p.lead { max-width: 610px; font-size: 14px; line-height: 1.68; font-weight: 600; }
 .mkt-eyebrow { border-radius: 999px; background: rgba(255,255,255,.86); border: 1px solid rgba(36,48,71,.12); box-shadow: 0 7px 18px -14px rgba(36,48,71,.35); }
 .mkt-hero-cta { margin-top: 28px; }
 .mkt-hero-stats { margin-top: 34px; padding-top: 21px; border-top: 1px solid rgba(36,48,71,.14); }
@@ -2246,11 +2246,25 @@ textarea:focus-visible {
 .mkt-hero-media { min-height: 475px; }
 .mkt-hero-main-photo { width: 68%; box-shadow: 0 24px 54px -24px rgba(36,48,71,.30); }
 .mkt-hero-photo-2 { width: 48%; box-shadow: 0 22px 44px -25px rgba(36,48,71,.36); }
+.mkt-hero-photos {
+  position: absolute;
+  z-index: 4;
+  right: clamp(20px, 5vw, 80px);
+  bottom: 28px;
+  width: 250px;
+  height: 210px;
+  pointer-events: none;
+}
+.mkt-hero-photos .mkt-photo { position: absolute; overflow: hidden; border: 4px solid rgba(255,255,255,.92); box-shadow: 0 22px 42px -24px rgba(20,29,46,.48); }
+.mkt-hero-photos .mkt-hero-main-photo { top: 0; left: 0; width: 144px; height: 192px; }
+.mkt-hero-photos .mkt-hero-photo-2 { right: 0; bottom: 0; width: 158px; height: 112px; }
+.mkt-hero-photos .mkt-photo-caption { padding: 7px 9px; font-size: 9px; }
 
 .mkt-section { padding: 96px 0; }
 .mkt-section-head { margin-bottom: 44px; }
 .mkt-h2 { font-family: var(--duga-font-sans); font-weight: 850; letter-spacing: -.055em; line-height: 1.04; }
-.mkt-section-head p { font-size: 15.5px; font-weight: 550; color: var(--duga-muted); }
+.mkt-section-head p { font-size: 14px; line-height: 1.65; font-weight: 550; color: var(--duga-muted); }
+.mkt-feature-body p, .mkt-card p { font-size: 13.5px; line-height: 1.65; }
 .mkt-kicker { color: var(--duga-primary); font-size: 11px; font-weight: 800; }
 .mkt-feature-grid { gap: 24px; }
 .mkt-feature { border-radius: 20px; box-shadow: 0 16px 32px -28px rgba(36,48,71,.45); }
@@ -2266,11 +2280,13 @@ textarea:focus-visible {
   .mkt-announce-inner { justify-content: center; }
   .mkt-hero, .mkt-hero .mkt-container { min-height: auto; }
   .mkt-hero .mkt-container { grid-template-columns: 1fr; padding-top: 60px; padding-bottom: 64px; }
+  .mkt-hero-photos { right: 16px; transform: scale(.8); transform-origin: bottom right; }
 }
 @media (max-width: 560px) {
   .mkt-announce-inner { min-height: 31px; }
   .mkt-hero h1 { font-size: clamp(38px, 12vw, 54px); }
-  .mkt-hero p.lead { font-size: 15px; }
+  .mkt-hero p.lead { font-size: 13px; }
+  .mkt-hero-photos { display: none; }
   .mkt-section { padding: 70px 0; }
   .mkt-hero-media { height: 360px; min-height: 0; }
 }

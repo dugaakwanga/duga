@@ -71,6 +71,10 @@ export default async function HomePage() {
               </Link>
             </div>
           </div>
+          <div className="mkt-hero-photos mkt-fade-in mkt-fade-in--5" aria-label="Life at De Ultimate Glory Academy">
+            <Photo src="/images/primarypupil.png" alt="A primary pupil of De Ultimate Glory Academy" ratio="portrait" caption="Primary · Nursery to P6" className="mkt-hero-main-photo" />
+            <Photo src="/images/group 1 sec.png" alt="Secondary students of De Ultimate Glory Academy" ratio="wide" caption="Secondary · JSS1 to SSS3" className="mkt-hero-photo-2" />
+          </div>
         </div>
       </section>
       )}
