@@ -39,6 +39,10 @@ export default function ClassesPage() {
   const [editingClass, setEditingClass] = useState<ClassGroup | null>(null);
   const [editingItem, setEditingItem] = useState<{ kind: "subject" | "level" | "session"; id: string } | null>(null);
   const isAdmin = role === "OWNER" || role === "ADMIN";
+  const primaryClasses = classes.filter((c) => c.level.section === "PRIMARY");
+  const secondaryClasses = classes.filter((c) => c.level.section === "SECONDARY");
+  const primarySubjects = subjects.filter((s) => s.section === "PRIMARY");
+  const secondarySubjects = subjects.filter((s) => s.section === "SECONDARY");
 
   const load = useCallback(async () => {
     try {
@@ -211,8 +215,15 @@ export default function ClassesPage() {
       ) : classes.length === 0 ? (
         <EmptyState title="No classes yet" />
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 16 }}>
-          {classes.map((c) => (
+        <div style={{ display: "grid", gap: 28 }}>
+          {([
+            ["Primary classes", primaryClasses],
+            ["Secondary classes", secondaryClasses],
+          ] as const).map(([title, sectionClasses]) => sectionClasses.length > 0 && (
+          <section key={title}>
+            <h2 style={{ fontSize: 17, margin: "0 0 12px", color: "var(--duga-primary-ink)" }}>{title}</h2>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 16 }}>
+          {sectionClasses.map((c) => (
             <Card key={c.id} title={`${c.level.name} ${c.name}`}>
               <div style={{ fontSize: 13, color: "var(--duga-muted)", marginBottom: 8 }}>
                 {c.session.name}
@@ -235,7 +246,7 @@ export default function ClassesPage() {
                           onClick={() => unassignSubject(c, cs.subject!.id)}
                           className="duga-btn duga-btn--sm duga-btn--ghost"
                           title={`Unassign ${cs.subject!.name}`}
-                          style={{ fontSize: 12, padding: "2px 8px" }}
+                          style={{ fontSize: 12, padding: "2px 8px", maxWidth: "100%", overflowWrap: "anywhere" }}
                         >
                           {cs.subject!.name} ×
                         </button>
@@ -257,19 +268,26 @@ export default function ClassesPage() {
               )}
             </Card>
           ))}
+            </div>
+          </section>
+          ))}
         </div>
       )}
 
       {isAdmin && (
         <div style={{ marginTop: 28 }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 16 }}>
-            <Card title="Subjects">
-              {subjects.length === 0 ? <EmptyState title="No subjects" /> : (
+            {([
+              ["Primary subjects", primarySubjects],
+              ["Secondary subjects", secondarySubjects],
+            ] as const).map(([title, sectionSubjects]) => (
+            <Card key={title} title={title}>
+              {sectionSubjects.length === 0 ? <EmptyState title={`No ${title.toLowerCase()}`} /> : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {subjects.map((s) => (
-                    <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 13.5 }}>{s.name} <Badge tone="neutral">{s.section.toLowerCase()}</Badge></span>
-                      <div style={{ display: "flex", gap: 4 }}>
+                  {sectionSubjects.map((s) => (
+                    <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 13.5, minWidth: 0, overflowWrap: "anywhere" }}>{s.name}</span>
+                      <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
                         <Button size="sm" variant="ghost" onClick={() => openEditItem("subject", s.id)}>Edit</Button>
                         <Button size="sm" variant="ghost" onClick={() => deleteItem("subject", s.id)}>Delete</Button>
                       </div>
@@ -278,6 +296,7 @@ export default function ClassesPage() {
                 </div>
               )}
             </Card>
+            ))}
             <Card title="Levels">
               {levels.length === 0 ? <EmptyState title="No levels" /> : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>

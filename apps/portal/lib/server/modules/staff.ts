@@ -12,11 +12,21 @@ export const staffModule: Module = {
         schoolId: ctx.session.user.schoolId,
         role: { in: ["TEACHER", "ADMIN", "BURSAR", "OWNER"] },
       },
-      include: { teacher: true, admin: true },
+      select: {
+        id: true,
+        role: true,
+        email: true,
+        phone: true,
+        status: true,
+        firstName: true,
+        lastName: true,
+        teacher: true,
+        admin: true,
+      },
       orderBy: { createdAt: "desc" },
       take: 300,
     });
-    return { items: users, total: users.length };
+    return { items: users, total: users.length, role: ctx.session.user.role };
   },
 
   async get(ctx) {
@@ -93,6 +103,7 @@ export const staffModule: Module = {
     const target = await prisma.user.findFirst({ where: { id: ctx.id, schoolId } });
     if (!target) throw new Error("Staff member not found");
     if (!["TEACHER", "ADMIN", "BURSAR", "OWNER"].includes(target.role)) throw new Error("Not a staff member");
+    if (target.role === "OWNER" && ctx.session.user.role !== "OWNER") throw new Error("Only the school owner can update the owner account");
     const data: Record<string, unknown> = {};
     const b = ctx.body;
     if (b.status) data.status = String(b.status);
@@ -129,6 +140,7 @@ export const staffModule: Module = {
       const target = await prisma.user.findFirst({ where: { id: targetId, schoolId: ctx.session.user.schoolId } });
       if (!target) throw new Error("Staff member not found");
       if (!["TEACHER", "ADMIN", "BURSAR", "OWNER"].includes(target.role)) throw new Error("Not a staff member");
+      if (target.role === "OWNER" && ctx.session.user.role !== "OWNER") throw new Error("Only the school owner can reset the owner password");
       await prisma.user.update({
         where: { id: target.id },
         data: { passwordHash: await bcrypt.hash(tempPassword, 10), mustChangePassword: true },

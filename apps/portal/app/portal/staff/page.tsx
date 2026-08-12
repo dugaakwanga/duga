@@ -18,6 +18,7 @@ interface StaffUser {
 
 export default function StaffPage() {
   const [items, setItems] = useState<StaffUser[]>([]);
+  const [currentRole, setCurrentRole] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -35,8 +36,9 @@ export default function StaffPage() {
   async function load() {
     setLoading(true);
     try {
-      const data = await api<{ items: StaffUser[] }>("staff");
+      const data = await api<{ items: StaffUser[]; role: string }>("staff");
       setItems(data.items);
+      setCurrentRole(data.role);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -139,10 +141,12 @@ export default function StaffPage() {
                 <td><Badge tone={u.status === "ACTIVE" ? "success" : "danger"}>{u.status}</Badge></td>
                 <td>
                   <div style={{ display: "flex", gap: 6 }}>
-                    <Button size="sm" variant="ghost" onClick={() => { setResetTarget(u); setTempPassword(""); setResetError(null); }}>
-                      Set password
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => openEdit(u)}>Edit</Button>
+                    {(u.role !== "OWNER" || currentRole === "OWNER") && (
+                      <Button size="sm" variant="ghost" onClick={() => { setResetTarget(u); setTempPassword(""); setResetError(null); }}>
+                        Set password
+                      </Button>
+                    )}
+                    {(u.role !== "OWNER" || currentRole === "OWNER") && <Button size="sm" variant="outline" onClick={() => openEdit(u)}>Edit</Button>}
                     {u.role !== "OWNER" && (
                       <Button size="sm" variant="ghost" onClick={() => removeStaff(u)}>Remove</Button>
                     )}
