@@ -78,6 +78,77 @@
 .tt-cell { padding: 10px; font-size: 12px; }
 .tt-cell strong { color: var(--portal-teal); }
 
+/* Form polish: colour helps users understand states without overwhelming screens. */
+.portal-content .duga-field { margin-bottom: 18px; }
+.portal-content .duga-field__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 7px;
+  color: #4e5b74;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: .015em;
+}
+.portal-content .duga-field__label::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--portal-teal);
+}
+.portal-content .duga-input,
+.portal-content .duga-select,
+.portal-content .duga-textarea {
+  background: #fbfcff;
+  border: 1px solid #d9dfeb;
+  color: #26324a;
+  transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
+}
+.portal-content .duga-input:hover,
+.portal-content .duga-select:hover,
+.portal-content .duga-textarea:hover { background: #fff; border-color: #bdc8d9; }
+.portal-content .duga-input::placeholder,
+.portal-content .duga-textarea::placeholder { color: #97a1b3; }
+.portal-content .duga-input:focus,
+.portal-content .duga-select:focus,
+.portal-content .duga-textarea:focus { background: #fff; }
+.portal-content .duga-field:has(.duga-input:focus) .duga-field__label,
+.portal-content .duga-field:has(.duga-select:focus) .duga-field__label,
+.portal-content .duga-field:has(.duga-textarea:focus) .duga-field__label { color: var(--portal-teal); }
+.portal-content .duga-field__help { color: #758198; font-size: 11px; line-height: 1.5; }
+.portal-content .duga-field__error { color: #c94c45; font-size: 11px; font-weight: 650; }
+.portal-content input[type="checkbox"],
+.portal-content input[type="radio"] { accent-color: var(--portal-teal); }
+
+/* Soft colour bands make large forms and data areas easier to navigate. */
+.portal-content .duga-card__header {
+  background: linear-gradient(90deg, rgba(34,158,149,.07), rgba(231,100,89,.035));
+  border-radius: 12px 12px 0 0;
+}
+.portal-content .duga-card__pad > .duga-form-row:nth-child(odd),
+.portal-content form > .duga-form-row:nth-child(odd) {
+  background: linear-gradient(90deg, rgba(34,158,149,.035), transparent 72%);
+  border-radius: 10px;
+  padding: 10px;
+  margin-inline: -10px;
+}
+.portal-content .duga-table tr:hover td { background: #f7fbfb; }
+.portal-content .duga-table tr:nth-child(even) td { background: rgba(246,247,251,.55); }
+.portal-content .duga-badge,
+.portal-content .duga-pill { border-radius: 999px; font-size: 10px; font-weight: 750; }
+.portal-content .duga-empty {
+  border: 1px dashed #cbd5e3;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #fbfcff, #f5fbfa);
+}
+
+/* Calm, useful status colours. */
+.portal-content .duga-alert--success { background: #edf9f6; border-color: #a9dfd5; color: #166c65; }
+.portal-content .duga-alert--warning { background: #fff8e7; border-color: #f1d88b; color: #806019; }
+.portal-content .duga-alert--danger { background: #fff1f0; border-color: #f1bbb7; color: #a5403a; }
+.portal-content .duga-alert--info { background: #eff5ff; border-color: #c8d9f1; color: #365d88; }
+
 /* Entrance and login surfaces receive the same contained colour treatment. */
 .role-landing { background: var(--portal-navy); }
 .role-stage-scrim { background: linear-gradient(90deg, rgba(23,33,58,.68), rgba(23,33,58,.22)); }
