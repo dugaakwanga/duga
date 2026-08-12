@@ -10,7 +10,7 @@ export const staffModule: Module = {
     const users = await prisma.user.findMany({
       where: {
         schoolId: ctx.session.user.schoolId,
-        role: { in: ["TEACHER", "ADMIN", "OWNER"] },
+        role: { in: ["TEACHER", "ADMIN", "BURSAR", "OWNER"] },
       },
       include: { teacher: true, admin: true },
       orderBy: { createdAt: "desc" },
@@ -43,7 +43,7 @@ export const staffModule: Module = {
     // The teacher can be created with any single identifier — email, phone or staff number.
     if (!role || !firstName || !lastName) throw new Error("role, firstName and lastName are required");
     if (!email && !phone && !staffNumber) throw new Error("Provide at least one of email, phone number or staff ID");
-    if (!["TEACHER", "ADMIN"].includes(role)) throw new Error("Invalid staff role");
+    if (!["TEACHER", "ADMIN", "BURSAR"].includes(role)) throw new Error("Invalid staff role");
     if (tempPassword && tempPassword.length < 8) throw new Error("Temporary password must be at least 8 characters");
 
     const emailOrGenerated = email ?? (staffNumber ? `${staffNumber}@staff.local` : `${phone}@phone.local`);
@@ -59,7 +59,7 @@ export const staffModule: Module = {
     const user = await prisma.user.create({
       data: {
         schoolId,
-        role: role as "TEACHER" | "ADMIN",
+        role: role as "TEACHER" | "ADMIN" | "BURSAR",
         email: emailOrGenerated,
         phone,
         passwordHash: await bcrypt.hash(tempPassword ?? "password123", 10),
@@ -92,7 +92,7 @@ export const staffModule: Module = {
     const schoolId = ctx.session.user.schoolId;
     const target = await prisma.user.findFirst({ where: { id: ctx.id, schoolId } });
     if (!target) throw new Error("Staff member not found");
-    if (!["TEACHER", "ADMIN", "OWNER"].includes(target.role)) throw new Error("Not a staff member");
+    if (!["TEACHER", "ADMIN", "BURSAR", "OWNER"].includes(target.role)) throw new Error("Not a staff member");
     const data: Record<string, unknown> = {};
     const b = ctx.body;
     if (b.status) data.status = String(b.status);
@@ -128,7 +128,7 @@ export const staffModule: Module = {
       if (tempPassword.length < 8) throw new Error("Temporary password must be at least 8 characters");
       const target = await prisma.user.findFirst({ where: { id: targetId, schoolId: ctx.session.user.schoolId } });
       if (!target) throw new Error("Staff member not found");
-      if (!["TEACHER", "ADMIN", "OWNER"].includes(target.role)) throw new Error("Not a staff member");
+      if (!["TEACHER", "ADMIN", "BURSAR", "OWNER"].includes(target.role)) throw new Error("Not a staff member");
       await prisma.user.update({
         where: { id: target.id },
         data: { passwordHash: await bcrypt.hash(tempPassword, 10), mustChangePassword: true },

@@ -60,6 +60,8 @@ export async function featuresForRole(schoolId: string, role: Role): Promise<str
       ? defaultFeaturesFor("OWNER")
       : role === "ADMIN"
         ? cfg.admin
+        : role === "BURSAR"
+          ? ["fees", "reports", "staff", "payroll"]
         : role === "TEACHER"
           ? cfg.teacher
           : cfg.family;

@@ -67,6 +67,7 @@ const STAFF_NAV: NavSection[] = [
     title: "Operations",
     items: [
       { href: "/portal/fees", label: "Fees & Payments", icon: "fees", perm: "fees:view", feature: "fees", subfeature: "finance" },
+      { href: "/portal/payroll", label: "Payroll", icon: "fees", perm: "payroll:view", feature: "payroll", subfeature: "finance" },
       { href: "/portal/hostel", label: "Hostel", icon: "hostel", perm: "hostel:view", feature: "hostel" },
       { href: "/portal/transport", label: "Transport", icon: "bus", perm: "transport:view", feature: "transport" },
       { href: "/portal/applications", label: "Admissions", icon: "applications", perm: "applications:view", feature: "applications" },
@@ -234,7 +235,7 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
       ...s,
       items: s.items.filter(
         (i) =>
-          (!i.finance || user.role === "OWNER" || (user.role === "ADMIN" && user.financeAccess)) &&
+          (!i.finance || user.role === "OWNER" || ((user.role === "ADMIN" || user.role === "BURSAR") && user.financeAccess)) &&
           (!i.perm || hasPermission(user.role, i.perm)) &&
           (!i.roles || i.roles.includes(user.role)) &&
           (!i.feature || !user.features || user.features.includes(i.feature)) &&

@@ -89,7 +89,7 @@ export default function ResultsPage() {
     if (psychomotorText === null) return;
     const activitiesText = window.prompt("Co-curricular activities (one per line: Activity: Rating)", Object.entries(rc.coCurricular ?? {}).map(([k, v]) => `${k}: ${v}`).join("\n"));
     if (activitiesText === null) return;
-    const toRatings = (text: string) => Object.fromEntries(text.split("\n").map((line) => line.split(":")).filter(([k, v]) => k?.trim() && v?.trim()).map(([k, v]) => [k.trim(), v.trim()]));
+    const toRatings = (text: string) => Object.fromEntries(text.split("\n").map((line) => line.split(":")).flatMap(([k, v]) => k?.trim() && v?.trim() ? [[k.trim(), v.trim()] as [string, string]] : []));
     try {
       await api(`results/${rc.id}/updateDetails`, { method: "POST", body: { psychomotor: toRatings(psychomotorText), coCurricular: toRatings(activitiesText), attendanceRemark: window.prompt("Attendance / conduct remark", rc.attendanceRemark ?? "") ?? "", remark: window.prompt("Teacher's remark", rc.remark ?? "") ?? "" } });
       setCards((old) => old.map((card) => card.id === rc.id ? { ...card, psychomotor: toRatings(psychomotorText), coCurricular: toRatings(activitiesText) } : card));

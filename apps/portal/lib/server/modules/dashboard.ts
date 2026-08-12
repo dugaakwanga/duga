@@ -13,7 +13,7 @@ export const dashboardModule: Module = {
     if (role === "OWNER" || role === "ADMIN") {
       const [studentCount, staffCount, classCount, invoiceStats, applications, unpaid, today] = await Promise.all([
         prisma.student.count({ where: { schoolId, status: "ACTIVE" } }),
-        prisma.user.count({ where: { schoolId, role: { in: ["TEACHER", "ADMIN"] }, status: "ACTIVE" } }),
+        prisma.user.count({ where: { schoolId, role: { in: ["TEACHER", "ADMIN", "BURSAR"] }, status: "ACTIVE" } }),
         prisma.classGroup.count({ where: { schoolId } }),
         prisma.invoice.aggregate({ where: { schoolId }, _sum: { totalAmount: true, paidAmount: true, balance: true } }),
         prisma.application.count({ where: { schoolId, status: "RECEIVED" } }),

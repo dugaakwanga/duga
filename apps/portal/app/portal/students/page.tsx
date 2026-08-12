@@ -306,7 +306,7 @@ export default function StudentsPage() {
       <Modal open={!!feeTarget} onClose={() => setFeeTarget(null)} title={feeTarget ? `Set fee — ${feeTarget.user.firstName} ${feeTarget.user.lastName}` : ""}>
         {feeTarget?.fee?.expired && (
           <div style={{ marginBottom: 12 }}>
-            <Alert tone="danger">This child's fee access has expired. Renew it below to reopen their portal access.</Alert>
+            <Alert tone="danger">This child&apos;s fee access has expired. Renew it below to reopen their portal access.</Alert>
           </div>
         )}
         <div className="duga-form-grid">

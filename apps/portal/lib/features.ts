@@ -144,6 +144,13 @@ export const FEATURES: FeatureDef[] = [
     roles: ["ADMIN"],
   },
   {
+    id: "payroll",
+    label: "Payroll",
+    group: "Operations",
+    resources: ["payroll"],
+    roles: ["ADMIN", "BURSAR"],
+  },
+  {
     id: "messaging",
     label: "Messages & notifications",
     group: "Communication",
@@ -209,6 +216,7 @@ for (const s of SUBFEATURES) SUBFEATURE_BY_ID[s.id] = s;
 export const SUBFEATURE_BY_RESOURCE: Record<string, string> = {
   fees: "finance",
   reports: "finance",
+  payroll: "finance",
 };
 
 export function subfeatureById(id: string): SubFeatureDef | undefined {
@@ -227,6 +235,6 @@ export function defaultFeaturesFor(role: Role): string[] {
 
 /** Roles that can be configured by a given role (who configures whom). */
 export const CONFIGURES: Partial<Record<Role, Role[]>> = {
-  OWNER: ["ADMIN", "TEACHER", "PARENT", "STUDENT"],
+  OWNER: ["ADMIN", "BURSAR", "TEACHER", "PARENT", "STUDENT"],
   ADMIN: ["TEACHER", "PARENT", "STUDENT"],
 };

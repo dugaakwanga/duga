@@ -23,6 +23,7 @@ datasource db {
 enum Role {
   OWNER
   ADMIN
+  BURSAR
   TEACHER
   PARENT
   STUDENT
@@ -284,6 +285,8 @@ model User {
   authoredNews         NewsPost[]            @relation("NewsAuthor")
   staffAttendance     StaffAttendance[]
   auditLogs           AuditLog[]             @relation("AuditActor")
+  salaryProfile       StaffSalary?
+  payrollEntries      PayrollEntry[]         @relation("PayrollStaff")
   createdFeeOverrides FeeOverride[]          @relation("OverrideCreator")
   recordedPtaMeetings PtaMeeting[]           @relation("PtaMeetingRecorder")
   recordedPtaContributions PtaContribution[] @relation("PtaContributionRecorder")
@@ -413,6 +416,41 @@ model Admin {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([schoolId])
+}
+
+// Payroll is tenant-scoped and preserves a monthly snapshot so historical
+// pay slips never change when a staff salary is updated later.
+model StaffSalary {
+  id String @id @default(cuid())
+  schoolId String
+  userId String @unique
+  monthlyAmount Decimal @default(0)
+  latePenalty Decimal @default(0)
+  rewardAmount Decimal @default(0)
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([schoolId])
+}
+
+model PayrollEntry {
+  id String @id @default(cuid())
+  schoolId String
+  userId String
+  month String
+  baseSalary Decimal @default(0)
+  lateDays Int @default(0)
+  lateDeduction Decimal @default(0)
+  reward Decimal @default(0)
+  extraDeduction Decimal @default(0)
+  note String?
+  netPay Decimal @default(0)
+  status String @default("DRAFT")
+  processedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation("PayrollStaff", fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([schoolId, userId, month])
+  @@index([schoolId, month])
 }
 
 model PlacementHistory {

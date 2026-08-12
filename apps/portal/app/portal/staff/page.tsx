@@ -118,7 +118,7 @@ export default function StaffPage() {
     <div>
       <PageHeader
         title="Staff"
-        subtitle="Teachers, administrators and the proprietor."
+        subtitle="Teachers, administrators, bursars and the proprietor."
         actions={<Button onClick={() => setOpen(true)}><Icon name="plus" size={16} /> Add staff</Button>}
       />
       {error && <Alert tone="danger">{error}</Alert>}
@@ -164,6 +164,7 @@ export default function StaffPage() {
                   <option value="">Select…</option>
                   <option value="TEACHER">Teacher</option>
                   <option value="ADMIN">Admin</option>
+                  <option value="BURSAR">Bursar</option>
                 </Select>
               </Field>
               <Field label="Designation">

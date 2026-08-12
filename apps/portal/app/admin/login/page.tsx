@@ -12,6 +12,7 @@ import { siteHomeUrl } from "@/lib/client/site";
 const DEMO_ACCOUNTS: Record<string, { email: string; password: string; label: string }> = {
   OWNER: { email: "owner@deultimateglory.com", password: "password123", label: "Proprietor" },
   ADMIN: { email: "admin@deultimateglory.com", password: "password123", label: "Admin" },
+  BURSAR: { email: "bursar@deultimateglory.com", password: "password123", label: "Bursar" },
 };
 
 export default function AdminLoginPage() {

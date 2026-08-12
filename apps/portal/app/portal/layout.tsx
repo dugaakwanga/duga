@@ -19,6 +19,9 @@ export default async function PortalLayout({ children }: { children: React.React
       where: { schoolId_key: { schoolId: user.schoolId, key: "adminFinanceAccess" } },
     });
     financeAccess = row?.value === true || row?.value === "true";
+  } else if (user.role === "BURSAR") {
+    const row = await prisma.schoolSetting.findUnique({ where: { schoolId_key: { schoolId: user.schoolId, key: "bursarFinanceAccess" } } });
+    financeAccess = row?.value === true || row?.value === "true";
   }
   const features = await featuresForRole(user.schoolId, user.role);
   const subfeatures = await subfeaturesForRole(user.schoolId, user.role);

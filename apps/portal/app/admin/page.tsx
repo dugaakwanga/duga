@@ -16,6 +16,7 @@ interface RoleOption {
 // Admin console: administrators and the proprietor only.
 const OPTIONS: RoleOption[] = [
   { role: "ADMIN", label: "Admin / Staff", desc: "Register, hostels, transport & reporting", img: "/images/logo.png" },
+  { role: "BURSAR", label: "Bursar", desc: "Fees, payments and payroll", img: "/images/logo.png" },
   { role: "OWNER", label: "Proprietor", desc: "Full control & oversight", img: "/images/logo.png" },
 ];
 
@@ -60,6 +61,7 @@ export default function AdminLandingPage() {
               Select your role…
             </option>
             <option value="ADMIN">Admin / Staff</option>
+            <option value="BURSAR">Bursar</option>
             <option value="OWNER">Proprietor</option>
           </select>
         </div>

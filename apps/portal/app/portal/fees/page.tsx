@@ -77,7 +77,7 @@ export default function FeesPage() {
   const [paymentRecordsVisible, setPaymentRecordsVisible] = useState(true);
   const [adminPaymentVisibility, setAdminPaymentVisibility] = useState(false);
 
-  const isStaff = role === "ADMIN" || role === "OWNER";
+  const isStaff = role === "ADMIN" || role === "OWNER" || role === "BURSAR";
 
   async function load() {
     const d = await api<{

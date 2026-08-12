@@ -3,6 +3,14 @@ import type { Module } from ".";
 import type { Ctx } from "@/app/api/v1/[...path]/route";
 import { can, str, num, idArray, isAssignedTo, resolveTargetStudentIds, ensureTeacher, assertFeeAccess } from "../helpers";
 
+const GAME_LIBRARY = [
+  ["Number Ninja", "MATH", "EASY"], ["Times Table Sprint", "MATH", "MEDIUM"], ["Fraction Match", "MATH", "MEDIUM"], ["Shape Detective", "PUZZLE", "EASY"],
+  ["Word Builder", "WORD", "EASY"], ["Spelling Bee", "WORD", "MEDIUM"], ["Vocabulary Voyage", "WORD", "MEDIUM"], ["Grammar Quest", "QUIZ", "HARD"],
+  ["Science Lab Challenge", "QUIZ", "MEDIUM"], ["Human Body Explorer", "QUIZ", "MEDIUM"], ["Planet Puzzle", "PUZZLE", "EASY"], ["Weather Watch", "QUIZ", "EASY"],
+  ["History Timeline", "PUZZLE", "MEDIUM"], ["Nigeria Knowledge Quiz", "QUIZ", "MEDIUM"], ["Map Master", "PUZZLE", "HARD"], ["Memory Masters", "MEMORY", "EASY"],
+  ["Pattern Power", "PUZZLE", "MEDIUM"], ["Reading Race", "WORD", "EASY"], ["Logic Ladder", "PUZZLE", "HARD"], ["Digital Safety Challenge", "QUIZ", "EASY"],
+] as const;
+
 // Sync "assigned" game progress rows for the targeted students.
 async function syncGameTargets(schoolId: string, gameId: string, classGroupIds: string[], studentIds: string[]): Promise<void> {
   const ids = await resolveTargetStudentIds(schoolId, classGroupIds, studentIds);
@@ -167,6 +175,16 @@ export const gamesModule: Module = {
   },
 
   actions: {
+    seedLibrary: async (ctx) => {
+      can(ctx, "games:manage");
+      const teacher = await ensureTeacher(ctx);
+      const existing = await prisma.educationalGame.findMany({ where: { schoolId: ctx.session.user.schoolId }, select: { title: true } });
+      const titles = new Set(existing.map((game) => game.title));
+      const missing = GAME_LIBRARY.filter(([title]) => !titles.has(title));
+      if (missing.length) await prisma.educationalGame.createMany({ data: missing.map(([title, category, difficulty]) => ({ schoolId: ctx.session.user.schoolId, teacherId: teacher.id, title, description: `Editable ${category.toLowerCase()} activity. Assign it to a class and publish when ready.`, category, difficulty, rewardPoints: 10, targetClassGroupIds: [], targetStudentIds: [], isPublished: false })) });
+      await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "games.librarySeeded", entityType: "EducationalGame", meta: { created: missing.length } });
+      return { created: missing.length };
+    },
     publish: async (ctx) => {
       can(ctx, "games:manage");
       const schoolId = ctx.session.user.schoolId;

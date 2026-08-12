@@ -4,9 +4,9 @@
 // only in the UI.
 // ----------------------------------------------------------------------------
 
-export type Role = "OWNER" | "ADMIN" | "TEACHER" | "PARENT" | "STUDENT";
+export type Role = "OWNER" | "ADMIN" | "BURSAR" | "TEACHER" | "PARENT" | "STUDENT";
 
-export const ROLES: Role[] = ["OWNER", "ADMIN", "TEACHER", "PARENT", "STUDENT"];
+export const ROLES: Role[] = ["OWNER", "ADMIN", "BURSAR", "TEACHER", "PARENT", "STUDENT"];
 
 export type Permission =
   // Students
@@ -61,6 +61,8 @@ export type Permission =
   // Reports / financials (owner-level)
   | "reports:view"
   | "financials:view"
+  | "payroll:view"
+  | "payroll:manage"
   // Settings / subscription
   | "settings:manage"
   // Applications (admissions inbox)
@@ -125,6 +127,8 @@ export const PERMISSIONS: Permission[] = [
   "transport:manage",
   "reports:view",
   "financials:view",
+  "payroll:view",
+  "payroll:manage",
   "settings:manage",
   "applications:view",
   "applications:manage",
@@ -197,6 +201,9 @@ const rolePermissions: Record<Role, Permission[]> = {
     "games:manage",
     "games:play",
   ],
+  // Bursar access is intentionally limited to finance. The owner can narrow
+  // this further through the bursar permission setting in Payroll.
+  BURSAR: ["fees:view", "fees:manage", "fees:collect", "financials:view", "payroll:view", "payroll:manage"],
   TEACHER: [
     "learning:manage",
     "learning:view",

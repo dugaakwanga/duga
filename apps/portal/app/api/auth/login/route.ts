@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
     // Portal separation: admin & proprietor sign in via the admin portal;
     // students, parents & teachers sign in on the family portal.
     const bodyPortal = String(body.portal ?? "").toLowerCase();
-    const isStaffRole = user.role === "OWNER" || user.role === "ADMIN";
+    const isStaffRole = user.role === "OWNER" || user.role === "ADMIN" || user.role === "BURSAR";
     const requestedAdmin = bodyPortal === "admin";
     if (isStaffRole && !requestedAdmin) {
       return NextResponse.json({ ok: false, error: "Administrators and the proprietor sign in from the admin portal." }, { status: 403 });

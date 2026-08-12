@@ -38,6 +38,7 @@ import { featuresModule } from "./features";
 import { progressModule } from "./progress";
 import { ptaModule } from "./pta";
 import { libraryModule } from "./library";
+import { payrollModule } from "./payroll";
 
 export const modules: Record<string, Module> = {
   dashboard: dashboardModule,
@@ -67,6 +68,7 @@ export const modules: Record<string, Module> = {
   progress: progressModule,
   pta: ptaModule,
   library: libraryModule,
+  payroll: payrollModule,
 };
 
 export type { Ctx };

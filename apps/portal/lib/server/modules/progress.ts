@@ -134,7 +134,7 @@ async function classStats(schoolId: string, teacherId?: string, studentIds?: str
   } as never;
   const [studentCount, teacherCount, classCount] = await Promise.all([
     prisma.student.count({ where: studentWhere }),
-    prisma.user.count({ where: { schoolId, role: { in: ["TEACHER", "ADMIN"] }, status: "ACTIVE" } }),
+    prisma.user.count({ where: { schoolId, role: { in: ["TEACHER", "ADMIN", "BURSAR"] }, status: "ACTIVE" } }),
     prisma.classGroup.count({ where: teacherId ? { schoolId, formTeacherId: teacherId } : { schoolId } }),
   ]);
   return { studentCount, teacherCount, classCount };

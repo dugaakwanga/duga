@@ -202,6 +202,10 @@ export default function GamesPage() {
     }
   }
 
+  async function addLibrary() {
+    try { const result = await api<{ created: number }>("games/seedLibrary", { method: "POST", body: {} }); alert(`${result.created} game template(s) added.`); load(); } catch (e) { alert((e as Error).message); }
+  }
+
   async function logScore(item: GameItem) {
     const score = Number(scores[item.id] ?? "");
     if (!score && score !== 0) return alert("Enter your score");
@@ -222,7 +226,7 @@ export default function GamesPage() {
       <PageHeader
         title="Educational Games"
         subtitle={isManager ? "Create and assign fun educational games, then track scores and reward points." : "Play the games your teachers assign and earn reward points."}
-        actions={isManager ? <Button onClick={() => { setForm({}); setOpen(true); }}><Icon name="plus" size={16} /> New game</Button> : undefined}
+        actions={isManager ? <div style={{ display: "flex", gap: 8 }}><Button variant="outline" onClick={addLibrary}>Add 20 game templates</Button><Button onClick={() => { setForm({}); setOpen(true); }}><Icon name="plus" size={16} /> New game</Button></div> : undefined}
       />
       {error && <Alert tone="danger">{error}</Alert>}
       {loading ? (

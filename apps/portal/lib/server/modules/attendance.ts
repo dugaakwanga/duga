@@ -15,7 +15,7 @@ async function resolveClockTarget(
   const targetUserId = str(raw);
   if (!targetUserId || targetUserId === actingUserId) return { userId: actingUserId };
   const target = await prisma.user.findFirst({
-    where: { id: targetUserId, schoolId, role: { in: ["TEACHER", "ADMIN", "OWNER"] } },
+    where: { id: targetUserId, schoolId, role: { in: ["TEACHER", "ADMIN", "BURSAR", "OWNER"] } },
     select: { id: true },
   });
   if (!target) throw new Error("Selected staff member not found in this school");
@@ -246,7 +246,7 @@ export const attendanceModule: Module = {
     staffClockTargets: async (ctx) => {
       can(ctx, "staff:clock");
       const items = await prisma.user.findMany({
-        where: { schoolId: ctx.session.user.schoolId, role: { in: ["TEACHER", "ADMIN", "OWNER"] }, status: "ACTIVE" },
+        where: { schoolId: ctx.session.user.schoolId, role: { in: ["TEACHER", "ADMIN", "BURSAR", "OWNER"] }, status: "ACTIVE" },
         select: { id: true, firstName: true, lastName: true, role: true, teacher: { select: { staffNumber: true } }, admin: { select: { designation: true } } },
         orderBy: { firstName: "asc" },
       });
