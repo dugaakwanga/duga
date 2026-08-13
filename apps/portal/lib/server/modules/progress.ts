@@ -3,11 +3,25 @@ import type { Module } from ".";
 import { subfeatureEnabled } from "../features";
 
 // ---------------------------------------------------------------------------
-// School progress analytics — role-scoped statistical charts.
-//  • OWNER/ADMIN  → whole-school overview
-//  • TEACHER      → the classes & students they teach
-//  • STUDENT      → their own progress
+// School progress analytics — role-scoped.
+//  • OWNER  → everything (whole school + finance)
+//  • ADMIN  → whole school except money
+//  • BURSAR → monetary progress only
+//  • TEACHER→ their classes & subjects (academic + attendance)
+//  • STUDENT→ their own progress
+//  • PARENT → their linked children
 // ---------------------------------------------------------------------------
+
+type SectionFlags = { fees: boolean; attendance: boolean; enrollment: boolean; scores: boolean; classes: boolean };
+
+const ROLE_SECTIONS: Record<string, SectionFlags> = {
+  OWNER: { fees: true, attendance: true, enrollment: true, scores: true, classes: true },
+  ADMIN: { fees: false, attendance: true, enrollment: true, scores: true, classes: true },
+  BURSAR: { fees: true, attendance: false, enrollment: false, scores: false, classes: false },
+  TEACHER: { fees: false, attendance: true, enrollment: true, scores: true, classes: true },
+  STUDENT: { fees: false, attendance: true, enrollment: false, scores: true, classes: true },
+  PARENT: { fees: false, attendance: true, enrollment: false, scores: true, classes: true },
+};
 
 function monthLabel(d: Date): string {
   return d.toLocaleDateString("en-GB", { month: "short", year: "2-digit" });
@@ -126,80 +140,124 @@ async function feeSummary(schoolId: string, studentIds?: string[]) {
   };
 }
 
-async function classStats(schoolId: string, teacherId?: string, studentIds?: string[]) {
-  const studentWhere = {
-    schoolId,
-    status: "ACTIVE",
-    ...(studentIds ? { id: { in: studentIds } } : {}),
-  } as never;
-  const [studentCount, teacherCount, classCount] = await Promise.all([
-    prisma.student.count({ where: studentWhere }),
-    prisma.user.count({ where: { schoolId, role: { in: ["TEACHER", "ADMIN", "BURSAR"] }, status: "ACTIVE" } }),
-    prisma.classGroup.count({ where: teacherId ? { schoolId, formTeacherId: teacherId } : { schoolId } }),
-  ]);
-  return { studentCount, teacherCount, classCount };
-}
-
 export const progressModule: Module = {
   async list(ctx) {
     const schoolId = ctx.session.user.schoolId;
     const role = ctx.session.user.role;
     const teacher = ctx.session.user.teacher;
+    const student = ctx.session.user.student;
+    const parent = ctx.session.user.parent;
+    const sections = ROLE_SECTIONS[role] ?? { fees: false, attendance: true, enrollment: false, scores: true, classes: true };
 
-    // Teacher scope: students in the classes/subjects they teach.
-    let scopedStudentIds: string[] | undefined;
+    // Resolve which student ids this role sees.
+    let ids: string[] | undefined;
+    let myClasses: Array<{ id: string; name: string; levelName: string; studentCount: number }> = [];
     if (role === "TEACHER" && teacher) {
-      const classSubjectIds = (
-        await prisma.classSubject.findMany({
-          where: { teacherId: teacher.id },
-          select: { classGroupId: true },
-        })
-      ).map((c) => c.classGroupId);
-      const students = await prisma.student.findMany({
-        where: { schoolId, status: "ACTIVE", currentClassGroupId: { in: classSubjectIds } },
+      const taught = await prisma.classSubject.findMany({
+        where: { teacherId: teacher.id },
+        select: { classGroupId: true },
+      });
+      const classGroupIds = new Set(taught.map((r) => r.classGroupId));
+      const formClasses = await prisma.classGroup.findMany({
+        where: { schoolId, formTeacherId: teacher.id },
         select: { id: true },
-        take: 500,
       });
-      scopedStudentIds = students.map((s) => s.id);
+      for (const c of formClasses) classGroupIds.add(c.id);
+      const [students, classGroups] = await Promise.all([
+        prisma.student.findMany({
+          where: { schoolId, status: "ACTIVE", currentClassGroupId: { in: [...classGroupIds] } },
+          select: { id: true },
+          take: 500,
+        }),
+        prisma.classGroup.findMany({
+          where: { schoolId, id: { in: [...classGroupIds] } },
+          select: { id: true, name: true, level: { select: { name: true } }, students: { where: { status: "ACTIVE" }, select: { id: true } } },
+        }),
+      ]);
+      ids = students.map((s) => s.id);
+      myClasses = classGroups.map((cg) => ({ id: cg.id, name: `${cg.level.name} ${cg.name}`, levelName: cg.level.name, studentCount: cg.students.length }));
+    } else if (role === "STUDENT" && student) {
+      ids = [student.id];
+    } else if (role === "PARENT" && parent) {
+      const links = await prisma.studentParent.findMany({ where: { parentId: parent.id }, select: { studentId: true } });
+      ids = links.map((l) => l.studentId);
     }
-
-    // Student scope: just themselves.
-    let ownIds: string[] | undefined;
-    if (role === "STUDENT" && ctx.session.user.student) {
-      ownIds = [ctx.session.user.student.id];
-    }
-
-    // Parent scope: only the children linked to this parent.
-    let parentIds: string[] | undefined;
-    if (role === "PARENT" && ctx.session.user.parent) {
-      const links = await prisma.studentParent.findMany({
-        where: { parentId: ctx.session.user.parent.id },
-        select: { studentId: true },
-      });
-      parentIds = links.map((l) => l.studentId);
-    }
-
-    const ids = role === "TEACHER" ? scopedStudentIds : role === "STUDENT" ? ownIds : role === "PARENT" ? parentIds : undefined;
 
     const financeOn = await subfeatureEnabled(schoolId, role, "finance");
-    const [fees, attendance, enrollment, scores, summary, classes] = await Promise.all([
-      financeOn ? feesSeries(schoolId, ids) : Promise.resolve([] as Array<{ label: string; value: number }>),
-      attendanceSeries(schoolId, ids),
-      enrollmentSeries(schoolId, ids),
-      scoreSeries(schoolId, ids),
-      financeOn ? feeSummary(schoolId, ids) : Promise.resolve({ total: 0, paid: 0, balance: 0 }),
-      classStats(schoolId, role === "TEACHER" ? teacher?.id : undefined, ids),
+    const showFees = sections.fees && financeOn;
+
+    const [fees, attendance, enrollment, scores, feeSum, scopeStats] = await Promise.all([
+      showFees ? feesSeries(schoolId, ids) : Promise.resolve([] as Array<{ label: string; value: number }>),
+      sections.attendance ? attendanceSeries(schoolId, ids) : Promise.resolve([] as Array<{ label: string; value: number }>),
+      sections.enrollment ? enrollmentSeries(schoolId, ids) : Promise.resolve([] as Array<{ label: string; value: number }>),
+      sections.scores ? scoreSeries(schoolId, ids) : Promise.resolve([] as Array<{ label: string; value: number; passRate: number }>),
+      showFees ? feeSummary(schoolId, ids) : Promise.resolve({ total: 0, paid: 0, balance: 0 }),
+      classStats(schoolId, ids),
     ]);
+
+    // Teacher: subject-level averages from the classes they teach.
+    let subjects: Array<{ id: string; name: string; section: string; classGroupName: string; value: number; students: number; count: number }> = [];
+    if (role === "TEACHER" && teacher) {
+      const classSubjects = await prisma.classSubject.findMany({
+        where: { teacherId: teacher.id },
+        select: {
+          id: true,
+          classGroup: { select: { id: true, name: true, level: { select: { name: true } } } },
+          subject: { select: { name: true, section: true } },
+        },
+      });
+      if (classSubjects.length) {
+        const items = await prisma.reportCardItem.findMany({
+          where: { classSubjectId: { in: classSubjects.map((cs) => cs.id) }, reportCard: { isPublished: true, schoolId } },
+          select: { total: true, classSubjectId: true },
+        });
+        const counts = new Map<string, number>();
+        for (const cg of myClasses) counts.set(cg.id, cg.studentCount);
+        const map = new Map<string, { id: string; name: string; section: string; classGroupName: string; value: number; students: number; count: number }>();
+        for (const cs of classSubjects) {
+          const groupName = `${cs.classGroup.level.name} ${cs.classGroup.name}`;
+          map.set(cs.id, { id: cs.id, name: cs.subject.name, section: cs.subject.section, classGroupName: groupName, value: 0, students: counts.get(cs.classGroup.id) ?? 0, count: 0 });
+        }
+        for (const it of items) {
+          const e = map.get(it.classSubjectId ?? "");
+          if (!e || it.total === null) continue;
+          e.value += it.total;
+          e.count += 1;
+        }
+        subjects = [...map.values()].map((e) => ({ ...e, value: e.count === 0 ? 0 : Math.round(e.value / e.count) }));
+        subjects.sort((a, b) => a.classGroupName.localeCompare(b.classGroupName) || a.name.localeCompare(b.name));
+      }
+    }
 
     return {
       role,
-      scoped: role === "OWNER" ? false : true,
-      classes,
-      fees: financeOn ? { series: fees, summary } : null,
-      attendance: { series: attendance },
-      enrollment: { series: enrollment },
-      scores: { series: scores },
+      scope:
+        role === "OWNER" || role === "ADMIN" || role === "BURSAR"
+          ? "school"
+          : role === "TEACHER"
+            ? "classes"
+            : role === "STUDENT"
+              ? "own"
+              : "children",
+      sections,
+      classes: scopeStats,
+      myClasses,
+      subjects,
+      fees: showFees ? { series: fees, summary: feeSum } : null,
+      attendance: sections.attendance ? { series: attendance } : null,
+      enrollment: sections.enrollment ? { series: enrollment } : null,
+      scores: sections.scores ? { series: scores } : null,
       generatedAt: new Date().toISOString(),
     };
   },
 };
+
+async function classStats(schoolId: string, ids?: string[]) {
+  const studentWhere = { schoolId, status: "ACTIVE", ...(ids ? { id: { in: ids } } : {}) } as never;
+  const [studentCount, teacherCount, classCount] = await Promise.all([
+    prisma.student.count({ where: studentWhere }),
+    prisma.user.count({ where: { schoolId, role: { in: ["TEACHER", "ADMIN", "BURSAR"] }, status: "ACTIVE" } }),
+    prisma.classGroup.count({ where: { schoolId } }),
+  ]);
+  return { studentCount, teacherCount, classCount };
+}
