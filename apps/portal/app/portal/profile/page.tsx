@@ -14,6 +14,7 @@ interface Me {
   email: string;
   phone: string | null;
   avatarUrl: string | null;
+  photoUrl?: string | null;
   mustChangePassword: boolean;
 }
 
@@ -28,6 +29,9 @@ export default function ProfilePage() {
   const [saved, setSaved] = useState(false);
   const [pw, setPw] = useState({ currentPassword: "", newPassword: "" });
   const [pwMsg, setPwMsg] = useState<string | null>(null);
+
+  const canEditPhoto = me ? me.role !== "STUDENT" && me.role !== "PARENT" : false;
+  const photo = canEditPhoto ? avatarUrl : (me?.photoUrl ?? me?.avatarUrl ?? "");
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -92,9 +96,9 @@ export default function ProfilePage() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 18 }}>
         <Card title="Account">
           <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18 }}>
-            {avatarUrl ? (
+            {photo ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={avatarUrl} alt="Avatar" style={{ width: 64, height: 64, borderRadius: "50%", objectFit: "cover", border: "2px solid var(--duga-border)" }} />
+              <img src={photo} alt="Avatar" style={{ width: 64, height: 64, borderRadius: "50%", objectFit: "cover", border: "2px solid var(--duga-border)" }} />
             ) : (
               <div style={{ width: 64, height: 64, borderRadius: "50%", background: "linear-gradient(135deg, var(--duga-teal), var(--duga-sky))", color: "#fff", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 20 }}>
                 {me.name
@@ -123,18 +127,22 @@ export default function ProfilePage() {
           <Field label="Phone">
             <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="0803 000 0000" />
           </Field>
-          <Field label="Profile photo">
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <Input value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="Paste image URL or upload" />
-              <label className="duga-btn duga-btn--outline duga-btn--sm" style={{ flexShrink: 0, cursor: "pointer", margin: 0 }}>
-                <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={(e) => uploadAvatar(e.target.files?.[0])} />
-                {uploading ? "Uploading…" : "Upload"}
-              </label>
-              {avatarUrl && (
-                <Button variant="ghost" size="sm" onClick={() => setAvatarUrl("")} style={{ flexShrink: 0 }}>Remove</Button>
-              )}
-            </div>
-          </Field>
+          {canEditPhoto ? (
+            <Field label="Profile photo">
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <Input value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="Paste image URL or upload" />
+                <label className="duga-btn duga-btn--outline duga-btn--sm" style={{ flexShrink: 0, cursor: "pointer", margin: 0 }}>
+                  <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={(e) => uploadAvatar(e.target.files?.[0])} />
+                  {uploading ? "Uploading…" : "Upload"}
+                </label>
+                {avatarUrl && (
+                  <Button variant="ghost" size="sm" onClick={() => setAvatarUrl("")} style={{ flexShrink: 0 }}>Remove</Button>
+                )}
+              </div>
+            </Field>
+          ) : (
+            <Alert tone="info">Your profile photo is set by the school. Contact the office if it needs to change.</Alert>
+          )}
           {saved && <Alert tone="success">Profile updated.</Alert>}
           {error && <Alert tone="danger">{error}</Alert>}
           <Button onClick={saveProfile} style={{ marginTop: 14 }}>Save changes</Button>

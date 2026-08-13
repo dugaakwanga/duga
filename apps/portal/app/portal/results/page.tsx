@@ -41,7 +41,7 @@ interface ReportCard {
 interface TeacherClassSubject {
   id: string;
   subject: { name: string };
-  classGroup: { level: { name: string }; name: string; students: Array<{ id: string; user: { firstName: string; lastName: string } }> };
+  classGroup: { id: string; level: { name: string }; name: string; students: Array<{ id: string; user: { firstName: string; lastName: string } }> };
 }
 
 interface TermOption { id: string; name: string; termNumber: number; status: string; session: { name: string } }
@@ -386,29 +386,38 @@ export default function ResultsPage() {
       )}
 
       {role === "TEACHER" && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 16, marginBottom: 24 }}>
-          {classSubjects.map((cs) => {
-            const status = submissions[cs.id] ?? { entered: 0, submitted: 0, total: cs.classGroup.students.length, allSubmitted: false };
-            return (
-              <Card key={cs.id} title={cs.subject.name}>
-                <div style={{ fontSize: 13, color: "var(--duga-muted)", marginBottom: 10 }}>
-                  {cs.classGroup.level.name} {cs.classGroup.name} · {cs.classGroup.students.length} students
-                </div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
-                  {status.allSubmitted ? (
-                    <Badge tone="success">Submitted</Badge>
-                  ) : status.submitted > 0 ? (
-                    <Badge tone="warning">{status.submitted}/{status.total} submitted</Badge>
-                  ) : (
-                    <Badge tone="neutral">{status.entered}/{status.total} entered</Badge>
-                  )}
-                </div>
-                <Button variant="outline" size="sm" disabled={sheetLoading} onClick={() => openSheet(cs.id)}>
-                  {status.allSubmitted ? "View results" : "Enter scores"}
-                </Button>
-              </Card>
-            );
-          })}
+        <div style={{ display: "grid", gap: 20, marginBottom: 24 }}>
+          {Array.from(new Map(classSubjects.map((cs) => [cs.classGroup.id, cs.classGroup])).entries()).map(([classId, cls]) => (
+            <section key={classId} className="classes-section">
+              <h2 style={{ fontSize: 16, margin: "0 0 10px", color: "var(--duga-primary-ink)" }}>
+                {cls.level.name} {cls.name}
+              </h2>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 16 }}>
+                {classSubjects.filter((cs) => cs.classGroup.id === classId).map((cs) => {
+                  const status = submissions[cs.id] ?? { entered: 0, submitted: 0, total: cs.classGroup.students.length, allSubmitted: false };
+                  return (
+                    <Card key={cs.id} title={cs.subject.name}>
+                      <div style={{ fontSize: 13, color: "var(--duga-muted)", marginBottom: 10 }}>
+                        {cs.classGroup.level.name} {cs.classGroup.name} · {cs.classGroup.students.length} students
+                      </div>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
+                        {status.allSubmitted ? (
+                          <Badge tone="success">Submitted</Badge>
+                        ) : status.submitted > 0 ? (
+                          <Badge tone="warning">{status.submitted}/{status.total} submitted</Badge>
+                        ) : (
+                          <Badge tone="neutral">{status.entered}/{status.total} entered</Badge>
+                        )}
+                      </div>
+                      <Button variant="outline" size="sm" disabled={sheetLoading} onClick={() => openSheet(cs.id)}>
+                        {status.allSubmitted ? "View results" : "Enter scores"}
+                      </Button>
+                    </Card>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
         </div>
       )}
 

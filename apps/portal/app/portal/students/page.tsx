@@ -292,6 +292,9 @@ export default function StudentsPage() {
           <Field label="Parent phone">
             <Input value={form.parentPhone ?? ""} onChange={(e) => setForm({ ...form, parentPhone: e.target.value })} placeholder="0803 000 0000" />
           </Field>
+          <Field label="Parent temp password" hint="They sign in with the parent email and this password, and will change it on first login.">
+            <Input value={form.parentTempPassword ?? ""} onChange={(e) => setForm({ ...form, parentTempPassword: e.target.value })} placeholder="default: parent123" />
+          </Field>
         </div>
         {Number(form.feeDays) > 0 && (
           <div style={{ marginTop: 10 }}>
@@ -382,6 +385,9 @@ export default function StudentsPage() {
             </Field>
             <Field label="Parent phone">
               <Input value={editForm.parentPhone ?? ""} onChange={(e) => setEditForm({ ...editForm, parentPhone: e.target.value })} placeholder="0803 000 0000" />
+            </Field>
+            <Field label="Parent temp password" hint="Leave empty to keep the current password. A new one resets their login and must be changed on next sign-in.">
+              <Input value={editForm.parentTempPassword ?? ""} onChange={(e) => setEditForm({ ...editForm, parentTempPassword: e.target.value })} placeholder="At least 8 characters" />
             </Field>
           </div>
         </div>

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
-import { requireSession } from "@duga/core/server";
+import { requireSession, ForbiddenError } from "@duga/core/server";
 import { assertPermission } from "@duga/core";
 import { prisma } from "@duga/core/server";
 import { uploadPublicFile } from "@/lib/server/storage";
@@ -37,8 +37,13 @@ export async function POST(request: NextRequest) {
       assertPermission(session.user.role, "library:manage");
     } else if (purpose === "student-photo") {
       assertPermission(session.user.role, "students:manage");
-    } else if (purpose !== "avatar") {
-      // "avatar" is allowed for any signed-in user (their own profile picture).
+    } else if (purpose === "avatar") {
+      // Only staff may set their own profile picture. Students and parents keep
+      // the photo the school assigns them.
+      if (session.user.role === "STUDENT" || session.user.role === "PARENT") {
+        throw new ForbiddenError("Students and parents cannot change their profile photo");
+      }
+    } else {
       assertPermission(session.user.role, "gallery:manage");
     }
 

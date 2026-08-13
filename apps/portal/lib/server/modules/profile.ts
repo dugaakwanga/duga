@@ -15,7 +15,10 @@ export const profileModule: Module = {
     if (b.phone) data.phone = String(b.phone);
     if (b.firstName) data.firstName = String(b.firstName);
     if (b.lastName) data.lastName = String(b.lastName);
-    if (b.avatarUrl) data.avatarUrl = String(b.avatarUrl);
+    // Students and parents cannot change their photo — the school assigns it.
+    if (b.avatarUrl && ctx.session.user.role !== "STUDENT" && ctx.session.user.role !== "PARENT") {
+      data.avatarUrl = String(b.avatarUrl);
+    }
     const user = await prisma.user.update({ where: { id: ctx.session.user.id }, data });
     return user;
   },

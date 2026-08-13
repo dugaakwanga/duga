@@ -9,7 +9,7 @@ import { can, pick, str, num, bool, studentScope, feeInfoOf, assertContactFree }
 async function upsertParent(
   schoolId: string,
   studentId: string,
-  opts: { email?: string; name?: string; phone?: string },
+  opts: { email?: string; name?: string; phone?: string; tempPassword?: string },
 ): Promise<void> {
   const email = opts.email ? opts.email.toLowerCase() : undefined;
   const current = await prisma.studentParent.findFirst({
@@ -27,6 +27,11 @@ async function upsertParent(
       userData.lastName = ln.join(" ") || "Guardian";
     }
     if (opts.phone) userData.phone = opts.phone;
+    if (opts.tempPassword) {
+      if (opts.tempPassword.length < 8) throw new Error("Parent password must be at least 8 characters");
+      userData.passwordHash = await bcrypt.hash(opts.tempPassword, 10);
+      userData.mustChangePassword = true;
+    }
     if (Object.keys(userData).length) await prisma.user.update({ where: { id: current.parent.user.id }, data: userData });
     return;
   }
@@ -41,14 +46,20 @@ async function upsertParent(
         schoolId,
         role: "PARENT",
         email,
-        passwordHash: await bcrypt.hash("parent123", 10),
+        passwordHash: await bcrypt.hash(opts.tempPassword ?? "parent123", 10),
         firstName: name.split(/\s+/)[0] ?? "Parent",
         lastName: name.split(/\s+/).slice(1).join(" ") || "Guardian",
         phone: opts.phone || null,
-        mustChangePassword: true,
+        mustChangePassword: !opts.tempPassword,
       },
     });
     await prisma.parent.create({ data: { userId: parentUser.id, schoolId } });
+  } else if (opts.tempPassword) {
+    if (opts.tempPassword.length < 8) throw new Error("Parent password must be at least 8 characters");
+    await prisma.user.update({
+      where: { id: parentUser.id },
+      data: { passwordHash: await bcrypt.hash(opts.tempPassword, 10), mustChangePassword: true },
+    });
   } else if (opts.phone && !parentUser.phone) {
     await prisma.user.update({ where: { id: parentUser.id }, data: { phone: opts.phone } });
   }
@@ -187,7 +198,12 @@ export const studentsModule: Module = {
     });
 
     if (b.parentEmail || b.parentName) {
-      await upsertParent(schoolId, student.id, { email: str(b.parentEmail), name: str(b.parentName), phone: b.parentPhone ? str(b.parentPhone) : undefined });
+      await upsertParent(schoolId, student.id, {
+        email: str(b.parentEmail),
+        name: str(b.parentName),
+        phone: b.parentPhone ? str(b.parentPhone) : undefined,
+        tempPassword: b.parentTempPassword ? str(b.parentTempPassword) : undefined,
+      });
     }
 
     await logAudit({
@@ -249,7 +265,12 @@ export const studentsModule: Module = {
     const parentName = typeof ctx.body.parentName === "string" ? ctx.body.parentName : undefined;
     const parentPhone = typeof ctx.body.parentPhone === "string" ? ctx.body.parentPhone : undefined;
     if (parentEmail || parentName || parentPhone) {
-      await upsertParent(schoolId, existing.id, { email: parentEmail, name: parentName, phone: parentPhone });
+      await upsertParent(schoolId, existing.id, {
+        email: parentEmail,
+        name: parentName,
+        phone: parentPhone,
+        tempPassword: typeof ctx.body.parentTempPassword === "string" && ctx.body.parentTempPassword ? String(ctx.body.parentTempPassword) : undefined,
+      });
     }
 
     await logAudit({ schoolId, userId: ctx.session.user.id, action: "student.updated", entityType: "Student", entityId: ctx.id, meta: data });

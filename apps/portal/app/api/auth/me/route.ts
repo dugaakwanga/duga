@@ -19,6 +19,7 @@ export async function GET() {
       email: user.email,
       phone: user.phone,
       avatarUrl: user.avatarUrl,
+      photoUrl: user.student?.photoUrl ?? null,
       mustChangePassword: user.mustChangePassword,
       studentId: user.student?.id ?? null,
       teacherId: user.teacher?.id ?? null,
