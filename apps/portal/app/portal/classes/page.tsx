@@ -43,6 +43,9 @@ export default function ClassesPage() {
   const secondaryClasses = classes.filter((c) => c.level.section === "SECONDARY");
   const primarySubjects = subjects.filter((s) => s.section === "PRIMARY");
   const secondarySubjects = subjects.filter((s) => s.section === "SECONDARY");
+  const assignableSubjects = assignTarget
+    ? subjects.filter((s) => s.section === assignTarget.level.section)
+    : subjects;
 
   const load = useCallback(async () => {
     try {
@@ -259,7 +262,7 @@ export default function ClassesPage() {
                       <option key={t.id} value={t.id}>{t.firstName} {t.lastName}</option>
                     ))}
                   </Select>
-                  <div style={{ display: "flex", gap: 6 }}>
+                  <div className="classes-card__actions">
                     <Button size="sm" variant="outline" onClick={() => { setAssignTarget(c); setAssignForm({}); }}><Icon name="quiz" size={14} /> Assign subject</Button>
                     <Button size="sm" variant="outline" onClick={() => openEditClass(c)}>Edit</Button>
                     <Button size="sm" variant="danger" onClick={() => deleteClass(c)} title={`Delete ${c.level.name} ${c.name}`}>Delete class</Button>
@@ -383,7 +386,7 @@ export default function ClassesPage() {
         <Field label="Subject" required>
           <Select value={assignForm.subjectId ?? ""} onChange={(e) => setAssignForm({ ...assignForm, subjectId: e.target.value })}>
             <option value="">Select subject…</option>
-            {subjects.map((s) => (
+            {assignableSubjects.map((s) => (
               <option key={s.id} value={s.id}>{s.name} ({s.section.toLowerCase()})</option>
             ))}
           </Select>

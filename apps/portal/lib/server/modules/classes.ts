@@ -29,7 +29,12 @@ export const classesModule: Module = {
         take: 300,
       }),
     ]);
-    return { items: classGroups, levels, sessions, subjects, teachers, role: ctx.session.user.role };
+    // ClassGroup.formTeacherId and ClassSubject.teacherId reference Teacher IDs,
+    // not User IDs. Return the matching IDs to prevent failed assignments.
+    const teacherOptions = teachers
+      .filter((user) => user.teacher)
+      .map((user) => ({ id: user.teacher!.id, firstName: user.firstName, lastName: user.lastName }));
+    return { items: classGroups, levels, sessions, subjects, teachers: teacherOptions, role: ctx.session.user.role };
   },
 
   async get(ctx) {
