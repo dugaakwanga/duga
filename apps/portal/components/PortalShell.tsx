@@ -50,6 +50,7 @@ const STAFF_NAV: NavSection[] = [
     title: "My Teaching",
     items: [
       { href: "/portal/teacher", label: "Teaching Overview", icon: "home", perm: "learning:manage", feature: "learning" },
+      { href: "/portal/teacher/subjects", label: "My Subjects", icon: "classes", perm: "learning:manage", feature: "learning" },
       { href: "/portal/teacher/notes", label: "Lesson Notes", icon: "notes", perm: "learning:manage", feature: "learning", subfeature: "learning:notes" },
       { href: "/portal/teacher/assignments", label: "Assignments", icon: "assignment", perm: "learning:manage", feature: "learning", subfeature: "learning:assignments" },
       { href: "/portal/teacher/cbt", label: "CBT Exams", icon: "quiz", perm: "learning:manage", feature: "learning", subfeature: "learning:cbt" },
@@ -157,6 +158,7 @@ const TITLES: Array<{ match: string; title: string }> = [
   { match: "/portal/elearn", title: "E-Learning & Rewards" },
   { match: "/portal/games", title: "Educational Games" },
   { match: "/portal/teacher", title: "Teaching Overview" },
+  { match: "/portal/teacher/subjects", title: "My Subjects" },
   { match: "/portal/teacher/notes", title: "Lesson Notes" },
   { match: "/portal/teacher/assignments", title: "Assignments" },
   { match: "/portal/teacher/cbt", title: "CBT Exams" },

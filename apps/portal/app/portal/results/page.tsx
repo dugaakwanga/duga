@@ -158,13 +158,16 @@ export default function ResultsPage() {
         setActiveTermId(d.activeTermId ?? "");
         setConfig(d.config ?? null);
         setSubmissions(d.submissions ?? {});
+        const focus = new URLSearchParams(window.location.search).get("classSubject");
+        if (focus && d.role === "TEACHER" && d.activeTermId) openSheet(focus, d.activeTermId);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
 
-  async function openSheet(csId: string) {
-    if (!activeTermId) {
+  async function openSheet(csId: string, termIdOverride?: string) {
+    const termId = termIdOverride ?? activeTermId;
+    if (!termId) {
       setRankMsg("No active term selected. Ask an admin to set the term in Settings.");
       return;
     }
@@ -174,7 +177,7 @@ export default function ResultsPage() {
     try {
       const data = await api<EntrySheet>("results/entrySheet", {
         method: "POST",
-        body: { classSubjectId: csId, termId: activeTermId },
+        body: { classSubjectId: csId, termId },
       });
       setSheet(data);
       setConfig(data.config);
