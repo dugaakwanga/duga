@@ -24,12 +24,17 @@ export async function ensureBucket(): Promise<void> {
   const sb = supabaseAdmin();
   const { data, error } = await sb.storage.getBucket(BUCKET);
   if (error || !data) {
-    await sb.storage.createBucket(BUCKET, { public: true, fileSizeLimit: 64 * 1024 * 1024 });
-  } else {
-    const current = typeof data.file_size_limit === "number" ? data.file_size_limit : 0;
-    if (current > 0 && current < 64 * 1024 * 1024) {
-      await sb.storage.updateBucket(BUCKET, { public: true, fileSizeLimit: 64 * 1024 * 1024 });
+    const created = await sb.storage.createBucket(BUCKET, { public: true, fileSizeLimit: 64 * 1024 * 1024 });
+    // Some Storage backends reject a fileSizeLimit at creation time; retry with
+    // the bare minimum so the bucket still gets created.
+    if (created.error) {
+      await sb.storage.createBucket(BUCKET, { public: true });
     }
+    return;
+  }
+  const current = typeof data.file_size_limit === "number" ? data.file_size_limit : 0;
+  if (current > 0 && current < 64 * 1024 * 1024) {
+    await sb.storage.updateBucket(BUCKET, { public: true, fileSizeLimit: 64 * 1024 * 1024 });
   }
 }
 
