@@ -70,8 +70,9 @@ export const classesModule: Module = {
     if (!level) throw new Error("Level not found");
     if (!session) throw new Error("Session not found");
     if (b.formTeacherId) {
-      const ft = await prisma.teacher.findFirst({ where: { id: String(b.formTeacherId), schoolId } });
+      const ft = await prisma.teacher.findFirst({ where: { schoolId, OR: [{ id: String(b.formTeacherId) }, { userId: String(b.formTeacherId) }] } });
       if (!ft) throw new Error("Form teacher not found");
+      b.formTeacherId = ft.id;
     }
     const dup = await prisma.classGroup.findUnique({
       where: { schoolId_sessionId_levelId_name: { schoolId, sessionId, levelId, name } },
@@ -96,8 +97,9 @@ export const classesModule: Module = {
     if (b.formTeacherId === "none" || b.formTeacherId === "") data.formTeacherId = null;
     else if (b.formTeacherId) data.formTeacherId = String(b.formTeacherId);
     if (data.formTeacherId) {
-      const ft = await prisma.teacher.findFirst({ where: { id: String(data.formTeacherId), schoolId } });
+      const ft = await prisma.teacher.findFirst({ where: { schoolId, OR: [{ id: String(data.formTeacherId) }, { userId: String(data.formTeacherId) }] } });
       if (!ft) throw new Error("Form teacher not found");
+      data.formTeacherId = ft.id;
     }
     const cls = await prisma.classGroup.update({ where: { id: ctx.id }, data });
     await logAudit({ schoolId, userId: ctx.session.user.id, action: "class.updated", entityType: "ClassGroup", entityId: ctx.id, meta: data });
@@ -116,12 +118,12 @@ export const classesModule: Module = {
       if (!cls) throw new Error("Class not found");
       const subject = await prisma.subject.findFirst({ where: { id: subjectId, schoolId } });
       if (!subject) throw new Error("Subject not found");
-      const teacher = await prisma.teacher.findFirst({ where: { id: teacherId, schoolId } });
+      const teacher = await prisma.teacher.findFirst({ where: { schoolId, OR: [{ id: teacherId }, { userId: teacherId }] } });
       if (!teacher) throw new Error("Teacher not found");
       const cs = await prisma.classSubject.upsert({
         where: { classGroupId_subjectId: { classGroupId: ctx.id!, subjectId } },
-        update: { teacherId },
-        create: { schoolId, classGroupId: ctx.id!, subjectId, teacherId, weeklyPeriods: Number(ctx.body.weeklyPeriods) || 4 },
+        update: { teacherId: teacher.id },
+        create: { schoolId, classGroupId: ctx.id!, subjectId, teacherId: teacher.id, weeklyPeriods: Number(ctx.body.weeklyPeriods) || 4 },
       });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "classSubject.assigned", entityType: "ClassSubject", entityId: cs.id });
       return cs;

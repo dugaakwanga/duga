@@ -12,12 +12,15 @@ interface StaffUser {
   status: string;
   firstName: string;
   lastName: string;
-  teacher?: { staffNumber: string; specialty: string | null; designation: string | null } | null;
+  teacher?: { staffNumber: string; specialty: string | null; subjectIds?: string[] | null; designation: string | null } | null;
   admin?: { designation: string | null } | null;
 }
+interface Subject { id: string; name: string; section: string }
 
 export default function StaffPage() {
   const [items, setItems] = useState<StaffUser[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [selectedSubjectIds, setSelectedSubjectIds] = useState<string[]>([]);
   const [currentRole, setCurrentRole] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -37,8 +40,9 @@ export default function StaffPage() {
   async function load() {
     setLoading(true);
     try {
-      const data = await api<{ items: StaffUser[]; role: string }>("staff");
+      const data = await api<{ items: StaffUser[]; subjects: Subject[]; role: string }>("staff");
       setItems(data.items);
+      setSubjects(data.subjects ?? []);
       setCurrentRole(data.role);
     } catch (e) {
       setError((e as Error).message);
@@ -55,10 +59,10 @@ export default function StaffPage() {
     setSaving(true);
     try {
       if (editing) {
-        await api(`staff/${editing.id}`, { method: "PATCH", body: form });
+        await api(`staff/${editing.id}`, { method: "PATCH", body: { ...form, subjectIds: selectedSubjectIds } });
         setNotice("Staff member updated.");
       } else {
-        await api("staff", { method: "POST", body: form });
+        await api("staff", { method: "POST", body: { ...form, subjectIds: selectedSubjectIds } });
         setNotice(form.tempPassword
           ? `Staff member added. Temporary password: ${form.tempPassword} — they will be asked to change it on first login.`
           : "Staff member added. They will be asked to set their own password on first login.");
@@ -66,6 +70,7 @@ export default function StaffPage() {
       setOpen(false);
       setEditing(null);
       setForm({});
+      setSelectedSubjectIds([]);
       load();
     } catch (e) {
       alert((e as Error).message);
@@ -82,6 +87,7 @@ export default function StaffPage() {
       specialty: u.teacher?.specialty ?? "",
       designation: u.teacher?.designation ?? u.admin?.designation ?? "",
     });
+    setSelectedSubjectIds(u.teacher?.subjectIds ?? []);
     setError(null);
     setOpen(true);
   }
@@ -122,7 +128,7 @@ export default function StaffPage() {
       <PageHeader
         title="Staff"
         subtitle="Teachers, administrators, bursars and the proprietor."
-        actions={<Button onClick={() => setOpen(true)}><Icon name="plus" size={16} /> Add staff</Button>}
+        actions={<Button onClick={() => { setEditing(null); setForm({}); setSelectedSubjectIds([]); setOpen(true); }}><Icon name="plus" size={16} /> Add staff</Button>}
       />
       {error && <Alert tone="danger">{error}</Alert>}
       {notice && <Alert tone="success">{notice}</Alert>}
@@ -208,6 +214,32 @@ export default function StaffPage() {
           <Field label="Specialty">
             <Input value={form.specialty ?? ""} onChange={(e) => setForm({ ...form, specialty: e.target.value })} />
           </Field>
+          {(form.role === "TEACHER" || editing?.role === "TEACHER") && (
+            <div className="staff-subject-picker">
+              <div className="staff-subject-picker__heading">
+                <span>Teaching subjects</span>
+                <small>Select one or more subjects for this teacher.</small>
+              </div>
+              {subjects.length === 0 ? <Alert tone="warning">Add subjects in Classes first.</Alert> : (
+                <div className="staff-subject-picker__grid">
+                  {subjects.map((subject) => {
+                    const selected = selectedSubjectIds.includes(subject.id);
+                    return (
+                      <button
+                        key={subject.id}
+                        type="button"
+                        className={`staff-subject-picker__option${selected ? " is-selected" : ""}`}
+                        onClick={() => setSelectedSubjectIds((ids) => selected ? ids.filter((id) => id !== subject.id) : [...ids, subject.id])}
+                        aria-pressed={selected}
+                      >
+                        <span>{subject.name}</span><Badge tone={subject.section === "PRIMARY" ? "info" : "accent"}>{subject.section.toLowerCase()}</Badge>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
           {!editing && (
           <Field label="Temporary password" hint="Optional — leave empty to let them set their own password on first login.">
             <Input value={form.tempPassword ?? ""} onChange={(e) => setForm({ ...form, tempPassword: e.target.value })} placeholder="At least 8 characters" />

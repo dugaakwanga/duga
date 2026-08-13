@@ -730,6 +730,21 @@ body {
 .classes-section h2 { display: flex; align-items: center; gap: 9px; letter-spacing: -0.01em; }
 .classes-section h2::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--duga-gold); box-shadow: 0 0 0 4px rgba(217, 169, 42, 0.15); }
 
+.subject-list { display: grid; gap: 7px; }
+.subject-list__item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 0 9px 10px; border-bottom: 1px solid var(--duga-border); }
+.subject-list__item:last-child { border-bottom: 0; }
+.subject-list__item > span { min-width: 0; overflow-wrap: anywhere; }
+.subject-list__actions { display: flex; gap: 3px; }
+.subject-list__actions .duga-btn { padding-inline: 8px; }
+.staff-subject-picker { grid-column: 1 / -1; padding: 13px; border: 1px solid var(--duga-border); border-radius: 12px; background: linear-gradient(135deg, #f8fbff, #fffaf0); }
+.staff-subject-picker__heading { display: grid; gap: 2px; margin-bottom: 10px; font-size: 13px; font-weight: 700; color: var(--duga-primary-ink); }
+.staff-subject-picker__heading small { font-size: 12px; font-weight: 500; color: var(--duga-muted); }
+.staff-subject-picker__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)); gap: 7px; max-height: 220px; overflow-y: auto; padding-right: 3px; }
+.staff-subject-picker__option { display: flex; align-items: center; justify-content: space-between; gap: 7px; min-width: 0; padding: 8px 9px; border: 1px solid var(--duga-border); border-radius: 9px; background: #fff; color: var(--duga-ink); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.staff-subject-picker__option span { min-width: 0; overflow-wrap: anywhere; }
+.staff-subject-picker__option.is-selected { border-color: var(--duga-primary); background: var(--duga-primary-soft); box-shadow: inset 0 0 0 1px var(--duga-primary); }
+@media (max-width: 420px) { .subject-list__item { grid-template-columns: 1fr; } .subject-list__actions { justify-content: flex-start; } }
+
 /* Gentle colour cues: friendly but restrained. */
 .duga-stat:nth-child(3n + 1) { border-top: 3px solid #4f8fce; }
 .duga-stat:nth-child(3n + 2) { border-top: 3px solid #d9a92a; }

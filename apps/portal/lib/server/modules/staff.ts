@@ -10,10 +10,15 @@ function assertStaffTargetAccess(actorRole: string, targetRole: string) {
   }
 }
 
+function subjectIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((id): id is string => typeof id === "string" && id.length > 0))];
+}
+
 export const staffModule: Module = {
   async list(ctx) {
     can(ctx, "staff:view");
-    const users = await prisma.user.findMany({
+    const [users, subjects] = await Promise.all([prisma.user.findMany({
       where: {
         schoolId: ctx.session.user.schoolId,
         role: { in: ["TEACHER", "ADMIN", "BURSAR", "OWNER"] },
@@ -31,8 +36,8 @@ export const staffModule: Module = {
       },
       orderBy: { createdAt: "desc" },
       take: 300,
-    });
-    return { items: users, total: users.length, role: ctx.session.user.role };
+    }), prisma.subject.findMany({ where: { schoolId: ctx.session.user.schoolId }, select: { id: true, name: true, section: true }, orderBy: [{ section: "asc" }, { name: "asc" }] })]);
+    return { items: users, subjects, total: users.length, role: ctx.session.user.role };
   },
 
   async get(ctx) {
@@ -56,12 +61,18 @@ export const staffModule: Module = {
     const phone = str(b.phone);
     const staffNumber = str(b.staffNumber);
     const tempPassword = str(b.tempPassword);
+    const assignedSubjectIds = subjectIds(b.subjectIds);
     // The teacher can be created with any single identifier — email, phone or staff number.
     if (!role || !firstName || !lastName) throw new Error("role, firstName and lastName are required");
     if (!email && !phone && !staffNumber) throw new Error("Provide at least one of email, phone number or staff ID");
     if (!["TEACHER", "ADMIN", "BURSAR"].includes(role)) throw new Error("Invalid staff role");
     assertStaffTargetAccess(ctx.session.user.role, role);
     if (tempPassword && tempPassword.length < 8) throw new Error("Temporary password must be at least 8 characters");
+    if (role !== "TEACHER" && assignedSubjectIds.length) throw new Error("Only teachers can be assigned subjects");
+    if (assignedSubjectIds.length) {
+      const count = await prisma.subject.count({ where: { schoolId, id: { in: assignedSubjectIds } } });
+      if (count !== assignedSubjectIds.length) throw new Error("One or more selected subjects were not found");
+    }
 
     const emailOrGenerated = email ?? (staffNumber ? `${staffNumber}@staff.local` : `${phone}@phone.local`);
     const existing = await prisma.user.findFirst({
@@ -93,6 +104,7 @@ export const staffModule: Module = {
           schoolId,
           staffNumber: staffNumber ?? `STF-${String((await prisma.teacher.count({ where: { schoolId } })) + 1).padStart(3, "0")}`,
           specialty: str(b.specialty),
+          subjectIds: assignedSubjectIds,
           designation: str(b.designation) ?? "Teacher",
         },
       });
@@ -118,6 +130,12 @@ export const staffModule: Module = {
     if (b.phone) data.phone = String(b.phone);
     const user = await prisma.user.update({ where: { id: ctx.id }, data });
     if (b.specialty) await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { specialty: String(b.specialty) } });
+    if (b.subjectIds !== undefined) {
+      const assignedSubjectIds = subjectIds(b.subjectIds);
+      const count = await prisma.subject.count({ where: { schoolId, id: { in: assignedSubjectIds } } });
+      if (count !== assignedSubjectIds.length) throw new Error("One or more selected subjects were not found");
+      await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { subjectIds: assignedSubjectIds } });
+    }
     if (b.designation) await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { designation: String(b.designation) } });
     await logAudit({ schoolId, userId: ctx.session.user.id, action: "staff.updated", entityType: "User", entityId: ctx.id, meta: data });
     return user;

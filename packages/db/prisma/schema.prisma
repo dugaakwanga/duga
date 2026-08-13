@@ -382,6 +382,7 @@ model Teacher {
   schoolId    String
   staffNumber String
   specialty   String?
+  subjectIds  Json?
   designation String?
   hireDate    DateTime @default(now())
   createdAt   DateTime @default(now())

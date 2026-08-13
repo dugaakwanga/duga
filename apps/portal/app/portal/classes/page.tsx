@@ -286,11 +286,11 @@ export default function ClassesPage() {
             ] as const).map(([title, sectionSubjects]) => (
             <Card key={title} title={title}>
               {sectionSubjects.length === 0 ? <EmptyState title={`No ${title.toLowerCase()}`} /> : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <div className="subject-list">
                   {sectionSubjects.map((s) => (
-                    <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: 13.5, minWidth: 0, overflowWrap: "anywhere" }}>{s.name}</span>
-                      <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                    <div key={s.id} className="subject-list__item">
+                      <span>{s.name}</span>
+                      <div className="subject-list__actions">
                         <Button size="sm" variant="ghost" onClick={() => openEditItem("subject", s.id)}>Edit</Button>
                         <Button size="sm" variant="ghost" onClick={() => deleteItem("subject", s.id)}>Delete</Button>
                       </div>
@@ -300,12 +300,16 @@ export default function ClassesPage() {
               )}
             </Card>
             ))}
-            <Card title="Levels">
-              {levels.length === 0 ? <EmptyState title="No levels" /> : (
+            {([
+              ["Primary levels", levels.filter((l) => l.section === "PRIMARY")],
+              ["Secondary levels", levels.filter((l) => l.section === "SECONDARY")],
+            ] as const).map(([title, sectionLevels]) => (
+            <Card key={title} title={title}>
+              {sectionLevels.length === 0 ? <EmptyState title={`No ${title.toLowerCase()}`} /> : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {levels.map((l) => (
-                    <div key={l.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 13.5 }}>{l.name} <Badge tone="neutral">{l.section.toLowerCase()}</Badge></span>
+                  {sectionLevels.map((l) => (
+                    <div key={l.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 13.5, overflowWrap: "anywhere" }}>{l.name}</span>
                       <div style={{ display: "flex", gap: 4 }}>
                         <Button size="sm" variant="ghost" onClick={() => openEditItem("level", l.id)}>Edit</Button>
                         <Button size="sm" variant="ghost" onClick={() => deleteItem("level", l.id)}>Delete</Button>
@@ -315,6 +319,7 @@ export default function ClassesPage() {
                 </div>
               )}
             </Card>
+            ))}
             <Card title="Sessions">
               {sessions.length === 0 ? <EmptyState title="No sessions" /> : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
