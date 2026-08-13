@@ -351,7 +351,7 @@ export const feesModule: Module = {
       }
 
       const data = await initializePayment({
-        email: invoice.student.user.email,
+        email: invoice.student.user.email ?? "noreply@duga.school",
         amountKobo: Math.round(payAmount * 100),
         reference,
         callbackUrl: `${process.env.PAYSTACK_CALLBACK_URL ?? `https://duga-portal.vercel.app/portal/fees`}?reference=${reference}`,

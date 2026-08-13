@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@duga/core/server";
 import { logAudit } from "@duga/core/server";
 import type { Module } from ".";
-import { can, str } from "../helpers";
+import { can, str, assertContactFree } from "../helpers";
 
 function assertStaffTargetAccess(actorRole: string, targetRole: string) {
   if (actorRole !== "OWNER" && ["OWNER", "ADMIN", "BURSAR"].includes(targetRole)) {
@@ -28,6 +28,7 @@ export const staffModule: Module = {
         role: true,
         email: true,
         phone: true,
+        avatarUrl: true,
         status: true,
         firstName: true,
         lastName: true,
@@ -74,9 +75,8 @@ export const staffModule: Module = {
       if (count !== assignedSubjectIds.length) throw new Error("One or more selected subjects were not found");
     }
 
-    const emailOrGenerated = email ?? (staffNumber ? `${staffNumber}@staff.local` : `${phone}@phone.local`);
     const existing = await prisma.user.findFirst({
-      where: { schoolId, OR: [{ email: emailOrGenerated }, ...(phone ? [{ phone }] : [])] },
+      where: { schoolId, OR: [...(email ? [{ email }] : []), ...(phone ? [{ phone }] : [])] },
     });
     if (existing) throw new Error("A user with this email, phone or staff ID already exists");
     if (staffNumber && role === "TEACHER") {
@@ -88,7 +88,7 @@ export const staffModule: Module = {
       data: {
         schoolId,
         role: role as "TEACHER" | "ADMIN" | "BURSAR",
-        email: emailOrGenerated,
+        email: email ?? null,
         phone,
         passwordHash: await bcrypt.hash(tempPassword ?? "password123", 10),
         firstName,
@@ -126,9 +126,16 @@ export const staffModule: Module = {
     if (target.role === "OWNER" && ctx.session.user.role !== "OWNER") throw new Error("Only the school owner can update the owner account");
     const data: Record<string, unknown> = {};
     const b = ctx.body;
+    if (typeof b.firstName === "string" && b.firstName) data.firstName = String(b.firstName);
+    if (typeof b.lastName === "string" && b.lastName) data.lastName = String(b.lastName);
+    if (typeof b.email === "string") data.email = b.email ? String(b.email).toLowerCase() : null;
+    if (typeof b.phone === "string") data.phone = b.phone ? String(b.phone) : null;
+    if (b.avatarUrl) data.avatarUrl = String(b.avatarUrl);
     if (b.status) data.status = String(b.status);
-    if (b.phone) data.phone = String(b.phone);
-    const user = await prisma.user.update({ where: { id: ctx.id }, data });
+    if (Object.keys(data).length) {
+      await assertContactFree(schoolId, target.id, data.email as string | null | undefined, data.phone as string | null | undefined);
+      await prisma.user.update({ where: { id: ctx.id }, data });
+    }
     if (b.specialty) await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { specialty: String(b.specialty) } });
     if (b.subjectIds !== undefined) {
       const assignedSubjectIds = subjectIds(b.subjectIds);
@@ -136,7 +143,11 @@ export const staffModule: Module = {
       if (count !== assignedSubjectIds.length) throw new Error("One or more selected subjects were not found");
       await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { subjectIds: assignedSubjectIds } });
     }
-    if (b.designation) await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { designation: String(b.designation) } });
+    if (b.designation) {
+      await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { designation: String(b.designation) } });
+      await prisma.admin.updateMany({ where: { userId: ctx.id, schoolId }, data: { designation: String(b.designation) } });
+    }
+    const user = await prisma.user.findUnique({ where: { id: ctx.id }, include: { teacher: true, admin: true } });
     await logAudit({ schoolId, userId: ctx.session.user.id, action: "staff.updated", entityType: "User", entityId: ctx.id, meta: data });
     return user;
   },

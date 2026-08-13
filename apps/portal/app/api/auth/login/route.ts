@@ -96,12 +96,12 @@ export async function POST(request: NextRequest) {
       schoolId: user.schoolId,
       role: user.role,
       name: `${user.firstName} ${user.lastName}`,
-      email: user.email,
+      email: user.email ?? "",
     });
 
     const response = NextResponse.json({
       ok: true,
-      user: { id: user.id, name: `${user.firstName} ${user.lastName}`, role: user.role, schoolId: user.schoolId, email: user.email, mustChangePassword: user.mustChangePassword },
+      user: { id: user.id, name: `${user.firstName} ${user.lastName}`, role: user.role, schoolId: user.schoolId, email: user.email ?? "", mustChangePassword: user.mustChangePassword },
     });
     response.cookies.set(COOKIE_NAMES.AUTH_COOKIE, token, cookieOptions(getJwtLifetimeSeconds(process.env.JWT_EXPIRES_IN)));
     return response;

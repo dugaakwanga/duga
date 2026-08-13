@@ -35,7 +35,10 @@ export async function POST(request: NextRequest) {
 
     if (purpose === "library") {
       assertPermission(session.user.role, "library:manage");
-    } else {
+    } else if (purpose === "student-photo") {
+      assertPermission(session.user.role, "students:manage");
+    } else if (purpose !== "avatar") {
+      // "avatar" is allowed for any signed-in user (their own profile picture).
       assertPermission(session.user.role, "gallery:manage");
     }
 
@@ -58,8 +61,9 @@ export async function POST(request: NextRequest) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const name = `${crypto.randomUUID()}.${ext(mime, purpose)}`;
+    const folder = purpose === "library" ? "library" : purpose === "avatar" ? "avatars" : purpose === "student-photo" ? "students" : "gallery";
     const { url: fileUrl, key, bucket } = await uploadPublicFile({
-      folder: purpose === "library" ? "library" : "gallery",
+      folder,
       name,
       mime,
       buffer,

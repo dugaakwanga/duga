@@ -260,7 +260,7 @@ model User {
   id           String     @id @default(cuid())
   schoolId     String
   role         Role
-  email        String
+  email        String?
   phone        String?
   passwordHash String
   firstName    String

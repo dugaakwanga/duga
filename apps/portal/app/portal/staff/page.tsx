@@ -7,8 +7,9 @@ import { api } from "@/lib/client/api";
 interface StaffUser {
   id: string;
   role: string;
-  email: string;
+  email: string | null;
   phone: string | null;
+  avatarUrl: string | null;
   status: string;
   firstName: string;
   lastName: string;
@@ -82,6 +83,9 @@ export default function StaffPage() {
   function openEdit(u: StaffUser) {
     setEditing(u);
     setForm({
+      firstName: u.firstName,
+      lastName: u.lastName,
+      email: u.email ?? "",
       status: u.status,
       phone: u.phone ?? "",
       specialty: u.teacher?.specialty ?? "",
@@ -141,10 +145,22 @@ export default function StaffPage() {
           <Table headers={["Name", "Role", "Designation", "Email", "Staff no.", "Status", ""]}>
             {items.map((u) => (
               <tr key={u.id}>
-                <td>{u.firstName} {u.lastName}</td>
+                <td>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    {u.avatarUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={u.avatarUrl} alt="" style={{ width: 34, height: 34, borderRadius: "50%", objectFit: "cover", border: "1px solid var(--duga-border)" }} />
+                    ) : (
+                      <div style={{ width: 34, height: 34, borderRadius: "50%", background: "linear-gradient(135deg, var(--duga-primary), var(--duga-gold))", color: "#fff", display: "grid", placeItems: "center", fontWeight: 700, fontSize: 12, flexShrink: 0 }}>
+                        {`${u.firstName[0] ?? ""}${u.lastName[0] ?? ""}`.toUpperCase()}
+                      </div>
+                    )}
+                    <span>{u.firstName} {u.lastName}</span>
+                  </div>
+                </td>
                 <td><Badge tone={u.role === "OWNER" ? "accent" : u.role === "ADMIN" ? "info" : "neutral"}>{u.role.toLowerCase()}</Badge></td>
                 <td>{u.teacher?.designation ?? u.admin?.designation ?? "—"}</td>
-                <td>{u.email}</td>
+                <td>{u.email || "—"}</td>
                 <td>{u.teacher?.staffNumber ?? u.admin?.designation ?? "—"}</td>
                 <td><Badge tone={u.status === "ACTIVE" ? "success" : "danger"}>{u.status}</Badge></td>
                 <td>
@@ -200,6 +216,15 @@ export default function StaffPage() {
             </>
           ) : (
             <>
+              <Field label="First name" required>
+                <Input value={form.firstName ?? ""} onChange={(e) => setForm({ ...form, firstName: e.target.value })} />
+              </Field>
+              <Field label="Last name" required>
+                <Input value={form.lastName ?? ""} onChange={(e) => setForm({ ...form, lastName: e.target.value })} />
+              </Field>
+              <Field label="Email">
+                <Input type="email" value={form.email ?? ""} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="Leave empty if they use phone or staff ID" />
+              </Field>
               <Field label="Status">
                 <Select value={form.status ?? "ACTIVE"} onChange={(e) => setForm({ ...form, status: e.target.value })}>
                   <option value="ACTIVE">Active</option>

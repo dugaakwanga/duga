@@ -20,7 +20,8 @@ interface Student {
   isBoarding: boolean;
   gender: string | null;
   dateOfBirth: string | null;
-  user: { firstName: string; lastName: string; email: string; phone: string | null; status: string };
+  photoUrl: string | null;
+  user: { firstName: string; lastName: string; email: string | null; phone: string | null; status: string };
   classGroup: { level: { name: string }; name: string } | null;
   fee?: FeeInfo;
 }
@@ -41,6 +42,7 @@ export default function StudentsPage() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [editTarget, setEditTarget] = useState<Student | null>(null);
   const [editForm, setEditForm] = useState<Record<string, string>>({});
   const [feeTarget, setFeeTarget] = useState<Student | null>(null);
@@ -109,14 +111,37 @@ export default function StudentsPage() {
     }
   }
 
+  async function uploadPhoto(file: File | undefined) {
+    if (!file || !editTarget) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/upload?purpose=student-photo", { method: "POST", body: fd });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Upload failed");
+      setEditForm((f) => ({ ...f, photoUrl: json.data.url }));
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setUploading(false);
+    }
+  }
+
   function openEdit(s: Student) {
     setEditTarget(s);
     setEditForm({
+      firstName: s.user.firstName,
+      lastName: s.user.lastName,
+      email: s.user.email ?? "",
+      phone: s.user.phone ?? "",
+      admissionNumber: s.admissionNumber,
       gender: s.gender ?? "",
       dateOfBirth: s.dateOfBirth ? s.dateOfBirth.slice(0, 10) : "",
       isBoarding: s.isBoarding ? "true" : "false",
       status: s.status,
       currentClassGroupId: "",
+      photoUrl: s.photoUrl ?? "",
     });
   }
 
@@ -172,8 +197,20 @@ export default function StudentsPage() {
               <tr key={s.id}>
                 <td>{s.admissionNumber}</td>
                 <td>
-                  {s.user.firstName} {s.user.lastName}
-                  <div style={{ fontSize: 12, color: "var(--duga-muted)" }}>{s.user.email}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    {s.photoUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={s.photoUrl} alt="" style={{ width: 34, height: 34, borderRadius: "50%", objectFit: "cover", border: "1px solid var(--duga-border)" }} />
+                    ) : (
+                      <div style={{ width: 34, height: 34, borderRadius: "50%", background: "linear-gradient(135deg, var(--duga-primary), var(--duga-gold))", color: "#fff", display: "grid", placeItems: "center", fontWeight: 700, fontSize: 12, flexShrink: 0 }}>
+                        {`${s.user.firstName[0] ?? ""}${s.user.lastName[0] ?? ""}`.toUpperCase()}
+                      </div>
+                    )}
+                    <span>
+                      {s.user.firstName} {s.user.lastName}
+                      <div style={{ fontSize: 12, color: "var(--duga-muted)" }}>{s.user.email || "—"}</div>
+                    </span>
+                  </div>
                 </td>
                 <td>{s.classGroup ? `${s.classGroup.level.name} ${s.classGroup.name}` : "—"}</td>
                 <td><Badge tone={s.status === "ACTIVE" ? "success" : "warning"}>{s.status}</Badge></td>
@@ -263,7 +300,36 @@ export default function StudentsPage() {
       </Modal>
 
       <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title={editTarget ? `Edit — ${editTarget.user.firstName} ${editTarget.user.lastName}` : ""}>
-        <div className="duga-form-grid">
+        <Field label="Photo">
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {editForm.photoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={editForm.photoUrl} alt="Student" style={{ width: 48, height: 48, borderRadius: "50%", objectFit: "cover", border: "1px solid var(--duga-border)", flexShrink: 0 }} />
+            ) : (
+              <div style={{ width: 48, height: 48, borderRadius: "50%", background: "linear-gradient(135deg, var(--duga-primary), var(--duga-gold))", color: "#fff", display: "grid", placeItems: "center", fontWeight: 700, flexShrink: 0 }}>
+                {`${(editTarget?.user.firstName[0] ?? "")}${(editTarget?.user.lastName[0] ?? "")}`.toUpperCase()}
+              </div>
+            )}
+            <Input value={editForm.photoUrl ?? ""} onChange={(e) => setEditForm({ ...editForm, photoUrl: e.target.value })} placeholder="Paste image URL or upload" />
+            <label className="duga-btn duga-btn--outline duga-btn--sm" style={{ flexShrink: 0, cursor: "pointer", margin: 0 }}>
+              <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={(e) => uploadPhoto(e.target.files?.[0])} />
+              {uploading ? "Uploading…" : "Upload"}
+            </label>
+          </div>
+        </Field>
+        <div className="duga-form-grid" style={{ marginTop: 14 }}>
+          <Field label="First name" required>
+            <Input value={editForm.firstName ?? ""} onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })} />
+          </Field>
+          <Field label="Last name" required>
+            <Input value={editForm.lastName ?? ""} onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })} />
+          </Field>
+          <Field label="Email">
+            <Input type="email" value={editForm.email ?? ""} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} placeholder="Leave empty if they use admission number" />
+          </Field>
+          <Field label="Phone">
+            <Input value={editForm.phone ?? ""} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} placeholder="0803 000 0000" />
+          </Field>
           <Field label="Gender">
             <Select value={editForm.gender ?? ""} onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}>
               <option value="">Select…</option>
@@ -287,6 +353,9 @@ export default function StudentsPage() {
               <option value="WITHDRAWN">Withdrawn</option>
               <option value="GRADUATED">Graduated</option>
             </Select>
+          </Field>
+          <Field label="Admission number">
+            <Input value={editForm.admissionNumber ?? ""} onChange={(e) => setEditForm({ ...editForm, admissionNumber: e.target.value })} />
           </Field>
           <Field label="Class">
             <Select value={editForm.currentClassGroupId ?? ""} onChange={(e) => setEditForm({ ...editForm, currentClassGroupId: e.target.value })}>

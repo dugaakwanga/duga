@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import { prisma } from "@duga/core/server";
 import type { Module } from ".";
-import { can, pick, str, num, studentScope, feeInfoOf } from "../helpers";
+import { can, pick, str, num, bool, studentScope, feeInfoOf, assertContactFree } from "../helpers";
 import { logAudit } from "@duga/core/server";
 
 export const studentsModule: Module = {
@@ -71,7 +71,7 @@ export const studentsModule: Module = {
     const classGroupId = str(b.classGroupId);
     const gender = str(b.gender) as "MALE" | "FEMALE" | undefined;
     const dateOfBirth = str(b.dateOfBirth) ? new Date(String(b.dateOfBirth)) : undefined;
-    const isBoarding = Boolean(b.isBoarding);
+    const isBoarding = bool(b.isBoarding) ?? false;
     const feeAmount = num(b.feeAmount) ?? 0;
     const feeDays = Math.max(0, num(b.feeDays) ?? 0);
 
@@ -92,7 +92,7 @@ export const studentsModule: Module = {
       data: {
         schoolId,
         role: "STUDENT",
-        email: email ?? `${firstName.toLowerCase()}.${lastName.toLowerCase()}${Math.floor(Math.random() * 1000)}@duga.local`,
+        email: email ?? null,
         phone,
         passwordHash,
         firstName,
@@ -177,10 +177,12 @@ export const studentsModule: Module = {
     const schoolId = ctx.session.user.schoolId;
     const data = pick(ctx.body, ["gender", "dateOfBirth", "isBoarding", "status", "currentClassGroupId", "photoUrl", "admissionNumber", "feeAmount", "feeDays"]);
     if (data.dateOfBirth) data.dateOfBirth = new Date(String(data.dateOfBirth));
+    if (data.gender !== undefined) data.gender = str(data.gender) ?? null;
+    if (data.isBoarding !== undefined) data.isBoarding = bool(ctx.body.isBoarding);
     if (data.feeAmount !== undefined) data.feeAmount = num(ctx.body.feeAmount) ?? 0;
     if (data.feeDays !== undefined) data.feeDays = Math.max(0, num(ctx.body.feeDays) ?? 0);
     // Must exist in the caller's school.
-    const existing = await prisma.student.findFirst({ where: { id: ctx.id, schoolId } });
+    const existing = await prisma.student.findFirst({ where: { id: ctx.id, schoolId }, include: { user: true } });
     if (!existing) throw new Error("Student not found");
     // The destination class group must belong to the caller's school.
     if (data.currentClassGroupId) {
@@ -195,8 +197,25 @@ export const studentsModule: Module = {
       if (feeAmount <= 0 || feeDays <= 0) data.feePaidThrough = null;
     }
     const student = await prisma.student.update({ where: { id: ctx.id }, data });
+
+    // Editable user-level details (name, contact). A no-email account stays
+    // email-free — never fabricate a placeholder address.
+    const userData: Record<string, unknown> = {};
+    if (typeof ctx.body.firstName === "string" && ctx.body.firstName) userData.firstName = String(ctx.body.firstName);
+    if (typeof ctx.body.lastName === "string" && ctx.body.lastName) userData.lastName = String(ctx.body.lastName);
+    if (typeof ctx.body.email === "string") userData.email = ctx.body.email ? String(ctx.body.email).toLowerCase() : null;
+    if (typeof ctx.body.phone === "string") userData.phone = ctx.body.phone ? String(ctx.body.phone) : null;
+    if (Object.keys(userData).length) {
+      await assertContactFree(schoolId, existing.user.id, userData.email as string | null | undefined, userData.phone as string | null | undefined);
+      await prisma.user.update({ where: { id: existing.userId }, data: userData });
+    }
+
     await logAudit({ schoolId, userId: ctx.session.user.id, action: "student.updated", entityType: "Student", entityId: ctx.id, meta: data });
-    return { ...student, fee: feeInfoOf(student) };
+    const updated = await prisma.student.findFirst({
+      where: { id: ctx.id, schoolId },
+      include: { user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, status: true } }, classGroup: { include: { level: true } } },
+    });
+    return { ...(updated ?? student), fee: feeInfoOf(updated ?? student) };
   },
 
   // Soft delete: deactivate the account so the student can no longer sign in,

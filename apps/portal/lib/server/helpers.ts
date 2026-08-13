@@ -41,6 +41,25 @@ export function pick(body: Record<string, unknown>, keys: string[]): Record<stri
   return out;
 }
 
+// Verify a proposed email/phone does not already belong to another user in the
+// school. Empty/null values are ignored so accounts may stay email-free.
+export async function assertContactFree(
+  schoolId: string,
+  exceptUserId: string,
+  email: string | null | undefined,
+  phone: string | null | undefined,
+): Promise<void> {
+  const or: { email?: string; phone?: string }[] = [];
+  if (email) or.push({ email });
+  if (phone) or.push({ phone });
+  if (or.length === 0) return;
+  const clash = await prisma.user.findFirst({
+    where: { schoolId, id: { not: exceptUserId }, OR: or },
+    select: { id: true },
+  });
+  if (clash) throw new Error("A user with this email or phone number already exists");
+}
+
 export function str(v: unknown): string | undefined {
   return typeof v === "string" && v.length ? v : undefined;
 }
