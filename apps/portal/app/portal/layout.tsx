@@ -32,6 +32,7 @@ export default async function PortalLayout({ children }: { children: React.React
         name: `${user.firstName} ${user.lastName}`,
         role: user.role,
         schoolId: user.schoolId,
+        photoUrl: user.student?.photoUrl ?? null,
         financeAccess,
         features,
         subfeatures,
