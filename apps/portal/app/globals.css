@@ -664,9 +664,9 @@ body {
 .portal-nav a { font-size: 15px; font-weight: 700; }
 
 /* Topbar */
-.portal-topbar__title { font-size: 20px; font-weight: 800; }
-.portal-topbar__user-name { font-size: 15.5px; font-weight: 700; }
-.portal-topbar__user-role { font-size: 14px; font-weight: 700; color: var(--duga-ink-2); }
+.portal-topbar__title { font-size: 18px; font-weight: 750; }
+.portal-topbar__user-name { font-size: 14px; font-weight: 700; }
+.portal-topbar__user-role { font-size: 12px; font-weight: 650; color: var(--duga-ink-2); }
 
 /* Notifications */
 .portal-notif-item { font-size: 15px; font-weight: 650; }
@@ -699,22 +699,21 @@ body {
 .role-stage-caption span { font-size: 14px; font-weight: 700; }
 
 /* Shared UI kit — bigger, bolder body and label text */
-.duga-page-head h1 { font-size: 27px; font-weight: 800; }
-.duga-page-head p { font-size: 16.5px; font-weight: 650; color: var(--duga-ink-2); }
-.duga-card__title { font-size: 18px; font-weight: 800; }
-.duga-card__pad, .duga-card__body { font-size: 15.5px; font-weight: 650; }
-.duga-stat__label { font-size: 15.5px; font-weight: 700; color: var(--duga-ink-2); }
-.duga-stat__value { font-size: 32px; font-weight: 800; }
-.duga-stat__hint { font-size: 14.5px; font-weight: 650; }
-.duga-field__label { font-size: 16px; font-weight: 700; }
-.duga-field__hint { font-size: 14.5px; font-weight: 650; color: var(--duga-ink-2); }
-.duga-field__error { font-size: 14.5px; font-weight: 700; }
-.duga-input, .duga-select, .duga-textarea { font-size: 16px; font-weight: 650; }
-.duga-btn { font-size: 15.5px; font-weight: 700; }
-.duga-table th { font-size: 14px; font-weight: 800; color: var(--duga-ink-2); }
-.duga-table td { font-size: 15px; font-weight: 650; }
-.duga-badge { font-size: 13.5px; font-weight: 800; }
-.duga-alert { font-size: 15.5px; font-weight: 650; }
+.duga-page-head h1 { font-size: 24px; font-weight: 750; }
+.duga-page-head p { font-size: 14px; font-weight: 550; color: var(--duga-ink-2); }
+.duga-card__title { font-size: 16px; font-weight: 750; }
+.duga-card__pad, .duga-card__body { font-size: 14px; font-weight: 520; }
+.duga-stat__label { font-size: 13px; font-weight: 650; color: var(--duga-ink-2); }
+.duga-stat__value { font-size: 28px; font-weight: 780; }
+.duga-stat__hint { font-size: 12px; font-weight: 550; }
+.duga-field__label { font-size: 13px; font-weight: 700; }
+.duga-field__hint, .duga-field__error { font-size: 12px; font-weight: 550; }
+.duga-input, .duga-select, .duga-textarea { font-size: 14px; font-weight: 520; }
+.duga-btn { font-size: 14px; font-weight: 650; }
+.duga-table th { font-size: 12px; font-weight: 750; color: var(--duga-ink-2); }
+.duga-table td { font-size: 13.5px; font-weight: 520; }
+.duga-badge { font-size: 12px; font-weight: 700; }
+.duga-alert { font-size: 14px; font-weight: 550; }
 .duga-empty { font-size: 15px; font-weight: 650; }
 .duga-nav-link { font-size: 15.5px; font-weight: 650; }
 .duga-nav-link--active { font-weight: 800; }
@@ -724,6 +723,17 @@ body {
 .classes-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 16px; }
 .classes-card .duga-card__pad { overflow-wrap: anywhere; }
 .classes-card select, .classes-card button { max-width: 100%; }
+.classes-card .duga-card__header { border-left: 3px solid var(--duga-gold); }
+.classes-section h2 { display: flex; align-items: center; gap: 9px; letter-spacing: -0.01em; }
+.classes-section h2::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--duga-gold); box-shadow: 0 0 0 4px rgba(217, 169, 42, 0.15); }
+
+/* Gentle colour cues: friendly but restrained. */
+.duga-stat:nth-child(3n + 1) { border-top: 3px solid #4f8fce; }
+.duga-stat:nth-child(3n + 2) { border-top: 3px solid #d9a92a; }
+.duga-stat:nth-child(3n) { border-top: 3px solid #4ca88d; }
+.duga-badge--info { background: #e8f3ff; color: #2468a2; }
+.duga-badge--accent { background: #fff3d8; color: #8a5a08; }
+.duga-badge--success { background: #e5f7f0; color: #18785d; }
 
 /* ==========================================================================
    Mobile polish — login carousel, role landing, shell

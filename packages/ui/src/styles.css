@@ -80,6 +80,7 @@ button {
 .duga-btn--ghost { background: transparent; color: var(--duga-ink-2); }
 
 .duga-btn--danger { background: var(--duga-danger); color: #fff; }
+.duga-btn--danger:hover { background: #b42318; transform: translateY(-1px); box-shadow: 0 8px 18px -8px rgba(180, 35, 24, 0.6); }
 
 .duga-btn--sm { padding: 7px 14px; font-size: 13px; }
 .duga-btn--lg { padding: 15px 26px; font-size: 16px; }

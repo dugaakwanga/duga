@@ -262,7 +262,7 @@ export default function ClassesPage() {
                   <div style={{ display: "flex", gap: 6 }}>
                     <Button size="sm" variant="outline" onClick={() => { setAssignTarget(c); setAssignForm({}); }}><Icon name="quiz" size={14} /> Assign subject</Button>
                     <Button size="sm" variant="outline" onClick={() => openEditClass(c)}>Edit</Button>
-                    <Button size="sm" variant="ghost" onClick={() => deleteClass(c)}>Delete</Button>
+                    <Button size="sm" variant="danger" onClick={() => deleteClass(c)} title={`Delete ${c.level.name} ${c.name}`}>Delete class</Button>
                   </div>
                 </div>
               )}
