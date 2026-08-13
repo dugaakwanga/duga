@@ -119,7 +119,10 @@ export const staffModule: Module = {
   async update(ctx) {
     can(ctx, "staff:manage");
     const schoolId = ctx.session.user.schoolId;
-    const target = await prisma.user.findFirst({ where: { id: ctx.id, schoolId } });
+    const target = await prisma.user.findFirst({
+      where: { id: ctx.id, schoolId },
+      include: { teacher: true, admin: true },
+    });
     if (!target) throw new Error("Staff member not found");
     if (!["TEACHER", "ADMIN", "BURSAR", "OWNER"].includes(target.role)) throw new Error("Not a staff member");
     assertStaffTargetAccess(ctx.session.user.role, target.role);
@@ -132,21 +135,71 @@ export const staffModule: Module = {
     if (typeof b.phone === "string") data.phone = b.phone ? String(b.phone) : null;
     if (b.avatarUrl) data.avatarUrl = String(b.avatarUrl);
     if (b.status) data.status = String(b.status);
+    const newRole = str(b.role);
+    if (newRole && ["TEACHER", "ADMIN", "BURSAR"].includes(newRole) && newRole !== target.role) {
+      if (target.role === "OWNER") throw new Error("The owner account role cannot be changed");
+      assertStaffTargetAccess(ctx.session.user.role, newRole);
+      data.role = newRole;
+    }
     if (Object.keys(data).length) {
       await assertContactFree(schoolId, target.id, data.email as string | null | undefined, data.phone as string | null | undefined);
       await prisma.user.update({ where: { id: ctx.id }, data });
     }
-    if (b.specialty) await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { specialty: String(b.specialty) } });
-    if (b.subjectIds !== undefined) {
-      const assignedSubjectIds = subjectIds(b.subjectIds);
-      const count = await prisma.subject.count({ where: { schoolId, id: { in: assignedSubjectIds } } });
-      if (count !== assignedSubjectIds.length) throw new Error("One or more selected subjects were not found");
-      await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { subjectIds: assignedSubjectIds } });
+
+    const finalRole = (data.role as string) ?? target.role;
+    const assignedSubjectIds = subjectIds(b.subjectIds);
+
+    if (finalRole === "TEACHER") {
+      if (!target.teacher) {
+        // Transitioning admin/bursar -> teacher: build the teacher profile.
+        const staffNumber = str(b.staffNumber) ?? `STF-${String((await prisma.teacher.count({ where: { schoolId } })) + 1).padStart(3, "0")}`;
+        const takenNo = await prisma.teacher.findUnique({ where: { schoolId_staffNumber: { schoolId, staffNumber } } });
+        if (takenNo) throw new Error("A teacher with this staff number already exists");
+        await prisma.teacher.create({
+          data: {
+            userId: target.id,
+            schoolId,
+            staffNumber,
+            specialty: str(b.specialty),
+            subjectIds: assignedSubjectIds,
+            designation: str(b.designation) ?? "Teacher",
+          },
+        });
+      } else {
+        const staffNumber = str(b.staffNumber);
+        if (staffNumber) {
+          const taken = staffNumber !== target.teacher.staffNumber
+            ? await prisma.teacher.findFirst({ where: { schoolId, staffNumber, userId: { not: ctx.id } } })
+            : null;
+          if (taken) throw new Error("A teacher with this staff number already exists");
+          await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { staffNumber } });
+        }
+        if (b.specialty) await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { specialty: String(b.specialty) } });
+        if (b.designation) await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { designation: String(b.designation) } });
+      }
+      if (b.subjectIds !== undefined) {
+        const count = await prisma.subject.count({ where: { schoolId, id: { in: assignedSubjectIds } } });
+        if (count !== assignedSubjectIds.length) throw new Error("One or more selected subjects were not found");
+        await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { subjectIds: assignedSubjectIds } });
+      }
+      if (data.role) await prisma.admin.deleteMany({ where: { userId: ctx.id, schoolId } });
+    } else {
+      if (b.designation) {
+        await prisma.admin.updateMany({ where: { userId: ctx.id, schoolId }, data: { designation: String(b.designation) } });
+        await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { designation: String(b.designation) } });
+      }
+      if (!target.admin) await prisma.admin.create({ data: { userId: target.id, schoolId, designation: str(b.designation) ?? "Staff" } });
+      if (data.role && target.teacher) {
+        // Teacher profile may have dependencies (class subjects etc.); drop it
+        // when possible, otherwise it is kept harmless for history.
+        try {
+          await prisma.teacher.deleteMany({ where: { userId: ctx.id, schoolId } });
+        } catch {
+          /* keep stale teacher profile */
+        }
+      }
     }
-    if (b.designation) {
-      await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { designation: String(b.designation) } });
-      await prisma.admin.updateMany({ where: { userId: ctx.id, schoolId }, data: { designation: String(b.designation) } });
-    }
+
     const user = await prisma.user.findUnique({ where: { id: ctx.id }, include: { teacher: true, admin: true } });
     await logAudit({ schoolId, userId: ctx.session.user.id, action: "staff.updated", entityType: "User", entityId: ctx.id, meta: data });
     return user;

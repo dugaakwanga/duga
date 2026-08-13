@@ -218,6 +218,8 @@ model School {
   systemLogs   SystemLog[]
   liveClasses  LiveClass[]
   tests        Test[]
+  resultConfig ResultConfig?
+  subjectScores SubjectScore[]
 
   @@index([domain])
 }
@@ -330,6 +332,7 @@ model Student {
   caScores            CaScore[]
   examScores          ExamScore[]
   reportCards         ReportCard[]
+  subjectScores       SubjectScore[]
   hostelAllocations   HostelAllocation[]
   nightAttendance     NightAttendance[]
   hostelIncidents     HostelIncident[]
@@ -519,6 +522,7 @@ model Term {
   caScores CaScore[]
   examScores ExamScore[]
   studentAttendance StudentAttendance[]
+  subjectScores SubjectScore[]
 
   @@unique([schoolId, sessionId, termNumber])
   @@index([sessionId])
@@ -609,6 +613,7 @@ model ClassSubject {
   timetableEntries TimetableEntry[]
   reportCardItems ReportCardItem[]
   liveClasses LiveClass[]
+  subjectScores SubjectScore[]
 
   @@unique([classGroupId, subjectId])
   @@index([schoolId])
@@ -903,6 +908,53 @@ model GradingScheme {
   createdAt DateTime @default(now())
 
   @@unique([schoolId, name])
+  @@index([schoolId])
+}
+
+// School-specific make-up of a result. Components are JSON:
+// [{ name: "CA1", category: "CA" | "EXAM", max: 10, order: 1 }, ...]
+// with caCap/examCap capping the final totals (defaults: CA 40 / Exam 60).
+model ResultConfig {
+  id         String   @id @default(cuid())
+  schoolId   String   @unique
+  caCap      Int      @default(40)
+  examCap    Int      @default(60)
+  components Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId])
+}
+
+// Per-student scores for a class subject in a term. component -> score keyed by
+// component name (see ResultConfig.components). submitted locks a subject once
+// the teacher hands it to the admin for publishing.
+model SubjectScore {
+  id                 String   @id @default(cuid())
+  schoolId           String
+  classSubjectId     String
+  studentId          String
+  termId             String
+  scores             Json
+  caTotal            Int      @default(0)
+  examTotal          Int      @default(0)
+  total              Int      @default(0)
+  submitted          Boolean  @default(false)
+  submittedAt        DateTime?
+  enteredByTeacherId String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  classSubject ClassSubject @relation(fields: [classSubjectId], references: [id], onDelete: Cascade)
+  student      Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  term         Term         @relation(fields: [termId], references: [id])
+  school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([classSubjectId, studentId, termId])
+  @@index([classSubjectId])
+  @@index([studentId])
   @@index([schoolId])
 }
 

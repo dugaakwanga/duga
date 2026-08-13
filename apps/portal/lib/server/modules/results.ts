@@ -1,33 +1,49 @@
 import { prisma } from "@duga/core/server";
 import { collateReportCards, resolveResultsAccess, logAudit, dispatchToMany } from "@duga/core/server";
+import { getResultConfig, computeScoreTotals, type ResultComponent } from "@duga/core/server";
 import type { Module } from ".";
 import { can, str, num, studentScope, assertFeeAccess } from "../helpers";
+
+async function submissionSummary(
+  schoolId: string,
+  classSubjects: Array<{ id: string; classGroup: { students: Array<{ id: string }> } }>,
+  termId?: string,
+): Promise<Record<string, { entered: number; submitted: number; total: number; allSubmitted: boolean }>> {
+  const ids = classSubjects.map((cs) => cs.id);
+  if (!ids.length) return {};
+  const rows = await prisma.subjectScore.findMany({
+    where: { schoolId, classSubjectId: { in: ids }, ...(termId ? { termId } : {}) },
+    select: { classSubjectId: true, submitted: true },
+  });
+  const map: Record<string, { entered: number; submitted: number; total: number; allSubmitted: boolean }> = {};
+  for (const cs of classSubjects) {
+    const scores = rows.filter((r) => r.classSubjectId === cs.id);
+    const total = cs.classGroup.students.length;
+    const entered = scores.length;
+    const submitted = scores.filter((s) => s.submitted).length;
+    map[cs.id] = { entered, submitted, total, allSubmitted: total > 0 && submitted === total };
+  }
+  return map;
+}
 
 export const resultsModule: Module = {
   async list(ctx) {
     can(ctx, "results:view");
     const schoolId = ctx.session.user.schoolId;
     const role = ctx.session.user.role;
+    const config = await getResultConfig(schoolId);
 
     // Entry grid for teachers: return class subjects with class students
     if (role === "TEACHER") {
       const teacher = ctx.session.user.teacher!;
-      const [classSubjects, terms] = await Promise.all([
-        prisma.classSubject.findMany({
-          where: { teacherId: teacher.id },
-          include: { subject: true, classGroup: { include: { level: true, students: { include: { user: { select: { firstName: true, lastName: true, id: true } } } } } } },
-        }),
-        prisma.term.findMany({ where: { schoolId }, include: { session: true }, orderBy: [{ session: { createdAt: "desc" } }, { termNumber: "asc" }] }),
-      ]);
-      const classGroupIds = [...new Set(classSubjects.map((subject) => subject.classGroupId))];
-      const reportCards = await prisma.reportCard.findMany({
-        where: { schoolId, classGroupId: { in: classGroupIds } },
-        include: { term: true, student: { include: { user: { select: { firstName: true, lastName: true } } } }, classGroup: { include: { level: true } }, items: { include: { subject: true }, orderBy: { position: "asc" } } },
-        orderBy: { createdAt: "desc" },
-        take: 500,
+      const classSubjects = await prisma.classSubject.findMany({
+        where: { teacherId: teacher.id },
+        include: { subject: true, classGroup: { include: { level: true, students: { include: { user: { select: { firstName: true, lastName: true, id: true } } } } } } },
       });
+      const terms = await prisma.term.findMany({ where: { schoolId }, include: { session: true }, orderBy: [{ session: { createdAt: "desc" } }, { termNumber: "asc" }] });
       const activeTerm = terms.find((t) => t.status === "ACTIVE") ?? terms[0];
-      return { role, classSubjects, terms, reportCards, activeTermId: activeTerm?.id };
+      const submissions = await submissionSummary(schoolId, classSubjects, activeTerm?.id);
+      return { role, classSubjects, terms, config, submissions, activeTermId: activeTerm?.id };
     }
 
     if (role === "STUDENT" || role === "PARENT") {
@@ -59,13 +75,20 @@ export const resultsModule: Module = {
     }
 
     // Admin / owner
-    const reportCards = await prisma.reportCard.findMany({
-      where: { schoolId },
-      include: { term: true, student: { include: { user: { select: { firstName: true, lastName: true } } } }, classGroup: { include: { level: true } }, items: { include: { subject: true }, orderBy: { position: "asc" } } },
-      orderBy: { createdAt: "desc" },
-      take: 500,
-    });
-    return { role, reportCards };
+    const [reportCards, classSubjects] = await Promise.all([
+      prisma.reportCard.findMany({
+        where: { schoolId },
+        include: { term: true, student: { include: { user: { select: { firstName: true, lastName: true } } } }, classGroup: { include: { level: true } }, items: { include: { subject: true }, orderBy: { position: "asc" } } },
+        orderBy: { createdAt: "desc" },
+        take: 500,
+      }),
+      prisma.classSubject.findMany({
+        where: { schoolId },
+        include: { subject: true, classGroup: { include: { level: true, students: { select: { id: true } } } } },
+      }),
+    ]);
+    const submissions = await submissionSummary(schoolId, classSubjects);
+    return { role, reportCards, config, submissions };
   },
 
   async get(ctx) {
@@ -125,41 +148,121 @@ export const resultsModule: Module = {
       await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "results.detailsUpdated", entityType: "ReportCard", entityId: card.id });
       return updated;
     },
-    // Bulk entry of CA + exam scores for a class subject
+
+    // Bulk entry of scores for a class subject, following the school's
+    // ResultConfig components.
     saveScores: async (ctx) => {
       can(ctx, "results:enter");
+      const schoolId = ctx.session.user.schoolId;
       const teacher = ctx.session.user.teacher;
       const classSubjectId = str(ctx.body.classSubjectId);
       const termId = str(ctx.body.termId);
-      const rows = Array.isArray(ctx.body.rows) ? (ctx.body.rows as Array<{ studentId: string; ca1?: number; ca2?: number; ca3?: number; test?: number; assignment?: number; exam?: number }>) : [];
-      if (!classSubjectId || rows.length === 0) throw new Error("classSubjectId and rows required");
+      const rows = Array.isArray(ctx.body.rows) ? (ctx.body.rows as Array<{ studentId: string; scores?: Record<string, unknown> }>) : [];
+      if (!classSubjectId || rows.length === 0 || !termId) throw new Error("classSubjectId, termId and rows required");
 
       if (teacher) {
         const own = await prisma.classSubject.findFirst({ where: { id: classSubjectId, teacherId: teacher.id } });
         if (!own) throw new Error("You can only enter scores for your own subjects");
       }
 
+      // Locked once submitted (until an admin reopens).
+      if (teacher) {
+        const locked = await prisma.subjectScore.findFirst({ where: { classSubjectId, termId, submitted: true }, take: 1 });
+        if (locked) throw new Error("These scores have been submitted to the admin and are locked. Ask an admin to reopen them.");
+      }
+
+      const config = await getResultConfig(schoolId);
+      const compNames = new Set(config.components.map((c) => c.name));
+
       for (const r of rows) {
-        const caTotal = ((r.ca1 ?? 0) + (r.ca2 ?? 0) + (r.ca3 ?? 0) + (r.test ?? 0) + (r.assignment ?? 0));
-        await prisma.caScore.upsert({
-          where: { classSubjectId_studentId_termId: { classSubjectId, studentId: r.studentId, termId: termId ?? "" } },
-          update: { ca1: r.ca1, ca2: r.ca2, ca3: r.ca3, test: r.test, assignment: r.assignment, total: Math.min(caTotal, 40), enteredByTeacherId: teacher?.id },
-          create: { schoolId: ctx.session.user.schoolId, classSubjectId, studentId: r.studentId, termId, ca1: r.ca1, ca2: r.ca2, ca3: r.ca3, test: r.test, assignment: r.assignment, total: Math.min(caTotal, 40), enteredByTeacherId: teacher?.id },
-        });
-        const exam = Math.min(r.exam ?? 0, 60);
-        await prisma.examScore.upsert({
-          where: { classSubjectId_studentId_termId: { classSubjectId, studentId: r.studentId, termId: termId ?? "" } },
-          update: { examScore: exam, total: exam, enteredByTeacherId: teacher?.id },
-          create: { schoolId: ctx.session.user.schoolId, classSubjectId, studentId: r.studentId, termId, examScore: exam, total: exam, enteredByTeacherId: teacher?.id },
+        const scores: Record<string, number> = {};
+        const raw = r.scores && typeof r.scores === "object" ? (r.scores as Record<string, unknown>) : {};
+        for (const [k, v] of Object.entries(raw)) {
+          if (!compNames.has(k)) continue;
+          const n = typeof v === "number" ? v : typeof v === "string" && v !== "" ? Number(v) : NaN;
+          if (typeof n === "number" && !Number.isNaN(n)) scores[k] = n;
+        }
+        const { ca, exam, total } = computeScoreTotals(config, scores);
+        await prisma.subjectScore.upsert({
+          where: { classSubjectId_studentId_termId: { classSubjectId, studentId: r.studentId, termId } },
+          update: { scores: scores as never, caTotal: ca, examTotal: exam, total, enteredByTeacherId: teacher?.id, submitted: false, submittedAt: null },
+          create: { schoolId, classSubjectId, studentId: r.studentId, termId, scores: scores as never, caTotal: ca, examTotal: exam, total, enteredByTeacherId: teacher?.id, submitted: false },
         });
       }
-      await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "results.scoresEntered", entityType: "ClassSubject", entityId: classSubjectId, meta: { rows: rows.length } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "results.scoresEntered", entityType: "ClassSubject", entityId: classSubjectId, meta: { termId, rows: rows.length } });
       return { count: rows.length };
     },
 
-    // Entry sheet for a class subject
+    // Teacher submits a subject's scores to the admin (locks them).
+    submitScores: async (ctx) => {
+      can(ctx, "results:enter");
+      const schoolId = ctx.session.user.schoolId;
+      const teacher = ctx.session.user.teacher;
+      const classSubjectId = str(ctx.body.classSubjectId);
+      const termId = str(ctx.body.termId);
+      if (!classSubjectId || !termId) throw new Error("classSubjectId and termId required");
+      if (teacher) {
+        const own = await prisma.classSubject.findFirst({ where: { id: classSubjectId, teacherId: teacher.id } });
+        if (!own) throw new Error("You can only submit scores for your own subjects");
+      }
+      const result = await prisma.subjectScore.updateMany({
+        where: { schoolId, classSubjectId, termId },
+        data: { submitted: true, submittedAt: new Date() },
+      });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "results.scoresSubmitted", entityType: "ClassSubject", entityId: classSubjectId, meta: { termId, count: result.count } });
+      return { count: result.count };
+    },
+
+    // Admin reopens a subject so teachers can edit/complete scores again.
+    reopenScores: async (ctx) => {
+      can(ctx, "results:publish");
+      const schoolId = ctx.session.user.schoolId;
+      const classSubjectId = str(ctx.body.classSubjectId);
+      const termId = str(ctx.body.termId);
+      if (!classSubjectId || !termId) throw new Error("classSubjectId and termId required");
+      const result = await prisma.subjectScore.updateMany({
+        where: { schoolId, classSubjectId, termId },
+        data: { submitted: false, submittedAt: null },
+      });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "results.scoresReopened", entityType: "ClassSubject", entityId: classSubjectId, meta: { termId } });
+      return { count: result.count };
+    },
+
+    // Admin configures the report card contents (components + caps).
+    saveConfig: async (ctx) => {
+      can(ctx, "results:publish");
+      const schoolId = ctx.session.user.schoolId;
+      const caCap = Math.max(0, num(ctx.body.caCap) ?? 40);
+      const examCap = Math.max(0, num(ctx.body.examCap) ?? 60);
+      const raw = Array.isArray(ctx.body.components) ? ctx.body.components : [];
+      const components: ResultComponent[] = raw
+        .map((c, i) => {
+          const cc = c as Record<string, unknown>;
+          const category = cc.category === "EXAM" ? "EXAM" : "CA";
+          return {
+            name: String(cc.name ?? "").trim(),
+            category,
+            max: Math.max(0, num(cc.max) ?? 0),
+            order: typeof cc.order === "number" ? cc.order : i,
+          } as ResultComponent;
+        })
+        .filter((c) => c.name && c.max > 0);
+      const hasCa = components.some((c) => c.category === "CA");
+      const hasExam = components.some((c) => c.category === "EXAM");
+      if (!components.length || !hasCa || !hasExam) throw new Error("Result needs at least one CA and one Exam component with a max score");
+      const config = await prisma.resultConfig.upsert({
+        where: { schoolId },
+        update: { caCap, examCap, components: components as never },
+        create: { schoolId, caCap, examCap, components: components as never },
+      });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "results.configUpdated", entityType: "School", entityId: schoolId, meta: { caCap, examCap, count: components.length } });
+      return config;
+    },
+
+    // Entry sheet for a class subject (config-aware).
     entrySheet: async (ctx) => {
       can(ctx, "results:enter");
+      const schoolId = ctx.session.user.schoolId;
       const classSubjectId = str(ctx.body.classSubjectId);
       const termId = str(ctx.body.termId);
       const teacher = ctx.session.user.teacher;
@@ -173,24 +276,57 @@ export const resultsModule: Module = {
         include: { subject: true, classGroup: { include: { level: true, students: { include: { user: { select: { firstName: true, lastName: true } } } } } } },
       });
       if (!cs) throw new Error("Class subject not found");
-      const [cas, exams] = await Promise.all([
-        prisma.caScore.findMany({ where: { classSubjectId, termId: termId ?? undefined } }),
-        prisma.examScore.findMany({ where: { classSubjectId, termId: termId ?? undefined } }),
+      const [config, scores] = await Promise.all([
+        getResultConfig(schoolId),
+        prisma.subjectScore.findMany({ where: { classSubjectId, termId: termId ?? "" } }),
       ]);
-      const caMap = new Map(cas.map((c) => [c.studentId, c]));
-      const examMap = new Map(exams.map((e) => [e.studentId, e]));
-      const rows = cs.classGroup.students.map((s) => ({
-        studentId: s.id,
-        name: `${s.user.firstName} ${s.user.lastName}`,
-        admissionNumber: s.admissionNumber,
-        ca1: caMap.get(s.id)?.ca1 ?? null,
-        ca2: caMap.get(s.id)?.ca2 ?? null,
-        ca3: caMap.get(s.id)?.ca3 ?? null,
-        test: caMap.get(s.id)?.test ?? null,
-        assignment: caMap.get(s.id)?.assignment ?? null,
-        exam: examMap.get(s.id)?.examScore ?? null,
-      }));
-      return { classSubject: { id: cs.id, subject: cs.subject.name, class: `${cs.classGroup.level.name} ${cs.classGroup.name}` }, rows };
+      const scoreMap = new Map(scores.map((s) => [s.studentId, s]));
+      const anySubmitted = scores.some((s) => s.submitted);
+      const rows = cs.classGroup.students.map((s) => {
+        const row = scoreMap.get(s.id);
+        const scoresObj: Record<string, number | null> = {};
+        for (const comp of config.components) {
+          const v = (row?.scores as Record<string, number> | null | undefined)?.[comp.name];
+          scoresObj[comp.name] = typeof v === "number" ? v : null;
+        }
+        return {
+          studentId: s.id,
+          name: `${s.user.firstName} ${s.user.lastName}`,
+          admissionNumber: s.admissionNumber,
+          scores: scoresObj,
+          caTotal: row?.caTotal ?? null,
+          examTotal: row?.examTotal ?? null,
+          total: row?.total ?? null,
+          submitted: row?.submitted ?? false,
+        };
+      });
+      return {
+        classSubject: { id: cs.id, subject: cs.subject.name, class: `${cs.classGroup.level.name} ${cs.classGroup.name}` },
+        config,
+        submitted: anySubmitted,
+        rows,
+      };
+    },
+
+    // Publish a single student's report card.
+    publishStudent: async (ctx) => {
+      can(ctx, "results:publish");
+      const schoolId = ctx.session.user.schoolId;
+      const studentId = str(ctx.body.studentId);
+      const termId = str(ctx.body.termId);
+      if (!studentId || !termId) throw new Error("studentId and termId required");
+      const student = await prisma.student.findFirst({ where: { id: studentId, schoolId } });
+      if (!student || !student.currentClassGroupId) throw new Error("Student not found or has no class");
+      await collateReportCards({
+        schoolId,
+        termId,
+        classGroupId: student.currentClassGroupId,
+        publishedBy: ctx.session.user.id,
+        publish: true,
+        publishStudentIds: [studentId],
+      });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "results.published", entityType: "ReportCard", entityId: studentId, meta: { termId, perStudent: true } });
+      return { ok: true };
     },
 
     // Collate report cards for a class (admin/owner)

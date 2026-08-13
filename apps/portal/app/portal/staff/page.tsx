@@ -83,6 +83,8 @@ export default function StaffPage() {
   function openEdit(u: StaffUser) {
     setEditing(u);
     setForm({
+      role: u.role,
+      staffNumber: u.teacher?.staffNumber ?? "",
       firstName: u.firstName,
       lastName: u.lastName,
       email: u.email ?? "",
@@ -216,6 +218,18 @@ export default function StaffPage() {
             </>
           ) : (
             <>
+              {editing.role !== "OWNER" && (
+                <Field label="Role" required>
+                  <Select value={form.role ?? editing.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+                    <option value="TEACHER">Teacher</option>
+                    {currentRole === "OWNER" && <option value="ADMIN">Admin</option>}
+                    {currentRole === "OWNER" && <option value="BURSAR">Bursar</option>}
+                  </Select>
+                </Field>
+              )}
+              <Field label="Designation">
+                <Input value={form.designation ?? ""} onChange={(e) => setForm({ ...form, designation: e.target.value })} placeholder="e.g. Senior Teacher" />
+              </Field>
               <Field label="First name" required>
                 <Input value={form.firstName ?? ""} onChange={(e) => setForm({ ...form, firstName: e.target.value })} />
               </Field>
@@ -235,6 +249,11 @@ export default function StaffPage() {
               <Field label="Phone">
                 <Input value={form.phone ?? ""} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
               </Field>
+              {(form.role === "TEACHER" || editing.role === "TEACHER") && (
+                <Field label="Staff number">
+                  <Input value={form.staffNumber ?? ""} onChange={(e) => setForm({ ...form, staffNumber: e.target.value })} placeholder="Auto if empty" />
+                </Field>
+              )}
             </>
           )}
           <Field label="Specialty">

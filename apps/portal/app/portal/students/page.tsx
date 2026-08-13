@@ -23,6 +23,7 @@ interface Student {
   photoUrl: string | null;
   user: { firstName: string; lastName: string; email: string | null; phone: string | null; status: string };
   classGroup: { level: { name: string }; name: string } | null;
+  parentLinks?: Array<{ parent: { user: { firstName: string; lastName: string; email: string; phone: string | null } } }>;
   fee?: FeeInfo;
 }
 
@@ -129,6 +130,7 @@ export default function StudentsPage() {
   }
 
   function openEdit(s: Student) {
+    const parent = s.parentLinks?.[0]?.parent.user;
     setEditTarget(s);
     setEditForm({
       firstName: s.user.firstName,
@@ -142,6 +144,9 @@ export default function StudentsPage() {
       status: s.status,
       currentClassGroupId: "",
       photoUrl: s.photoUrl ?? "",
+      parentEmail: parent?.email ?? "",
+      parentName: parent ? `${parent.firstName} ${parent.lastName}`.trim() : "",
+      parentPhone: parent?.phone ?? "",
     });
   }
 
@@ -365,6 +370,20 @@ export default function StudentsPage() {
               ))}
             </Select>
           </Field>
+        </div>
+        <div style={{ marginTop: 18, borderTop: "1px solid var(--duga-border)", paddingTop: 14 }}>
+          <div style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--duga-muted)", marginBottom: 12 }}>Parent / guardian</div>
+          <div className="duga-form-grid">
+            <Field label="Parent email">
+              <Input value={editForm.parentEmail ?? ""} onChange={(e) => setEditForm({ ...editForm, parentEmail: e.target.value })} placeholder="parent@email.com" />
+            </Field>
+            <Field label="Parent name">
+              <Input value={editForm.parentName ?? ""} onChange={(e) => setEditForm({ ...editForm, parentName: e.target.value })} placeholder="Parent name" />
+            </Field>
+            <Field label="Parent phone">
+              <Input value={editForm.parentPhone ?? ""} onChange={(e) => setEditForm({ ...editForm, parentPhone: e.target.value })} placeholder="0803 000 0000" />
+            </Field>
+          </div>
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <Button variant="ghost" onClick={() => setEditTarget(null)}>Cancel</Button>

@@ -2,6 +2,66 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@duga/core/server";
 import type { Module } from ".";
 import { can, pick, str, num, bool, studentScope, feeInfoOf, assertContactFree } from "../helpers";
+
+// Create or update the primary linked parent for a student. If an email is
+// given that matches the current parent, only name/phone are updated; otherwise
+// a new (or existing) parent account is linked and made primary.
+async function upsertParent(
+  schoolId: string,
+  studentId: string,
+  opts: { email?: string; name?: string; phone?: string },
+): Promise<void> {
+  const email = opts.email ? opts.email.toLowerCase() : undefined;
+  const current = await prisma.studentParent.findFirst({
+    where: { studentId },
+    orderBy: { isPrimary: "desc" },
+    include: { parent: { include: { user: true } } },
+  });
+
+  // Same parent already linked — just refresh name/phone.
+  if (current && email && current.parent.user.email?.toLowerCase() === email) {
+    const userData: Record<string, unknown> = {};
+    if (opts.name) {
+      const [fn, ...ln] = opts.name.trim().split(/\s+/);
+      userData.firstName = fn ?? "Parent";
+      userData.lastName = ln.join(" ") || "Guardian";
+    }
+    if (opts.phone) userData.phone = opts.phone;
+    if (Object.keys(userData).length) await prisma.user.update({ where: { id: current.parent.user.id }, data: userData });
+    return;
+  }
+
+  // A parent email is required to link a (new) parent.
+  if (!email) return;
+  let parentUser = await prisma.user.findUnique({ where: { schoolId_email: { schoolId, email } } });
+  if (!parentUser) {
+    const name = opts.name?.trim() ?? "";
+    parentUser = await prisma.user.create({
+      data: {
+        schoolId,
+        role: "PARENT",
+        email,
+        passwordHash: await bcrypt.hash("parent123", 10),
+        firstName: name.split(/\s+/)[0] ?? "Parent",
+        lastName: name.split(/\s+/).slice(1).join(" ") || "Guardian",
+        phone: opts.phone || null,
+        mustChangePassword: true,
+      },
+    });
+    await prisma.parent.create({ data: { userId: parentUser.id, schoolId } });
+  } else if (opts.phone && !parentUser.phone) {
+    await prisma.user.update({ where: { id: parentUser.id }, data: { phone: opts.phone } });
+  }
+  const parentProfile = await prisma.parent.findUnique({ where: { userId: parentUser.id } });
+  if (parentProfile) {
+    await prisma.studentParent.updateMany({ where: { studentId }, data: { isPrimary: false } });
+    await prisma.studentParent.upsert({
+      where: { parentId_studentId: { parentId: parentProfile.id, studentId } },
+      update: { isPrimary: true, relation: "GUARDIAN" },
+      create: { parentId: parentProfile.id, studentId, schoolId, relation: "GUARDIAN", isPrimary: true },
+    });
+  }
+}
 import { logAudit } from "@duga/core/server";
 
 export const studentsModule: Module = {
@@ -27,6 +87,7 @@ export const studentsModule: Module = {
       include: {
         user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, status: true } },
         classGroup: { include: { level: true } },
+        parentLinks: { include: { parent: { include: { user: { select: { firstName: true, lastName: true, email: true, phone: true } } } } } },
       },
       orderBy: { admissionNumber: "asc" },
       take: 300,
@@ -126,38 +187,7 @@ export const studentsModule: Module = {
     });
 
     if (b.parentEmail || b.parentName) {
-      // Link parent (create parent account if new)
-      const parentEmail = str(b.parentEmail);
-      const parentName = str(b.parentName);
-      const parentPhone = b.parentPhone ? str(b.parentPhone) : "";
-      if (parentEmail && parentName) {
-        let parentUser = await prisma.user.findUnique({ where: { schoolId_email: { schoolId, email: parentEmail } } });
-        if (!parentUser) {
-          parentUser = await prisma.user.create({
-            data: {
-              schoolId,
-              role: "PARENT",
-              email: parentEmail,
-              passwordHash: await bcrypt.hash("parent123", 10),
-              firstName: parentName.split(" ")[0] ?? "Parent",
-              lastName: parentName.split(" ").slice(1).join(" ") || "Guardian",
-              phone: parentPhone || null,
-              mustChangePassword: true,
-            },
-          });
-          await prisma.parent.create({ data: { userId: parentUser.id, schoolId } });
-        } else if (parentPhone && !parentUser.phone) {
-          parentUser = await prisma.user.update({ where: { id: parentUser.id }, data: { phone: parentPhone } });
-        }
-        const parentProfile = await prisma.parent.findUnique({ where: { userId: parentUser.id } });
-        if (parentProfile) {
-          await prisma.studentParent.upsert({
-            where: { parentId_studentId: { parentId: parentProfile.id, studentId: student.id } },
-            update: {},
-            create: { parentId: parentProfile.id, studentId: student.id, schoolId, relation: "GUARDIAN", isPrimary: true },
-          });
-        }
-      }
+      await upsertParent(schoolId, student.id, { email: str(b.parentEmail), name: str(b.parentName), phone: b.parentPhone ? str(b.parentPhone) : undefined });
     }
 
     await logAudit({
@@ -176,7 +206,11 @@ export const studentsModule: Module = {
     can(ctx, "students:manage");
     const schoolId = ctx.session.user.schoolId;
     const data = pick(ctx.body, ["gender", "dateOfBirth", "isBoarding", "status", "currentClassGroupId", "photoUrl", "admissionNumber", "feeAmount", "feeDays"]);
+    // Empty sentinel values must never reach Prisma (empty FK / date / photo).
+    if (data.currentClassGroupId === "" || data.currentClassGroupId === undefined) delete data.currentClassGroupId;
+    if (data.photoUrl === "") data.photoUrl = null;
     if (data.dateOfBirth) data.dateOfBirth = new Date(String(data.dateOfBirth));
+    else if (data.dateOfBirth === "") delete data.dateOfBirth;
     if (data.gender !== undefined) data.gender = str(data.gender) ?? null;
     if (data.isBoarding !== undefined) data.isBoarding = bool(ctx.body.isBoarding);
     if (data.feeAmount !== undefined) data.feeAmount = num(ctx.body.feeAmount) ?? 0;
@@ -208,6 +242,14 @@ export const studentsModule: Module = {
     if (Object.keys(userData).length) {
       await assertContactFree(schoolId, existing.user.id, userData.email as string | null | undefined, userData.phone as string | null | undefined);
       await prisma.user.update({ where: { id: existing.userId }, data: userData });
+    }
+
+    // Parent contact — create or update the primary linked parent.
+    const parentEmail = typeof ctx.body.parentEmail === "string" ? ctx.body.parentEmail : undefined;
+    const parentName = typeof ctx.body.parentName === "string" ? ctx.body.parentName : undefined;
+    const parentPhone = typeof ctx.body.parentPhone === "string" ? ctx.body.parentPhone : undefined;
+    if (parentEmail || parentName || parentPhone) {
+      await upsertParent(schoolId, existing.id, { email: parentEmail, name: parentName, phone: parentPhone });
     }
 
     await logAudit({ schoolId, userId: ctx.session.user.id, action: "student.updated", entityType: "Student", entityId: ctx.id, meta: data });

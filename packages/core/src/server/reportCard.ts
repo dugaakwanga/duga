@@ -1,8 +1,75 @@
 import { prisma } from "./prisma";
-import { computeGrade, computeAverage } from "../grading";
+import { computeGrade } from "../grading";
 
-const CA_CAP = 40; // continuous assessment max
-const EXAM_CAP = 60; // exam max
+export interface ResultComponent {
+  name: string;
+  category: "CA" | "EXAM";
+  max: number;
+  order: number;
+}
+
+export interface ResultConfigShape {
+  id: string;
+  schoolId: string;
+  caCap: number;
+  examCap: number;
+  components: ResultComponent[];
+}
+
+export const DEFAULT_RESULT_COMPONENTS: ResultComponent[] = [
+  { name: "CA1", category: "CA", max: 10, order: 1 },
+  { name: "CA2", category: "CA", max: 10, order: 2 },
+  { name: "CA3", category: "CA", max: 10, order: 3 },
+  { name: "Test", category: "CA", max: 10, order: 4 },
+  { name: "Assignment", category: "CA", max: 10, order: 5 },
+  { name: "Exam", category: "EXAM", max: 60, order: 6 },
+];
+
+export const DEFAULT_CA_CAP = 40;
+export const DEFAULT_EXAM_CAP = 60;
+
+function normalizeComponents(value: unknown): ResultComponent[] {
+  if (!Array.isArray(value)) return DEFAULT_RESULT_COMPONENTS;
+  const comps = (value as Array<{ name?: unknown; category?: unknown; max?: unknown; order?: unknown }>)
+    .filter((c) => typeof c.name === "string" && c.name && (c.category === "CA" || c.category === "EXAM"))
+    .map((c, i) => ({
+      name: c.name as string,
+      category: c.category as "CA" | "EXAM",
+      max: typeof c.max === "number" && c.max >= 0 ? c.max : 0,
+      order: typeof c.order === "number" ? c.order : i,
+    }))
+    .filter((c) => c.max > 0);
+  return comps.length ? comps : DEFAULT_RESULT_COMPONENTS;
+}
+
+export async function getResultConfig(schoolId: string): Promise<ResultConfigShape> {
+  const row = await prisma.resultConfig.findUnique({ where: { schoolId } });
+  return {
+    id: row?.id ?? "",
+    schoolId,
+    caCap: row?.caCap ?? DEFAULT_CA_CAP,
+    examCap: row?.examCap ?? DEFAULT_EXAM_CAP,
+    components: row ? normalizeComponents(row.components) : DEFAULT_RESULT_COMPONENTS,
+  };
+}
+
+// Compute CA/EXAM/total from a component->score map, capped by the config.
+export function computeScoreTotals(
+  config: ResultConfigShape,
+  scores: Record<string, number | null | undefined>,
+): { ca: number; exam: number; total: number } {
+  let ca = 0;
+  let exam = 0;
+  for (const comp of config.components) {
+    const raw = scores?.[comp.name];
+    const v = typeof raw === "number" && Number.isFinite(raw) ? Math.max(0, Math.min(raw, comp.max)) : 0;
+    if (comp.category === "EXAM") exam += v;
+    else ca += v;
+  }
+  ca = Math.min(ca, config.caCap);
+  exam = Math.min(exam, config.examCap);
+  return { ca, exam, total: ca + exam };
+}
 
 export interface CollateOptions {
   schoolId: string;
@@ -10,17 +77,13 @@ export interface CollateOptions {
   classGroupId: string;
   publishedBy?: string;
   publish?: boolean;
-}
-
-function caTotal(ca: { ca1?: number | null; ca2?: number | null; ca3?: number | null; test?: number | null; assignment?: number | null } | null): number {
-  if (!ca) return 0;
-  const sum =
-    (ca.ca1 ?? 0) + (ca.ca2 ?? 0) + (ca.ca3 ?? 0) + (ca.test ?? 0) + (ca.assignment ?? 0);
-  return Math.min(sum, CA_CAP);
+  // When provided, only these students get published (position/rank is still
+  // computed across the whole class). Used for per-student publishing.
+  publishStudentIds?: string[];
 }
 
 export async function collateReportCards(opts: CollateOptions) {
-  const { schoolId, termId, classGroupId, publishedBy, publish } = opts;
+  const { schoolId, termId, classGroupId, publishedBy, publish, publishStudentIds } = opts;
 
   const term = await prisma.term.findFirst({ where: { id: termId, schoolId } });
   if (!term) throw new Error("Term not found");
@@ -30,6 +93,8 @@ export async function collateReportCards(opts: CollateOptions) {
     include: { level: true },
   });
   if (!classGroup) throw new Error("Class not found");
+
+  const config = await getResultConfig(schoolId);
 
   const classSubjects = await prisma.classSubject.findMany({
     where: { classGroupId },
@@ -45,7 +110,7 @@ export async function collateReportCards(opts: CollateOptions) {
     .findFirst({ where: { schoolId, isDefault: true } })
     .then((s) => (s?.scale as Array<{ min: number; max: number; grade: string; remark: string; gp: number }>) ?? []);
 
-  // Subject score matrix: subjectKey -> studentId -> total
+  // Subject score matrix built from per-student SubjectScore rows.
   const subjectScores: Record<string, Record<string, number>> = {};
   const studentTotals: Record<string, number> = {};
   const studentCount: Record<string, number> = {};
@@ -58,17 +123,12 @@ export async function collateReportCards(opts: CollateOptions) {
     subjectScores[key] = {};
     subjectStudents[key] = [];
 
-    const [cas, exams] = await Promise.all([
-      prisma.caScore.findMany({ where: { classSubjectId: cs.id, termId, studentId: { in: students.map((s) => s.id) } } }),
-      prisma.examScore.findMany({ where: { classSubjectId: cs.id, termId, studentId: { in: students.map((s) => s.id) } } }),
-    ]);
-    const caMap = new Map(cas.map((c) => [c.studentId, c]));
-    const examMap = new Map(exams.map((e) => [e.studentId, e]));
+    const rows = await prisma.subjectScore.findMany({ where: { classSubjectId: cs.id, termId } });
+    const byStudent = new Map(rows.map((r) => [r.studentId, r]));
 
     for (const student of students) {
-      const ca = caTotal(caMap.get(student.id) ?? null);
-      const exam = Math.min(examMap.get(student.id)?.examScore ?? 0, EXAM_CAP);
-      const total = ca + exam;
+      const row = byStudent.get(student.id);
+      const total = row?.total ?? 0;
       subjectScores[key][student.id] = total;
       subjectStudents[key].push(total);
       studentTotals[student.id] = (studentTotals[student.id] ?? 0) + total;
@@ -83,12 +143,19 @@ export async function collateReportCards(opts: CollateOptions) {
   });
   const ranked = [...allAverages].sort((a, b) => b - a);
 
+  const shouldPublish = (studentId: string) => {
+    if (!publish) return false;
+    if (publishStudentIds && publishStudentIds.length > 0) return publishStudentIds.includes(studentId);
+    return true;
+  };
+
   const reportCards = [];
   for (const student of students) {
     const total = studentTotals[student.id];
     const count = studentCount[student.id];
     const average = count ? (total ?? 0) / count : 0;
     const overallPosition = ranked.indexOf(average) + 1;
+    const willPublish = shouldPublish(student.id);
 
     const existing = await prisma.reportCard.findUnique({
       where: { studentId_termId: { studentId: student.id, termId } },
@@ -102,9 +169,9 @@ export async function collateReportCards(opts: CollateOptions) {
             position: overallPosition,
             classSize: students.length,
             subjectCount: Object.keys(subjectsInReport).length,
-            isPublished: publish ? true : existing.isPublished,
-            publishedAt: publish && !existing.isPublished ? new Date() : existing.publishedAt,
-            publishedBy: publish && !existing.isPublished ? publishedBy : existing.publishedBy,
+            isPublished: willPublish ? true : existing.isPublished,
+            publishedAt: willPublish && !existing.isPublished ? new Date() : existing.publishedAt,
+            publishedBy: willPublish && !existing.isPublished ? publishedBy : existing.publishedBy,
             classGroupId,
             sessionId: term.sessionId,
           },
@@ -121,9 +188,9 @@ export async function collateReportCards(opts: CollateOptions) {
             position: overallPosition,
             classSize: students.length,
             subjectCount: Object.keys(subjectsInReport).length,
-            isPublished: Boolean(publish),
-            publishedAt: publish ? new Date() : undefined,
-            publishedBy: publish ? publishedBy : undefined,
+            isPublished: willPublish,
+            publishedAt: willPublish ? new Date() : undefined,
+            publishedBy: willPublish ? publishedBy : undefined,
             isPaidGated: true,
           },
         });
@@ -140,8 +207,8 @@ export async function collateReportCards(opts: CollateOptions) {
         await prisma.reportCardItem.update({
           where: { id: existingItem.id },
           data: {
-            ca: Math.min(score, CA_CAP),
-            exam: Math.max(score - Math.min(score, CA_CAP), 0),
+            ca: Math.min(score, config.caCap),
+            exam: Math.max(score - Math.min(score, config.caCap), 0),
             total: Math.round(score),
             grade,
             remark,
@@ -155,8 +222,8 @@ export async function collateReportCards(opts: CollateOptions) {
             classSubjectId: info.classSubjectId,
             subjectId: info.id,
             subjectName: info.name,
-            ca: Math.min(score, CA_CAP),
-            exam: Math.max(score - Math.min(score, CA_CAP), 0),
+            ca: Math.min(score, config.caCap),
+            exam: Math.max(score - Math.min(score, config.caCap), 0),
             total: Math.round(score),
             grade,
             remark,
