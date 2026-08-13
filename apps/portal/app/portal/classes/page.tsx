@@ -263,9 +263,9 @@ export default function ClassesPage() {
                     ))}
                   </Select>
                   <div className="classes-card__actions">
-                    <Button size="sm" variant="outline" onClick={() => { setAssignTarget(c); setAssignForm({}); }}><Icon name="quiz" size={14} /> Assign subject</Button>
+                    <Button size="sm" variant="outline" onClick={() => { setAssignTarget(c); setAssignForm({}); }}>Assign subject</Button>
                     <Button size="sm" variant="outline" onClick={() => openEditClass(c)}>Edit</Button>
-                    <Button size="sm" variant="danger" onClick={() => deleteClass(c)} title={`Delete ${c.level.name} ${c.name}`}>Delete class</Button>
+                    <Button size="sm" variant="danger" onClick={() => deleteClass(c)} title={`Delete ${c.level.name} ${c.name}`}>Delete</Button>
                   </div>
                 </div>
               )}

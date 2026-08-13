@@ -724,13 +724,9 @@ body {
 .classes-card .duga-card__pad { overflow-wrap: anywhere; }
 .classes-card select, .classes-card button { max-width: 100%; }
 .classes-card .duga-card__header { border-left: 3px solid var(--duga-gold); }
-.classes-card__actions { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; min-width: 0; }
-.classes-card__actions .duga-btn { min-width: 0; padding-inline: 10px; }
-.classes-card__actions .duga-btn:first-child { white-space: normal; }
-@media (max-width: 420px) {
-  .classes-card__actions { grid-template-columns: 1fr 1fr; }
-  .classes-card__actions .duga-btn:first-child { grid-column: 1 / -1; }
-}
+.classes-card__actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; min-width: 0; }
+.classes-card__actions .duga-btn { width: 100%; min-width: 0; padding-inline: 10px; white-space: nowrap; }
+.classes-card__actions .duga-btn:first-child { grid-column: 1 / -1; }
 .classes-section h2 { display: flex; align-items: center; gap: 9px; letter-spacing: -0.01em; }
 .classes-section h2::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--duga-gold); box-shadow: 0 0 0 4px rgba(217, 169, 42, 0.15); }
 
