@@ -13,7 +13,18 @@ async function loadUser(claims: PortalClaims) {
     where: { id: claims.sub },
     include: {
       student: true,
-      teacher: true,
+      // Keep authentication independent from optional teacher-profile fields.
+      // This prevents a newly deployed profile migration from blocking login.
+      teacher: {
+        select: {
+          id: true,
+          userId: true,
+          schoolId: true,
+          staffNumber: true,
+          specialty: true,
+          designation: true,
+        },
+      },
       parent: { include: { students: { include: { student: { include: { classGroup: { include: { level: true } } } } } } } },
       admin: true,
     },
