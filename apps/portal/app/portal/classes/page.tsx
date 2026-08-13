@@ -220,11 +220,11 @@ export default function ClassesPage() {
             ["Primary classes", primaryClasses],
             ["Secondary classes", secondaryClasses],
           ] as const).map(([title, sectionClasses]) => sectionClasses.length > 0 && (
-          <section key={title}>
+          <section key={title} className="classes-section">
             <h2 style={{ fontSize: 17, margin: "0 0 12px", color: "var(--duga-primary-ink)" }}>{title}</h2>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 16 }}>
+            <div className="classes-card-grid">
           {sectionClasses.map((c) => (
-            <Card key={c.id} title={`${c.level.name} ${c.name}`}>
+            <Card key={c.id} title={`${c.level.name} ${c.name}`} className="classes-card">
               <div style={{ fontSize: 13, color: "var(--duga-muted)", marginBottom: 8 }}>
                 {c.session.name}
                 {c.room ? ` · Room ${c.room}` : ""}

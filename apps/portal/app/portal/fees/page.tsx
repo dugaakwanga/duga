@@ -75,9 +75,7 @@ export default function FeesPage() {
   const [form, setForm] = useState<Record<string, string>>({});
   const [paying, setPaying] = useState<string | null>(null);
   const [paymentRecordsVisible, setPaymentRecordsVisible] = useState(true);
-  const [adminPaymentVisibility, setAdminPaymentVisibility] = useState(false);
-
-  const isStaff = role === "ADMIN" || role === "OWNER" || role === "BURSAR";
+  const isStaff = role === "OWNER" || role === "BURSAR";
 
   async function load() {
     const d = await api<{
@@ -90,7 +88,6 @@ export default function FeesPage() {
       levels: ClassLevel[];
       classGroups: ClassGroup[];
       paymentRecordsVisible?: boolean;
-      adminPaymentVisibility?: boolean;
     }>("fees");
     setRole(d.role);
     setInvoices(d.invoices);
@@ -101,7 +98,6 @@ export default function FeesPage() {
     setLevels(d.levels ?? []);
     setClassGroups(d.classGroups ?? []);
     setPaymentRecordsVisible(d.paymentRecordsVisible !== false);
-    setAdminPaymentVisibility(d.adminPaymentVisibility === true);
   }
 
   useEffect(() => {
@@ -157,15 +153,6 @@ export default function FeesPage() {
       alert((e as Error).message);
     } finally {
       setPaying(null);
-    }
-  }
-
-  async function setAdminVisibility(enabled: boolean) {
-    try {
-      await api("fees/setAdminPaymentVisibility", { method: "POST", body: { enabled } });
-      setAdminPaymentVisibility(enabled);
-    } catch (e) {
-      alert((e as Error).message);
     }
   }
 
@@ -291,14 +278,6 @@ export default function FeesPage() {
 
       {isStaff && (
         <>
-          {role === "OWNER" && (
-            <Card title="Payment record visibility" style={{ marginTop: 20 }}>
-              <p style={{ marginTop: 0 }}>Only you can view money collected by default. You can allow all administrators to view payment records and collection totals.</p>
-              <Button variant={adminPaymentVisibility ? "outline" : "primary"} onClick={() => setAdminVisibility(!adminPaymentVisibility)}>
-                {adminPaymentVisibility ? "Restrict payment records to owner" : "Allow administrators to view payment records"}
-              </Button>
-            </Card>
-          )}
           <Card title="Fee types" style={{ marginTop: 20 }}>
             {feeTypes.length === 0 ? (
               <EmptyState title="No fee types yet" hint="Add fee types (e.g. Tuition, Transport) then attach amounts per class." />

@@ -91,11 +91,16 @@ button {
   border: 1px solid var(--duga-border);
   border-radius: var(--duga-radius-lg);
   box-shadow: var(--duga-shadow);
+  min-width: 0;
+  overflow: hidden;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 }
+.duga-card:hover { transform: translateY(-2px); border-color: var(--duga-primary-pale); box-shadow: var(--duga-shadow-lg); }
 .duga-card__pad { padding: 20px; }
 .duga-card__header {
   padding: 16px 20px;
   border-bottom: 1px solid var(--duga-border);
+  background: linear-gradient(100deg, rgba(234, 240, 247, 0.9), rgba(255, 255, 255, 0.96));
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -117,7 +122,7 @@ button {
   font-size: 14px;
   font-family: inherit;
   color: var(--duga-ink);
-  background: #fff;
+  background: linear-gradient(180deg, #fff, var(--duga-surface));
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .duga-input:focus, .duga-select:focus, .duga-textarea:focus {
@@ -125,6 +130,7 @@ button {
   border-color: var(--duga-primary);
   box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.14);
 }
+.duga-input:hover, .duga-select:hover, .duga-textarea:hover { border-color: var(--duga-primary-pale); }
 .duga-textarea { resize: vertical; min-height: 90px; }
 .duga-input--error, .duga-select--error { border-color: var(--duga-danger); }
 .duga-field__error { font-size: 12px; color: var(--duga-danger); }

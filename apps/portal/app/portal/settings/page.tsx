@@ -28,7 +28,6 @@ interface SettingsData {
   subscription: { plan: string; status: string; expiresAt: string | null } | null;
   terms: Term[];
   role?: string;
-  financeAccess?: boolean;
   schoolDays?: SchoolDaysConfig;
   restrictions?: RestrictionsConfig;
 }
@@ -94,18 +93,6 @@ export default function SettingsPage() {
     await api("settings/activateTerm", { method: "POST", body: { termId: id } });
     const d = await api<SettingsData>("settings");
     setData(d);
-  }
-
-  async function toggleFinanceAccess() {
-    setError(null);
-    try {
-      const next = !data?.financeAccess;
-      await api("settings/setFinanceAccess", { method: "POST", body: { value: next } });
-      const d = await api<SettingsData>("settings");
-      setData(d);
-    } catch (e) {
-      setError((e as Error).message);
-    }
   }
 
   async function saveSchoolDays() {
@@ -224,21 +211,6 @@ export default function SettingsPage() {
               <Alert tone="info">No subscription on file.</Alert>
             )}
           </Card>
-
-          {data.role === "OWNER" && (
-            <Card title="Finance dashboard access" style={{ marginTop: 16 }}>
-              <div style={{ fontSize: 13.5, color: "var(--duga-ink-2)", marginBottom: 12 }}>
-                The finance dashboard (Reports) is visible only to the school owner by default. Toggle this to let the
-                school admin view it as well.
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <Badge tone={data.financeAccess ? "success" : "neutral"}>{data.financeAccess ? "Admin access granted" : "Owner only"}</Badge>
-                <Button variant="outline" size="sm" onClick={toggleFinanceAccess}>
-                  {data.financeAccess ? "Revoke admin access" : "Grant admin access"}
-                </Button>
-              </div>
-            </Card>
-          )}
 
           <Card title="Restrictions" style={{ marginTop: 16 }}>
             <div style={{ fontSize: 13.5, color: "var(--duga-ink-2)", marginBottom: 12 }}>

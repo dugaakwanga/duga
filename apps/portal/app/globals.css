@@ -150,6 +150,18 @@
 }
 
 .portal-content { padding: 28px; max-width: 1240px; width: 100%; }
+.portal-content::before {
+  content: "";
+  position: fixed;
+  width: 420px;
+  height: 420px;
+  right: -180px;
+  bottom: -180px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(217, 169, 42, 0.14), transparent 68%);
+  pointer-events: none;
+  z-index: -1;
+}
 @media (max-width: 480px) {
   .portal-content { padding: 16px; }
 }
@@ -706,6 +718,12 @@ body {
 .duga-empty { font-size: 15px; font-weight: 650; }
 .duga-nav-link { font-size: 15.5px; font-weight: 650; }
 .duga-nav-link--active { font-weight: 800; }
+
+/* Classes — keep every card and its controls inside the available width. */
+.classes-section { min-width: 0; }
+.classes-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 16px; }
+.classes-card .duga-card__pad { overflow-wrap: anywhere; }
+.classes-card select, .classes-card button { max-width: 100%; }
 
 /* ==========================================================================
    Mobile polish — login carousel, role landing, shell

@@ -6,13 +6,10 @@ const BURSAR_ACCESS_KEY = "bursarFinanceAccess";
 
 async function assertPayrollAccess(ctx: Parameters<NonNullable<Module["list"]>>[0], manage = false) {
   can(ctx, manage ? "payroll:manage" : "payroll:view");
-  if (ctx.session.user.role === "BURSAR") {
-    const setting = await prisma.schoolSetting.findUnique({ where: { schoolId_key: { schoolId: ctx.session.user.schoolId, key: BURSAR_ACCESS_KEY } } });
-    if (setting?.value !== true) {
-      const err = new Error("The owner has not assigned payroll access to this bursar") as Error & { status?: number };
-      err.status = 403;
-      throw err;
-    }
+  if (!["OWNER", "BURSAR"].includes(ctx.session.user.role)) {
+    const err = new Error("Finance is managed only by the bursar and school owner") as Error & { status?: number };
+    err.status = 403;
+    throw err;
   }
 }
 

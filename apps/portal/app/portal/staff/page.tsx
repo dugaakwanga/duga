@@ -32,6 +32,7 @@ export default function StaffPage() {
   const [tempPassword, setTempPassword] = useState("");
   const [resetError, setResetError] = useState<string | null>(null);
   const [resetSaving, setResetSaving] = useState(false);
+  const canManage = (user: StaffUser) => currentRole === "OWNER" || !["OWNER", "ADMIN", "BURSAR"].includes(user.role);
 
   async function load() {
     setLoading(true);
@@ -141,13 +142,13 @@ export default function StaffPage() {
                 <td><Badge tone={u.status === "ACTIVE" ? "success" : "danger"}>{u.status}</Badge></td>
                 <td>
                   <div style={{ display: "flex", gap: 6 }}>
-                    {(u.role !== "OWNER" || currentRole === "OWNER") && (
+                    {canManage(u) && (
                       <Button size="sm" variant="ghost" onClick={() => { setResetTarget(u); setTempPassword(""); setResetError(null); }}>
                         Set password
                       </Button>
                     )}
-                    {(u.role !== "OWNER" || currentRole === "OWNER") && <Button size="sm" variant="outline" onClick={() => openEdit(u)}>Edit</Button>}
-                    {u.role !== "OWNER" && (
+                    {canManage(u) && <Button size="sm" variant="outline" onClick={() => openEdit(u)}>Edit</Button>}
+                    {canManage(u) && u.role !== "OWNER" && (
                       <Button size="sm" variant="ghost" onClick={() => removeStaff(u)}>Remove</Button>
                     )}
                   </div>
@@ -167,8 +168,8 @@ export default function StaffPage() {
                 <Select value={form.role ?? ""} onChange={(e) => setForm({ ...form, role: e.target.value })}>
                   <option value="">Select…</option>
                   <option value="TEACHER">Teacher</option>
-                  <option value="ADMIN">Admin</option>
-                  <option value="BURSAR">Bursar</option>
+                  {currentRole === "OWNER" && <option value="ADMIN">Admin</option>}
+                  {currentRole === "OWNER" && <option value="BURSAR">Bursar</option>}
                 </Select>
               </Field>
               <Field label="Designation">

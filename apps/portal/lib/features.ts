@@ -99,7 +99,7 @@ export const FEATURES: FeatureDef[] = [
     label: "Fees & payments",
     group: "Operations",
     resources: ["fees"],
-    roles: ["ADMIN", "PARENT", "STUDENT"],
+    roles: ["BURSAR", "PARENT", "STUDENT"],
   },
   {
     id: "hostel",
@@ -141,14 +141,14 @@ export const FEATURES: FeatureDef[] = [
     label: "Reports & financials",
     group: "Operations",
     resources: ["reports"],
-    roles: ["ADMIN"],
+    roles: ["BURSAR"],
   },
   {
     id: "payroll",
     label: "Payroll",
     group: "Operations",
     resources: ["payroll"],
-    roles: ["ADMIN", "BURSAR"],
+    roles: ["BURSAR"],
   },
   {
     id: "messaging",

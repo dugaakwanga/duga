@@ -4,6 +4,12 @@ import { logAudit } from "@duga/core/server";
 import type { Module } from ".";
 import { can, str } from "../helpers";
 
+function assertStaffTargetAccess(actorRole: string, targetRole: string) {
+  if (actorRole !== "OWNER" && ["OWNER", "ADMIN", "BURSAR"].includes(targetRole)) {
+    throw new Error("Only the school owner can manage administrator or bursar accounts");
+  }
+}
+
 export const staffModule: Module = {
   async list(ctx) {
     can(ctx, "staff:view");
@@ -54,6 +60,7 @@ export const staffModule: Module = {
     if (!role || !firstName || !lastName) throw new Error("role, firstName and lastName are required");
     if (!email && !phone && !staffNumber) throw new Error("Provide at least one of email, phone number or staff ID");
     if (!["TEACHER", "ADMIN", "BURSAR"].includes(role)) throw new Error("Invalid staff role");
+    assertStaffTargetAccess(ctx.session.user.role, role);
     if (tempPassword && tempPassword.length < 8) throw new Error("Temporary password must be at least 8 characters");
 
     const emailOrGenerated = email ?? (staffNumber ? `${staffNumber}@staff.local` : `${phone}@phone.local`);
@@ -103,6 +110,7 @@ export const staffModule: Module = {
     const target = await prisma.user.findFirst({ where: { id: ctx.id, schoolId } });
     if (!target) throw new Error("Staff member not found");
     if (!["TEACHER", "ADMIN", "BURSAR", "OWNER"].includes(target.role)) throw new Error("Not a staff member");
+    assertStaffTargetAccess(ctx.session.user.role, target.role);
     if (target.role === "OWNER" && ctx.session.user.role !== "OWNER") throw new Error("Only the school owner can update the owner account");
     const data: Record<string, unknown> = {};
     const b = ctx.body;
@@ -120,6 +128,7 @@ export const staffModule: Module = {
     const schoolId = ctx.session.user.schoolId;
     const target = await prisma.user.findFirst({ where: { id: ctx.id, schoolId } });
     if (!target) throw new Error("Staff member not found");
+    assertStaffTargetAccess(ctx.session.user.role, target.role);
     if (target.role === "OWNER") throw new Error("The school owner cannot be removed");
     if (target.id === ctx.session.user.id) throw new Error("You cannot remove your own account");
     await prisma.user.update({ where: { id: ctx.id }, data: { status: "SUSPENDED" } });
@@ -140,6 +149,7 @@ export const staffModule: Module = {
       const target = await prisma.user.findFirst({ where: { id: targetId, schoolId: ctx.session.user.schoolId } });
       if (!target) throw new Error("Staff member not found");
       if (!["TEACHER", "ADMIN", "BURSAR", "OWNER"].includes(target.role)) throw new Error("Not a staff member");
+      assertStaffTargetAccess(ctx.session.user.role, target.role);
       if (target.role === "OWNER" && ctx.session.user.role !== "OWNER") throw new Error("Only the school owner can reset the owner password");
       await prisma.user.update({
         where: { id: target.id },
