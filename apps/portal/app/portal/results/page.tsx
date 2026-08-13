@@ -27,7 +27,7 @@ interface ReportCard {
   average: number | null;
   position: number | null;
   term: { name: string } | null;
-  student: { id: string; user: { firstName: string; lastName: string } };
+  student: { id: string; photoUrl?: string | null; user: { firstName: string; lastName: string } };
   classGroup: { level: { name: string }; name: string } | null;
   access?: "granted" | "locked";
   gatedReason?: string | null;
@@ -122,7 +122,10 @@ export default function ResultsPage() {
     const rows = (rc.items ?? []).map((item) => `<tr><td>${esc(item.subject.name)}</td><td>${esc(item.ca)}</td><td>${esc(item.exam)}</td><td>${esc(item.total)}</td><td>${esc(item.grade)}</td></tr>`).join("");
     const ratings = (title: string, values?: Record<string, string> | null) => values && Object.keys(values).length
       ? `<section><h3>${esc(title)}</h3><table><tbody>${Object.entries(values).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("")}</tbody></table></section>` : "";
-    return `<article class="report"><h1>Student Report Card</h1><h2>${esc(student)}</h2><p><b>Term:</b> ${esc(rc.term?.name)} &nbsp; <b>Average:</b> ${rc.average == null ? "—" : esc(Number(rc.average).toFixed(1))}% &nbsp; <b>Position:</b> ${esc(rc.position)}</p><table><thead><tr><th>Subject</th><th>CA</th><th>Exam</th><th>Total</th><th>Grade</th></tr></thead><tbody>${rows}</tbody></table>${ratings("Psychomotor development", rc.psychomotor)}${ratings("Co-curricular activities", rc.coCurricular)}<section><h3>Teacher's remark</h3><p>${esc(rc.remark)}</p><h3>Attendance / conduct</h3><p>${esc(rc.attendanceRemark)}</p></section></article>`;
+    const photo = rc.student.photoUrl
+      ? `<img src="${esc(rc.student.photoUrl)}" alt="Passport" style="width:76px;height:76px;border-radius:50%;object-fit:cover;border:2px solid #9aa4b2;display:block;margin:0 auto 8px" />`
+      : "";
+    return `<article class="report"><h1>Student Report Card</h1>${photo}<h2>${esc(student)}</h2><p><b>Term:</b> ${esc(rc.term?.name)} &nbsp; <b>Average:</b> ${rc.average == null ? "—" : esc(Number(rc.average).toFixed(1))}% &nbsp; <b>Position:</b> ${esc(rc.position)}</p><table><thead><tr><th>Subject</th><th>CA</th><th>Exam</th><th>Total</th><th>Grade</th></tr></thead><tbody>${rows}</tbody></table>${ratings("Psychomotor development", rc.psychomotor)}${ratings("Co-curricular activities", rc.coCurricular)}<section><h3>Teacher's remark</h3><p>${esc(rc.remark)}</p><h3>Attendance / conduct</h3><p>${esc(rc.attendanceRemark)}</p></section></article>`;
   }
 
   function printCards(selected: ReportCard[]) {
@@ -453,13 +456,23 @@ export default function ResultsPage() {
         ) : (
           cards.map((rc) => (
             <Card key={rc.id} title={`${rc.student.user.firstName} ${rc.student.user.lastName}`} style={{ marginBottom: 16 }}>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-                <Badge tone="info">{rc.term?.name}</Badge>
-                <Badge tone={rc.access === "granted" ? "success" : "warning"}>
-                  {rc.access === "granted" ? "Unlocked" : "Locked"}
-                </Badge>
-                {rc.average !== null && <Badge tone="accent">Average: {Number(rc.average).toFixed(1)}</Badge>}
-                {rc.position !== null && <Badge tone="neutral">Position: {rc.position}</Badge>}
+              <div style={{ display: "flex", gap: 16, marginBottom: 12 }}>
+                {rc.student.photoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={rc.student.photoUrl} alt={`${rc.student.user.firstName} ${rc.student.user.lastName}`} style={{ width: 64, height: 64, borderRadius: "50%", objectFit: "cover", border: "2px solid var(--duga-border)", flexShrink: 0 }} />
+                ) : (
+                  <div style={{ width: 64, height: 64, borderRadius: "50%", background: "linear-gradient(135deg, var(--duga-primary), var(--duga-gold))", color: "#fff", display: "grid", placeItems: "center", fontWeight: 700, flexShrink: 0 }}>
+                    {`${(rc.student.user.firstName[0] ?? "")}${(rc.student.user.lastName[0] ?? "")}`.toUpperCase()}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <Badge tone="info">{rc.term?.name}</Badge>
+                  <Badge tone={rc.access === "granted" ? "success" : "warning"}>
+                    {rc.access === "granted" ? "Unlocked" : "Locked"}
+                  </Badge>
+                  {rc.average !== null && <Badge tone="accent">Average: {Number(rc.average).toFixed(1)}</Badge>}
+                  {rc.position !== null && <Badge tone="neutral">Position: {rc.position}</Badge>}
+                </div>
               </div>
               {rc.access === "locked" ? (
                 <Alert tone="warning">{rc.gatedReason ?? "Results are locked until fees are cleared."}</Alert>
