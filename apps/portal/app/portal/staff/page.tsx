@@ -138,11 +138,12 @@ export default function StaffPage() {
         <EmptyState title="No staff" />
       ) : (
         <Card>
-          <Table headers={["Name", "Role", "Email", "Staff no.", "Status", ""]}>
+          <Table headers={["Name", "Role", "Designation", "Email", "Staff no.", "Status", ""]}>
             {items.map((u) => (
               <tr key={u.id}>
                 <td>{u.firstName} {u.lastName}</td>
                 <td><Badge tone={u.role === "OWNER" ? "accent" : u.role === "ADMIN" ? "info" : "neutral"}>{u.role.toLowerCase()}</Badge></td>
+                <td>{u.teacher?.designation ?? u.admin?.designation ?? "—"}</td>
                 <td>{u.email}</td>
                 <td>{u.teacher?.staffNumber ?? u.admin?.designation ?? "—"}</td>
                 <td><Badge tone={u.status === "ACTIVE" ? "success" : "danger"}>{u.status}</Badge></td>
