@@ -144,7 +144,7 @@ export const learningModule: Module = {
       include: { classGroup: { include: { level: true } } },
     });
     if (!classSubject) throw new Error("You can only add content to your own subjects");
-    const ownerTeacherId = role === "TEACHER" ? teacher.id : classSubject.teacherId;
+    const ownerTeacherId = (role === "TEACHER" ? teacher.id : classSubject.teacherId) ?? teacher.id;
     const common = { schoolId, classSubjectId, teacherId: ownerTeacherId, termId: str(ctx.body.termId) };
 
     if (kind === "note") {

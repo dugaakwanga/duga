@@ -37,7 +37,6 @@ export default function ClassesPage() {
   const [assignTarget, setAssignTarget] = useState<ClassGroup | null>(null);
   const [assignSection, setAssignSection] = useState<"PRIMARY" | "SECONDARY">("SECONDARY");
   const [assignSubjectIds, setAssignSubjectIds] = useState<string[]>([]);
-  const [assignTeacherId, setAssignTeacherId] = useState<string>("");
   const [editingClass, setEditingClass] = useState<ClassGroup | null>(null);
   const [editingItem, setEditingItem] = useState<{ kind: "subject" | "level" | "session"; id: string } | null>(null);
   const isAdmin = role === "OWNER" || role === "ADMIN";
@@ -177,12 +176,11 @@ export default function ClassesPage() {
 
   async function assignSubject() {
     if (!assignTarget) return;
-    if (assignSubjectIds.length === 0 || !assignTeacherId) return alert("Choose at least one subject and a teacher");
+    if (assignSubjectIds.length === 0) return alert("Choose at least one subject");
     try {
-      await api(`classes/${assignTarget.id}/assignSubject`, { method: "POST", body: { subjectIds: assignSubjectIds, teacherId: assignTeacherId } });
+      await api(`classes/${assignTarget.id}/assignSubject`, { method: "POST", body: { subjectIds: assignSubjectIds } });
       setAssignTarget(null);
       setAssignSubjectIds([]);
-      setAssignTeacherId("");
       load();
     } catch (e) {
       alert((e as Error).message);
@@ -266,7 +264,7 @@ export default function ClassesPage() {
                     ))}
                   </Select>
                   <div className="classes-card__actions">
-                    <Button size="sm" variant="outline" onClick={() => { setAssignTarget(c); setAssignSection(c.level.section === "PRIMARY" ? "PRIMARY" : "SECONDARY"); setAssignSubjectIds((c.classSubjects ?? []).map((cs) => cs.subject?.id ?? "").filter(Boolean)); setAssignTeacherId(c.classSubjects?.[0]?.teacher?.id ?? ""); }}>Assign subject</Button>
+                    <Button size="sm" variant="outline" onClick={() => { setAssignTarget(c); setAssignSection(c.level.section === "PRIMARY" ? "PRIMARY" : "SECONDARY"); setAssignSubjectIds((c.classSubjects ?? []).map((cs) => cs.subject?.id ?? "").filter(Boolean)); }}>Assign subject</Button>
                     <Button size="sm" variant="outline" onClick={() => openEditClass(c)}>Edit</Button>
                     <Button size="sm" variant="danger" onClick={() => deleteClass(c)} title={`Delete ${c.level.name} ${c.name}`}>Delete</Button>
                   </div>
@@ -415,17 +413,9 @@ export default function ClassesPage() {
             })}
           </div>
         </Field>
-        <Field label="Teacher" required>
-          <Select value={assignTeacherId} onChange={(e) => setAssignTeacherId(e.target.value)}>
-            <option value="">Select teacher…</option>
-            {teachers.map((t) => (
-              <option key={t.id} value={t.id}>{t.firstName} {t.lastName}</option>
-            ))}
-          </Select>
-        </Field>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <Button variant="ghost" onClick={() => setAssignTarget(null)}>Cancel</Button>
-          <Button onClick={assignSubject} disabled={assignSubjectIds.length === 0 || !assignTeacherId}>Assign {assignSubjectIds.length > 0 ? `(${assignSubjectIds.length})` : ""}</Button>
+          <Button onClick={assignSubject} disabled={assignSubjectIds.length === 0}>Assign {assignSubjectIds.length > 0 ? `(${assignSubjectIds.length})` : ""}</Button>
         </div>
       </Modal>
 

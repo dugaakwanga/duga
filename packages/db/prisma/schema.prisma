@@ -597,13 +597,13 @@ model ClassSubject {
   schoolId    String
   classGroupId String
   subjectId   String
-  teacherId   String
+  teacherId   String?
   weeklyPeriods Int    @default(0)
   createdAt   DateTime @default(now())
 
   classGroup ClassGroup @relation(fields: [classGroupId], references: [id], onDelete: Cascade)
   subject    Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  teacher    Teacher    @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  teacher    Teacher?   @relation(fields: [teacherId], references: [id], onDelete: SetNull)
 
   lessonNotes LessonNote[]
   assignments Assignment[]

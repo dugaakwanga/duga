@@ -107,26 +107,28 @@ export const classesModule: Module = {
   },
 
   actions: {
-    // Assign one or more subjects + teacher to a class
+    // Assign one or more subjects (optionally with a teacher) to a class
     assignSubject: async (ctx) => {
       can(ctx, "classes:manage");
       const schoolId = ctx.session.user.schoolId;
       const raw = ctx.body.subjectIds ?? (ctx.body.subjectId ? [ctx.body.subjectId] : []);
       const subjectIds: string[] = (Array.isArray(raw) ? raw.map((s: unknown) => str(s)) : [str(raw)]).filter((s): s is string => !!s);
-      const teacherId = str(ctx.body.teacherId);
-      if (subjectIds.length === 0 || !teacherId) throw new Error("subjectIds and teacherId required");
+      if (subjectIds.length === 0) throw new Error("subjectIds required");
       const cls = await prisma.classGroup.findFirst({ where: { id: ctx.id, schoolId } });
       if (!cls) throw new Error("Class not found");
       const subjects = await prisma.subject.findMany({ where: { id: { in: subjectIds }, schoolId } });
       if (subjects.length !== subjectIds.length) throw new Error("One or more subjects not found");
-      const teacher = await prisma.teacher.findFirst({ where: { schoolId, OR: [{ id: teacherId }, { userId: teacherId }] } });
-      if (!teacher) throw new Error("Teacher not found");
+      const teacherId = str(ctx.body.teacherId);
+      const teacher = teacherId
+        ? await prisma.teacher.findFirst({ where: { schoolId, OR: [{ id: teacherId }, { userId: teacherId }] } })
+        : null;
+      if (teacherId && !teacher) throw new Error("Teacher not found");
       const assigned: string[] = [];
       for (const subjectId of subjectIds) {
         const cs = await prisma.classSubject.upsert({
           where: { classGroupId_subjectId: { classGroupId: ctx.id!, subjectId } },
-          update: { teacherId: teacher.id },
-          create: { schoolId, classGroupId: ctx.id!, subjectId, teacherId: teacher.id, weeklyPeriods: Number(ctx.body.weeklyPeriods) || 4 },
+          update: { teacherId: teacher?.id ?? null },
+          create: { schoolId, classGroupId: ctx.id!, subjectId, teacherId: teacher?.id ?? null, weeklyPeriods: Number(ctx.body.weeklyPeriods) || 4 },
         });
         assigned.push(cs.id);
         await logAudit({ schoolId, userId: ctx.session.user.id, action: "classSubject.assigned", entityType: "ClassSubject", entityId: cs.id });
