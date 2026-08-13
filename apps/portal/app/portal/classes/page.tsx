@@ -37,6 +37,7 @@ export default function ClassesPage() {
   const [assignTarget, setAssignTarget] = useState<ClassGroup | null>(null);
   const [assignSection, setAssignSection] = useState<"PRIMARY" | "SECONDARY">("SECONDARY");
   const [assignSubjectIds, setAssignSubjectIds] = useState<string[]>([]);
+  const [shownSubjects, setShownSubjects] = useState<Record<string, boolean>>({});
   const [editingClass, setEditingClass] = useState<ClassGroup | null>(null);
   const [editingItem, setEditingItem] = useState<{ kind: "subject" | "level" | "session"; id: string } | null>(null);
   const isAdmin = role === "OWNER" || role === "ADMIN";
@@ -242,20 +243,34 @@ export default function ClassesPage() {
               </div>
               {isAdmin && (
                 <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-                  {(c.classSubjects?.length ?? 0) > 0 && (
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                      {(c.classSubjects ?? []).map((cs) => (
-                        <button
-                          key={cs.id}
-                          onClick={() => unassignSubject(c, cs.subject!.id)}
-                          className="duga-btn duga-btn--sm duga-btn--ghost"
-                          title={`Unassign ${cs.subject!.name}`}
-                          style={{ fontSize: 12, padding: "2px 8px", maxWidth: "100%", overflowWrap: "anywhere" }}
-                        >
-                          {cs.subject!.name} ×
-                        </button>
-                      ))}
-                    </div>
+                  <div className="classes-card__actions">
+                    <Button size="sm" variant={shownSubjects[c.id] ? "ghost" : "outline"} onClick={() => setShownSubjects((prev) => ({ ...prev, [c.id]: !prev[c.id] }))}>
+                      Subjects ({c.classSubjects?.length ?? 0})
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => { setAssignTarget(c); setAssignSection(c.level.section === "PRIMARY" ? "PRIMARY" : "SECONDARY"); setAssignSubjectIds((c.classSubjects ?? []).map((cs) => cs.subject?.id ?? "").filter(Boolean)); }}>Assign subject</Button>
+                    <Button size="sm" variant="outline" onClick={() => openEditClass(c)}>Edit</Button>
+                    <Button size="sm" variant="danger" onClick={() => deleteClass(c)} title={`Delete ${c.level.name} ${c.name}`}>Delete</Button>
+                  </div>
+                  {shownSubjects[c.id] && (
+                    <>
+                      {(c.classSubjects?.length ?? 0) > 0 ? (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                          {(c.classSubjects ?? []).map((cs) => (
+                            <button
+                              key={cs.id}
+                              onClick={() => unassignSubject(c, cs.subject!.id)}
+                              className="duga-btn duga-btn--sm duga-btn--ghost"
+                              title={`Unassign ${cs.subject!.name}`}
+                              style={{ fontSize: 12, padding: "2px 8px", maxWidth: "100%", overflowWrap: "anywhere" }}
+                            >
+                              {cs.subject!.name} ×
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <Alert tone="info">No subjects assigned yet.</Alert>
+                      )}
+                    </>
                   )}
                   <Select value={c.formTeacher?.id ?? ""} onChange={(e) => assignFormTeacher(c, e.target.value)}>
                     <option value="">— Select class teacher —</option>
@@ -263,11 +278,6 @@ export default function ClassesPage() {
                       <option key={t.id} value={t.id}>{t.firstName} {t.lastName}</option>
                     ))}
                   </Select>
-                  <div className="classes-card__actions">
-                    <Button size="sm" variant="outline" onClick={() => { setAssignTarget(c); setAssignSection(c.level.section === "PRIMARY" ? "PRIMARY" : "SECONDARY"); setAssignSubjectIds((c.classSubjects ?? []).map((cs) => cs.subject?.id ?? "").filter(Boolean)); }}>Assign subject</Button>
-                    <Button size="sm" variant="outline" onClick={() => openEditClass(c)}>Edit</Button>
-                    <Button size="sm" variant="danger" onClick={() => deleteClass(c)} title={`Delete ${c.level.name} ${c.name}`}>Delete</Button>
-                  </div>
                 </div>
               )}
             </Card>
