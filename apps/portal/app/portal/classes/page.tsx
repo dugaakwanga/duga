@@ -35,7 +35,9 @@ export default function ClassesPage() {
   const [addForm, setAddForm] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [assignTarget, setAssignTarget] = useState<ClassGroup | null>(null);
-  const [assignForm, setAssignForm] = useState<Record<string, string>>({});
+  const [assignSection, setAssignSection] = useState<"PRIMARY" | "SECONDARY">("SECONDARY");
+  const [assignSubjectIds, setAssignSubjectIds] = useState<string[]>([]);
+  const [assignTeacherId, setAssignTeacherId] = useState<string>("");
   const [editingClass, setEditingClass] = useState<ClassGroup | null>(null);
   const [editingItem, setEditingItem] = useState<{ kind: "subject" | "level" | "session"; id: string } | null>(null);
   const isAdmin = role === "OWNER" || role === "ADMIN";
@@ -44,7 +46,7 @@ export default function ClassesPage() {
   const primarySubjects = subjects.filter((s) => s.section === "PRIMARY");
   const secondarySubjects = subjects.filter((s) => s.section === "SECONDARY");
   const assignableSubjects = assignTarget
-    ? subjects.filter((s) => s.section === assignTarget.level.section)
+    ? subjects.filter((s) => s.section === assignSection)
     : subjects;
 
   const load = useCallback(async () => {
@@ -175,11 +177,12 @@ export default function ClassesPage() {
 
   async function assignSubject() {
     if (!assignTarget) return;
-    if (!assignForm.subjectId || !assignForm.teacherId) return alert("Choose a subject and a teacher");
+    if (assignSubjectIds.length === 0 || !assignTeacherId) return alert("Choose at least one subject and a teacher");
     try {
-      await api(`classes/${assignTarget.id}/assignSubject`, { method: "POST", body: assignForm });
+      await api(`classes/${assignTarget.id}/assignSubject`, { method: "POST", body: { subjectIds: assignSubjectIds, teacherId: assignTeacherId } });
       setAssignTarget(null);
-      setAssignForm({});
+      setAssignSubjectIds([]);
+      setAssignTeacherId("");
       load();
     } catch (e) {
       alert((e as Error).message);
@@ -263,7 +266,7 @@ export default function ClassesPage() {
                     ))}
                   </Select>
                   <div className="classes-card__actions">
-                    <Button size="sm" variant="outline" onClick={() => { setAssignTarget(c); setAssignForm({}); }}>Assign subject</Button>
+                    <Button size="sm" variant="outline" onClick={() => { setAssignTarget(c); setAssignSection(c.level.section === "PRIMARY" ? "PRIMARY" : "SECONDARY"); setAssignSubjectIds((c.classSubjects ?? []).map((cs) => cs.subject?.id ?? "").filter(Boolean)); setAssignTeacherId(c.classSubjects?.[0]?.teacher?.id ?? ""); }}>Assign subject</Button>
                     <Button size="sm" variant="outline" onClick={() => openEditClass(c)}>Edit</Button>
                     <Button size="sm" variant="danger" onClick={() => deleteClass(c)} title={`Delete ${c.level.name} ${c.name}`}>Delete</Button>
                   </div>
@@ -384,20 +387,36 @@ export default function ClassesPage() {
         </div>
       </Modal>
 
-      <Modal open={!!assignTarget} onClose={() => setAssignTarget(null)} title={assignTarget ? `Assign subject — ${assignTarget.level.name} ${assignTarget.name}` : ""}>
+      <Modal open={!!assignTarget} onClose={() => setAssignTarget(null)} title={assignTarget ? `Assign subjects — ${assignTarget.level.name} ${assignTarget.name}` : ""}>
         <div style={{ marginBottom: 12 }}>
           {subjects.length === 0 && <Alert tone="warning">No subjects yet — create one with the &quot;Add subject&quot; button first.</Alert>}
+          {subjects.length > 0 && assignableSubjects.length === 0 && <Alert tone="warning">No {assignSection.toLowerCase()} subjects yet — create one with the &quot;Add subject&quot; button first.</Alert>}
         </div>
-        <Field label="Subject" required>
-          <Select value={assignForm.subjectId ?? ""} onChange={(e) => setAssignForm({ ...assignForm, subjectId: e.target.value })}>
-            <option value="">Select subject…</option>
-            {assignableSubjects.map((s) => (
-              <option key={s.id} value={s.id}>{s.name} ({s.section.toLowerCase()})</option>
-            ))}
+        <Field label="Section" required>
+          <Select value={assignSection} onChange={(e) => setAssignSection(e.target.value as "PRIMARY" | "SECONDARY")}>
+            <option value="PRIMARY">Primary</option>
+            <option value="SECONDARY">Secondary</option>
           </Select>
         </Field>
+        <Field label="Subjects" required hint="Select one or more subjects to assign to this class.">
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 220, overflowY: "auto", border: "1px solid var(--duga-border)", borderRadius: 8, padding: 8 }}>
+            {assignableSubjects.map((s) => {
+              const checked = assignSubjectIds.includes(s.id);
+              return (
+                <label key={s.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => setAssignSubjectIds((prev) => (checked ? prev.filter((id) => id !== s.id) : [...prev, s.id]))}
+                  />
+                  <span>{s.name}</span>
+                </label>
+              );
+            })}
+          </div>
+        </Field>
         <Field label="Teacher" required>
-          <Select value={assignForm.teacherId ?? ""} onChange={(e) => setAssignForm({ ...assignForm, teacherId: e.target.value })}>
+          <Select value={assignTeacherId} onChange={(e) => setAssignTeacherId(e.target.value)}>
             <option value="">Select teacher…</option>
             {teachers.map((t) => (
               <option key={t.id} value={t.id}>{t.firstName} {t.lastName}</option>
@@ -406,7 +425,7 @@ export default function ClassesPage() {
         </Field>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <Button variant="ghost" onClick={() => setAssignTarget(null)}>Cancel</Button>
-          <Button onClick={assignSubject}>Assign</Button>
+          <Button onClick={assignSubject} disabled={assignSubjectIds.length === 0 || !assignTeacherId}>Assign {assignSubjectIds.length > 0 ? `(${assignSubjectIds.length})` : ""}</Button>
         </div>
       </Modal>
 

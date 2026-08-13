@@ -107,26 +107,31 @@ export const classesModule: Module = {
   },
 
   actions: {
-    // Assign subject + teacher to a class
+    // Assign one or more subjects + teacher to a class
     assignSubject: async (ctx) => {
       can(ctx, "classes:manage");
       const schoolId = ctx.session.user.schoolId;
-      const subjectId = str(ctx.body.subjectId);
+      const raw = ctx.body.subjectIds ?? (ctx.body.subjectId ? [ctx.body.subjectId] : []);
+      const subjectIds: string[] = (Array.isArray(raw) ? raw.map((s: unknown) => str(s)) : [str(raw)]).filter((s): s is string => !!s);
       const teacherId = str(ctx.body.teacherId);
-      if (!subjectId || !teacherId) throw new Error("subjectId and teacherId required");
+      if (subjectIds.length === 0 || !teacherId) throw new Error("subjectIds and teacherId required");
       const cls = await prisma.classGroup.findFirst({ where: { id: ctx.id, schoolId } });
       if (!cls) throw new Error("Class not found");
-      const subject = await prisma.subject.findFirst({ where: { id: subjectId, schoolId } });
-      if (!subject) throw new Error("Subject not found");
+      const subjects = await prisma.subject.findMany({ where: { id: { in: subjectIds }, schoolId } });
+      if (subjects.length !== subjectIds.length) throw new Error("One or more subjects not found");
       const teacher = await prisma.teacher.findFirst({ where: { schoolId, OR: [{ id: teacherId }, { userId: teacherId }] } });
       if (!teacher) throw new Error("Teacher not found");
-      const cs = await prisma.classSubject.upsert({
-        where: { classGroupId_subjectId: { classGroupId: ctx.id!, subjectId } },
-        update: { teacherId: teacher.id },
-        create: { schoolId, classGroupId: ctx.id!, subjectId, teacherId: teacher.id, weeklyPeriods: Number(ctx.body.weeklyPeriods) || 4 },
-      });
-      await logAudit({ schoolId, userId: ctx.session.user.id, action: "classSubject.assigned", entityType: "ClassSubject", entityId: cs.id });
-      return cs;
+      const assigned: string[] = [];
+      for (const subjectId of subjectIds) {
+        const cs = await prisma.classSubject.upsert({
+          where: { classGroupId_subjectId: { classGroupId: ctx.id!, subjectId } },
+          update: { teacherId: teacher.id },
+          create: { schoolId, classGroupId: ctx.id!, subjectId, teacherId: teacher.id, weeklyPeriods: Number(ctx.body.weeklyPeriods) || 4 },
+        });
+        assigned.push(cs.id);
+        await logAudit({ schoolId, userId: ctx.session.user.id, action: "classSubject.assigned", entityType: "ClassSubject", entityId: cs.id });
+      }
+      return { count: assigned.length };
     },
 
     // Subjects (school-wide) create
