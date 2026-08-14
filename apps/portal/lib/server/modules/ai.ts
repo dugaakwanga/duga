@@ -10,7 +10,7 @@ import { can, str } from "../helpers";
 // actions return a clear message instead of crashing.
 // ---------------------------------------------------------------------------
 
-const DEFAULT_MODEL = "gemini-3-flash";
+const DEFAULT_MODEL = "gemini-3.5-flash";
 
 const MODEL = process.env.GEMINI_MODEL || DEFAULT_MODEL;
 const API_KEY = process.env.GEMINI_API_KEY || "";
