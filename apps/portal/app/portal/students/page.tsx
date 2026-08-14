@@ -48,6 +48,11 @@ export default function StudentsPage() {
   const [editForm, setEditForm] = useState<Record<string, string>>({});
   const [feeTarget, setFeeTarget] = useState<Student | null>(null);
   const [feeForm, setFeeForm] = useState<Record<string, string>>({});
+  const [levels, setLevels] = useState<{ id: string; name: string; section: string }[]>([]);
+  const [sessions, setSessions] = useState<{ id: string; name: string }[]>([]);
+  const [newClassOpen, setNewClassOpen] = useState(false);
+  const [newClass, setNewClass] = useState<Record<string, string>>({});
+  const [creatingClass, setCreatingClass] = useState(false);
   // Drill-down navigation: overview -> (secondary | primary | unassigned) -> classes -> students.
   type View = { name: "overview" } | { name: "category"; section: "SECONDARY" | "PRIMARY" | "UNASSIGNED" };
   const [view, setView] = useState<View>({ name: "overview" });
@@ -84,7 +89,9 @@ export default function StudentsPage() {
   }, [load]);
 
   useEffect(() => {
-    api<ClassOption[]>("teacher/classes", { method: "POST" }).then(setClasses).catch(() => setClasses([]));
+    api<{ items: ClassOption[]; levels: { id: string; name: string; section: string }[]; sessions: { id: string; name: string }[] }>("classes")
+      .then((d) => { setClasses(d.items); setLevels(d.levels ?? []); setSessions(d.sessions ?? []); })
+      .catch(() => setClasses([]));
   }, []);
 
   async function save() {
@@ -98,6 +105,33 @@ export default function StudentsPage() {
       alert((e as Error).message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function createAndUseClass() {
+    if (!newClass.levelId || !newClass.sessionId || !newClass.name?.trim()) return;
+    setCreatingClass(true);
+    try {
+      const created = await api<{ id: string; levelId: string; sessionId: string; name: string }>("classes", {
+        method: "POST",
+        body: { levelId: newClass.levelId, sessionId: newClass.sessionId, name: newClass.name.trim() },
+      });
+      const lvl = levels.find((l) => l.id === created.levelId);
+      const sess = sessions.find((s) => s.id === created.sessionId);
+      const opt: ClassOption = {
+        id: created.id,
+        name: created.name,
+        level: { name: lvl?.name ?? "?", section: lvl?.section ?? "SECONDARY" },
+        session: { name: sess?.name ?? "?" },
+      };
+      setClasses((c) => [...c, opt]);
+      setForm((f) => ({ ...f, classGroupId: created.id }));
+      setNewClassOpen(false);
+      setNewClass({});
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setCreatingClass(false);
     }
   }
 
@@ -325,13 +359,45 @@ export default function StudentsPage() {
             <Input value={form.phone ?? ""} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="0803 000 0000" />
           </Field>
           <Field label="Class" required>
-            <Select value={form.classGroupId ?? ""} onChange={(e) => setForm({ ...form, classGroupId: e.target.value })}>
+            <Select value={form.classGroupId ?? ""} onChange={(e) => { const v = e.target.value; if (v === "__new__") { setNewClassOpen(true); setForm({ ...form, classGroupId: "" }); } else { setNewClassOpen(false); setForm({ ...form, classGroupId: v }); } }}>
               <option value="">Select class…</option>
               {classes.map((c) => (
                 <option key={c.id} value={c.id}>{c.level.name} {c.name} ({c.session.name})</option>
               ))}
+              <option value="__new__">＋ Add new class…</option>
             </Select>
           </Field>
+          {newClassOpen && (
+            <div style={{ gridColumn: "1 / -1", border: "1px solid var(--duga-border)", borderRadius: 12, padding: 14, background: "var(--duga-surface-2, #fafafa)" }}>
+              <div style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--duga-muted)", marginBottom: 12 }}>Create the class first</div>
+              <div className="duga-form-grid">
+                <Field label="Level" required>
+                  <Select value={newClass.levelId ?? ""} onChange={(e) => setNewClass({ ...newClass, levelId: e.target.value })}>
+                    <option value="">Select level…</option>
+                    <optgroup label="Secondary">
+                      {levels.filter((l) => l.section === "SECONDARY").map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                    </optgroup>
+                    <optgroup label="Primary">
+                      {levels.filter((l) => l.section === "PRIMARY").map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                    </optgroup>
+                  </Select>
+                </Field>
+                <Field label="Session" required>
+                  <Select value={newClass.sessionId ?? ""} onChange={(e) => setNewClass({ ...newClass, sessionId: e.target.value })}>
+                    <option value="">Select session…</option>
+                    {sessions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Class name" required hint="e.g. A, B or Red">
+                  <Input value={newClass.name ?? ""} onChange={(e) => setNewClass({ ...newClass, name: e.target.value })} placeholder="e.g. 2A" />
+                </Field>
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 12 }}>
+                <Button variant="ghost" size="sm" onClick={() => setNewClassOpen(false)}>Cancel</Button>
+                <Button size="sm" onClick={createAndUseClass} loading={creatingClass} disabled={!newClass.levelId || !newClass.sessionId || !newClass.name?.trim()}>Create class &amp; select</Button>
+              </div>
+            </div>
+          )}
           <Field label="Gender">
             <Select value={form.gender ?? ""} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
               <option value="">Select…</option>
