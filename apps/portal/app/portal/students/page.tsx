@@ -22,7 +22,7 @@ interface Student {
   dateOfBirth: string | null;
   photoUrl: string | null;
   user: { firstName: string; lastName: string; email: string | null; phone: string | null; status: string };
-  classGroup: { level: { name: string }; name: string } | null;
+  classGroup: { level: { name: string; section: string }; name: string } | null;
   parentLinks?: Array<{ parent: { user: { firstName: string; lastName: string; email: string; phone: string | null } } }>;
   fee?: FeeInfo;
 }
@@ -48,6 +48,23 @@ export default function StudentsPage() {
   const [editForm, setEditForm] = useState<Record<string, string>>({});
   const [feeTarget, setFeeTarget] = useState<Student | null>(null);
   const [feeForm, setFeeForm] = useState<Record<string, string>>({});
+  // Drill-down navigation: overview -> (secondary | primary | unassigned) -> classes -> students.
+  type View = { name: "overview" } | { name: "category"; section: "SECONDARY" | "PRIMARY" | "UNASSIGNED" };
+  const [view, setView] = useState<View>({ name: "overview" });
+  const secondaryStudents = items.filter((s) => s.classGroup?.level.section === "SECONDARY");
+  const primaryStudents = items.filter((s) => s.classGroup?.level.section === "PRIMARY");
+  const unassignedStudents = items.filter((s) => !s.classGroup);
+  const sectionItems = view.name === "category"
+    ? view.section === "SECONDARY" ? secondaryStudents : view.section === "PRIMARY" ? primaryStudents : unassignedStudents
+    : [];
+  const byClass = new Map<string, Student[]>();
+  for (const s of sectionItems) {
+    const key = s.classGroup ? `${s.classGroup.level.name} ${s.classGroup.name}` : "Unassigned";
+    const arr = byClass.get(key) ?? [];
+    arr.push(s);
+    byClass.set(key, arr);
+  }
+  const classGroups = [...byClass.entries()].sort(([a], [b]) => a.localeCompare(b));
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -195,42 +212,102 @@ export default function StudentsPage() {
         <Spinner size={28} />
       ) : items.length === 0 ? (
         <EmptyState title="No students found" hint="Enroll a new student to get started." />
+      ) : view.name === "overview" ? (
+        <div className="classes-drill">
+          <button className="classes-drill-card" onClick={() => setView({ name: "category", section: "SECONDARY" })}>
+            <div className="classes-drill-card__icon"><Icon name="students" size={20} /></div>
+            <div className="classes-drill-card__title">Secondary</div>
+            <div className="classes-drill-card__sub">JSS &amp; SSS students grouped by class</div>
+            <div className="classes-drill-card__foot">
+              <Badge tone="accent">{secondaryStudents.length}</Badge>
+              <span className="classes-drill-card__manage">Open Secondary →</span>
+            </div>
+          </button>
+          <button className="classes-drill-card classes-drill-card--primary" onClick={() => setView({ name: "category", section: "PRIMARY" })}>
+            <div className="classes-drill-card__icon"><Icon name="students" size={20} /></div>
+            <div className="classes-drill-card__title">Primary</div>
+            <div className="classes-drill-card__sub">Primary school students grouped by class</div>
+            <div className="classes-drill-card__foot">
+              <Badge tone="info">{primaryStudents.length}</Badge>
+              <span className="classes-drill-card__manage">Open Primary →</span>
+            </div>
+          </button>
+          {unassignedStudents.length > 0 && (
+            <button className="classes-drill-card" onClick={() => setView({ name: "category", section: "UNASSIGNED" })}>
+              <div className="classes-drill-card__icon"><Icon name="students" size={20} /></div>
+              <div className="classes-drill-card__title">Unassigned</div>
+              <div className="classes-drill-card__sub">Students not yet placed in a class</div>
+              <div className="classes-drill-card__foot">
+                <Badge tone="neutral">{unassignedStudents.length}</Badge>
+                <span className="classes-drill-card__manage">Review →</span>
+              </div>
+            </button>
+          )}
+        </div>
       ) : (
-        <Card>
-          <Table headers={["Adm No.", "Name", "Class", "Status", "Fee access", "Actions"]}>
-            {items.map((s) => (
-              <tr key={s.id}>
-                <td>{s.admissionNumber}</td>
-                <td>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    {s.photoUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={s.photoUrl} alt="" style={{ width: 34, height: 34, borderRadius: "50%", objectFit: "cover", border: "1px solid var(--duga-border)" }} />
-                    ) : (
-                      <div style={{ width: 34, height: 34, borderRadius: "50%", background: "linear-gradient(135deg, var(--duga-primary), var(--duga-gold))", color: "#fff", display: "grid", placeItems: "center", fontWeight: 700, fontSize: 12, flexShrink: 0 }}>
-                        {`${s.user.firstName[0] ?? ""}${s.user.lastName[0] ?? ""}`.toUpperCase()}
-                      </div>
-                    )}
-                    <span>
-                      {s.user.firstName} {s.user.lastName}
-                      <div style={{ fontSize: 12, color: "var(--duga-muted)" }}>{s.user.email || "—"}</div>
-                    </span>
-                  </div>
-                </td>
-                <td>{s.classGroup ? `${s.classGroup.level.name} ${s.classGroup.name}` : "—"}</td>
-                <td><Badge tone={s.status === "ACTIVE" ? "success" : "warning"}>{s.status}</Badge></td>
-                <td>{feeBadge(s)}</td>
-                <td>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <Button size="sm" variant="ghost" onClick={() => openEdit(s)}>Edit</Button>
-                    <Button size="sm" variant="outline" onClick={() => { setFeeTarget(s); setFeeForm({}); }}>Set fee</Button>
-                    <Button size="sm" variant="danger" onClick={() => removeStudent(s)}>Remove</Button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </Table>
-        </Card>
+        <div style={{ display: "grid", gap: 18 }}>
+          <div className="classes-crumb">
+            <Button variant="ghost" size="sm" onClick={() => setView({ name: "overview" })}>
+              <Icon name="back" size={14} /> Students
+            </Button>
+            <span className="classes-crumb__sep">/</span>
+            <span className="classes-crumb__current">
+              {view.section === "SECONDARY" ? "Secondary" : view.section === "PRIMARY" ? "Primary" : "Unassigned"}
+            </span>
+          </div>
+
+          <div>
+            <h2 style={{ fontSize: 17, margin: "0 0 12px", color: "var(--duga-primary-ink)" }}>
+              {view.section === "SECONDARY" ? "Secondary" : view.section === "PRIMARY" ? "Primary" : "Unassigned"} classes
+              <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--duga-muted)", marginLeft: 6 }}>({sectionItems.length} students)</span>
+            </h2>
+            {classGroups.length === 0 ? (
+              <EmptyState title={`No ${view.section === "UNASSIGNED" ? "unassigned" : view.section.toLowerCase()} classes yet`} hint="Enroll students into classes to see them grouped here." />
+            ) : (
+              <div style={{ display: "grid", gap: 16 }}>
+                {classGroups.map(([className, classStudents]) => (
+                  <Card key={className} title={className} className="students-group-card">
+                    <div style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+                      <Badge tone="neutral">{classStudents.length} student{classStudents.length === 1 ? "" : "s"}</Badge>
+                    </div>
+                    <Table headers={["Adm No.", "Name", "Status", "Fee access", "Actions"]}>
+                      {classStudents.map((s) => (
+                        <tr key={s.id}>
+                          <td>{s.admissionNumber}</td>
+                          <td>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                              {s.photoUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={s.photoUrl} alt="" style={{ width: 34, height: 34, borderRadius: "50%", objectFit: "cover", border: "1px solid var(--duga-border)" }} />
+                              ) : (
+                                <div style={{ width: 34, height: 34, borderRadius: "50%", background: "linear-gradient(135deg, var(--duga-primary), var(--duga-gold))", color: "#fff", display: "grid", placeItems: "center", fontWeight: 700, fontSize: 12, flexShrink: 0 }}>
+                                  {`${s.user.firstName[0] ?? ""}${s.user.lastName[0] ?? ""}`.toUpperCase()}
+                                </div>
+                              )}
+                              <span>
+                                {s.user.firstName} {s.user.lastName}
+                                <div style={{ fontSize: 12, color: "var(--duga-muted)" }}>{s.user.email || "—"}</div>
+                              </span>
+                            </div>
+                          </td>
+                          <td><Badge tone={s.status === "ACTIVE" ? "success" : "warning"}>{s.status}</Badge></td>
+                          <td>{feeBadge(s)}</td>
+                          <td>
+                            <div style={{ display: "flex", gap: 8 }}>
+                              <Button size="sm" variant="ghost" onClick={() => openEdit(s)}>Edit</Button>
+                              <Button size="sm" variant="outline" onClick={() => { setFeeTarget(s); setFeeForm({}); }}>Set fee</Button>
+                              <Button size="sm" variant="danger" onClick={() => removeStudent(s)}>Remove</Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </Table>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       <Modal open={open} onClose={() => setOpen(false)} title="Enroll new student" wide>
