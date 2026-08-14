@@ -26,6 +26,9 @@ interface ReportCard {
   isPublished: boolean;
   average: number | null;
   position: number | null;
+  gpa?: number | null;
+  classSize?: number | null;
+  subjectCount?: number | null;
   term: { name: string } | null;
   student: { id: string; photoUrl?: string | null; user: { firstName: string; lastName: string } };
   classGroup: { level: { name: string }; name: string } | null;
@@ -133,18 +136,79 @@ export default function ResultsPage() {
     const student = `${rc.student.user.firstName} ${rc.student.user.lastName}`;
     const rows = (rc.items ?? []).map((item) => `<tr><td>${esc(item.subject.name)}</td><td>${esc(item.ca)}</td><td>${esc(item.exam)}</td><td>${esc(item.total)}</td><td>${esc(item.grade)}</td></tr>`).join("");
     const ratings = (title: string, values?: Record<string, string> | null) => values && Object.keys(values).length
-      ? `<section><h3>${esc(title)}</h3><table><tbody>${Object.entries(values).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("")}</tbody></table></section>` : "";
+      ? `<section><h3>${esc(title)}</h3><table class="ratings"><tbody>${Object.entries(values).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("")}</tbody></table></section>` : "";
+    const scaleRows = [
+      ["A1", "75 – 100"], ["B2", "70 – 74"], ["B3", "65 – 69"], ["C4", "60 – 64"], ["C5", "55 – 59"],
+      ["C6", "50 – 54"], ["D7", "45 – 49"], ["E8", "40 – 44"], ["F9", "0 – 39"],
+    ].map(([g, r]) => `<tr><td class="c">${g}</td><td class="c">${r}</td></tr>`).join("");
     const photo = rc.student.photoUrl
       ? `<img src="${esc(rc.student.photoUrl)}" alt="Passport" style="width:76px;height:76px;border-radius:50%;object-fit:cover;border:2px solid #9aa4b2;display:block;margin:0 auto 8px" />`
       : "";
-    return `<article class="report"><h1>Student Report Card</h1>${photo}<h2>${esc(student)}</h2><p><b>Term:</b> ${esc(rc.term?.name)} &nbsp; <b>Average:</b> ${rc.average == null ? "—" : esc(Number(rc.average).toFixed(1))}% &nbsp; <b>Position:</b> ${esc(rc.position)}</p><table><thead><tr><th>Subject</th><th>CA</th><th>Exam</th><th>Total</th><th>Grade</th></tr></thead><tbody>${rows}</tbody></table>${ratings("Psychomotor development", rc.psychomotor)}${ratings("Co-curricular activities", rc.coCurricular)}<section><h3>Teacher's remark</h3><p>${esc(rc.remark)}</p><h3>Attendance / conduct</h3><p>${esc(rc.attendanceRemark)}</p></section></article>`;
+    const className = rc.classGroup ? `${esc(rc.classGroup.level.name)} ${esc(rc.classGroup.name)}` : "—";
+    return `<article class="report">
+  <header class="report-head">
+    <div class="report-school">De Ultimate Glory Academy</div>
+    <div class="report-sub">AKWANGA · NIGERIA</div>
+    <h1>STUDENT REPORT CARD</h1>
+    <div class="report-term">${esc(rc.term?.name ?? "")} · ${className}</div>
+  </header>
+  <div class="report-body">
+    <div class="report-student">${photo}<div class="report-student-name">${esc(student)}</div></div>
+    <table class="summary"><tbody>
+      <tr><th>Class</th><td>${className}</td><th>Average</th><td>${rc.average == null ? "—" : esc(Number(rc.average).toFixed(1))}%</td></tr>
+      <tr><th>Term</th><td>${esc(rc.term?.name ?? "—")}</td><th>Position</th><td>${rc.position == null ? "—" : esc(String(rc.position))} of ${rc.classSize ?? "—"}</td></tr>
+      <tr><th>Subjects</th><td>${esc(String(rc.subjectCount ?? (rc.items ?? []).length))}</td><th>GPA</th><td>${rc.gpa == null ? "—" : esc(Number(rc.gpa).toFixed(2))}</td></tr>
+    </tbody></table>
+    <table class="grades"><thead><tr><th>Subject</th><th>CA</th><th>Exam</th><th>Total</th><th>Grade</th></tr></thead><tbody>${rows}</tbody></table>
+    <section><h3>Grading scale</h3><table class="scale"><tbody>${scaleRows}</tbody></table></section>
+    ${ratings("Psychomotor development", rc.psychomotor)}
+    ${ratings("Co-curricular activities", rc.coCurricular)}
+    <section>
+      <h3>Teacher's remark</h3>
+      <p class="remark">${esc(rc.remark ?? "—")}</p>
+      <h3>Attendance / conduct</h3>
+      <p class="remark">${esc(rc.attendanceRemark ?? "—")}</p>
+    </section>
+    <div class="report-signs">
+      <div><div class="sign-line"></div><span>Class Teacher</span></div>
+      <div><div class="sign-line"></div><span>Principal</span></div>
+    </div>
+  </div>
+  <footer class="report-foot">Grading scale — A1: 75–100 · B2: 70–74 · B3: 65–69 · C4–C6: 50–64 · D7–E8: 40–49 · F9: below 40</footer>
+</article>`;
   }
 
   function printCards(selected: ReportCard[]) {
     if (!selected.length) return alert("There are no report cards to print for this selection.");
     const popup = window.open("", "_blank", "noopener,noreferrer");
     if (!popup) return alert("Please allow pop-ups to print report cards.");
-    popup.document.write(`<!doctype html><html><head><title>Report cards</title><style>body{font-family:Arial,sans-serif;color:#18202a;margin:24px}.report{max-width:800px;margin:0 auto 36px;padding:12px}h1{text-align:center;margin-bottom:6px}h2{text-align:center;font-size:18px}table{width:100%;border-collapse:collapse;margin:12px 0}th,td{border:1px solid #9aa4b2;padding:7px;text-align:left}th{background:#edf2f7}section{margin-top:18px}section table{width:55%}@media print{.report{page-break-after:always}.report:last-child{page-break-after:auto}}</style></head><body>${selected.map(printableCard).join("")}<script>window.onload=()=>window.print()</script></body></html>`);
+    popup.document.write(`<!doctype html><html><head><title>Report cards</title><style>
+body{font-family:'Segoe UI',Arial,sans-serif;color:#18202a;margin:0;background:#eef1f6}
+.report{max-width:820px;margin:28px auto;background:#fff;padding:0 0 28px;box-shadow:0 2px 14px rgba(0,0,0,.08)}
+.report-head{background:linear-gradient(135deg,#1e3a8a,#0b1f4b);color:#fff;text-align:center;padding:22px 18px 16px}
+.report-school{font-size:22px;font-weight:800;letter-spacing:.4px}
+.report-sub{font-size:11px;letter-spacing:3px;opacity:.85;margin-top:2px}
+.report-head h1{font-size:17px;letter-spacing:2px;margin:12px 0 4px;font-weight:800}
+.report-term{font-size:13px;opacity:.9}
+.report-body{padding:22px 26px}
+.report-student{text-align:center;margin-bottom:14px}
+.report-student-name{font-size:19px;font-weight:800;color:#1e3a8a}
+table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13.5px}
+table.grades th,table.grades td,table.ratings td,table.summary th,table.summary td,table.scale td{border:1px solid #c3cbda;padding:7px 9px;text-align:left}
+table.grades thead th,table.summary th{background:#edf2f7;color:#1e3a8a}
+table.summary th{width:96px}
+table.summary td{font-weight:600}
+td.c{text-align:center}
+table.scale{width:64%;margin-left:auto;margin-right:auto}
+table.scale td{text-align:center;padding:4px 9px}
+section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:uppercase;letter-spacing:.6px}
+.remark{padding:8px 12px;background:#f7f9fc;border-radius:6px;min-height:26px;margin:0}
+.report-signs{display:flex;gap:40px;margin-top:40px;justify-content:space-between}
+.report-signs>div{flex:1;text-align:center;font-size:12.5px;color:#39475b}
+.sign-line{border-top:1.5px solid #39475b;margin-bottom:6px;height:26px}
+.report-foot{text-align:center;font-size:11px;color:#6b7a90;padding:14px;border-top:1px solid #dfe5ee}
+@media print{body{background:#fff}.report{margin:0 auto;box-shadow:none;page-break-after:always}.report:last-child{page-break-after:auto}}
+</style></head><body>${selected.map(printableCard).join("")}<script>window.onload=()=>window.print()</script></body></html>`);
     popup.document.close();
   }
 

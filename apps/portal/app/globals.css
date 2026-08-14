@@ -1048,3 +1048,22 @@ body {
   color: var(--duga-primary);
 }
 .portal-topbar__actions .duga-seg { margin-right: 6px; }
+
+/* Print: strip portal chrome so in-page content (invoices, timetables,
+   report cards) prints cleanly without the sidebar, topbar or AI assistant. */
+@media print {
+  .portal-sidebar,
+  .portal-topbar,
+  .portal-sidebar-scrim,
+  .portal-mobile-toggle,
+  .portal-bell,
+  .duga-ai,
+  .duga-ai__fab,
+  .duga-ai-scrim { display: none !important; }
+  .portal-shell { display: block !important; }
+  .portal-main { display: block !important; }
+  .portal-content { max-width: none !important; padding: 0 !important; }
+  body { background: #fff !important; }
+  .duga-card,
+  .duga-stat { box-shadow: none !important; border-color: #ccc !important; }
+}

@@ -82,6 +82,7 @@ const STAFF_NAV: NavSection[] = [
   {
     title: "Communication",
     items: [
+      { href: "/portal/announcements", label: "Announcements", icon: "announcements", perm: "announcements:view", feature: "messaging" },
       { href: "/portal/messages", label: "Messages", icon: "messages", perm: "messaging:use", feature: "messaging" },
       { href: "/portal/notifications", label: "Notifications", icon: "notifications", feature: "messaging" },
     ],
@@ -139,6 +140,7 @@ const STUDENT_NAV: NavSection[] = [
   {
     title: "Communication",
     items: [
+      { href: "/portal/announcements", label: "Announcements", icon: "announcements", perm: "announcements:view", feature: "messaging" },
       { href: "/portal/messages", label: "Messages", icon: "messages", perm: "messaging:use", feature: "messaging" },
       { href: "/portal/notifications", label: "Notifications", icon: "notifications", feature: "messaging" },
     ],
@@ -176,6 +178,7 @@ const PARENT_NAV: NavSection[] = [
   {
     title: "Communication",
     items: [
+      { href: "/portal/announcements", label: "Announcements", icon: "announcements", perm: "announcements:view", feature: "messaging" },
       { href: "/portal/messages", label: "Messages", icon: "messages", perm: "messaging:use", feature: "messaging" },
       { href: "/portal/notifications", label: "Notifications", icon: "notifications", feature: "messaging" },
     ],
@@ -310,6 +313,7 @@ const TITLES: Array<{ match: string; title: string }> = [
   { match: "/portal/library", title: "Library" },
   { match: "/portal/reports", title: "Reports" },
   { match: "/portal/messages", title: "Messages" },
+    { match: "/portal/announcements", title: "Announcements" },
   { match: "/portal/notifications", title: "Notifications" },
   { match: "/portal/gallery", title: "Website Gallery" },
   { match: "/portal/news", title: "News & Events" },

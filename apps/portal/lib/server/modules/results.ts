@@ -1,8 +1,22 @@
 import { prisma } from "@duga/core/server";
-import { collateReportCards, resolveResultsAccess, logAudit, dispatchToMany } from "@duga/core/server";
+import { collateReportCards, resolveResultsAccess, logAudit, dispatchToMany, getDefaultGradingScale } from "@duga/core/server";
 import { getResultConfig, computeScoreTotals, type ResultComponent } from "@duga/core/server";
 import type { Module } from ".";
 import { can, str, num, studentScope, assertFeeAccess } from "../helpers";
+
+// Grade-point average for a card, derived from the school's grading scale.
+async function gpaCalculator(schoolId: string) {
+  const scale = await getDefaultGradingScale(schoolId);
+  const gpOf = new Map(scale.map((b) => [b.grade, b.gp]));
+  return (items: Array<{ grade: string | null }> | null | undefined): number | null => {
+    if (!items || items.length === 0) return null;
+    const gps = items
+      .map((i) => (i.grade && i.grade !== "-" ? gpOf.get(i.grade) : undefined))
+      .filter((g): g is number => typeof g === "number");
+    if (gps.length === 0) return null;
+    return Math.round((gps.reduce((a, b) => a + b, 0) / gps.length) * 100) / 100;
+  };
+}
 
 async function submissionSummary(
   schoolId: string,
@@ -31,7 +45,8 @@ export const resultsModule: Module = {
     can(ctx, "results:view");
     const schoolId = ctx.session.user.schoolId;
     const role = ctx.session.user.role;
-    const config = await getResultConfig(schoolId);
+const config = await getResultConfig(schoolId);
+    const gpaOf = await gpaCalculator(schoolId);
 
     // Entry grid for teachers: return class subjects with class students
     if (role === "TEACHER") {
@@ -64,11 +79,14 @@ export const resultsModule: Module = {
         if (!rc.isPublished) continue;
         const access = await resolveResultsAccess(rc.studentId, rc.termId);
         const student = rc.student;
+        const feeLocked = Number(student.feeAmount) > 0 && student.feeDays > 0 && (!student.feePaidThrough || student.feePaidThrough.getTime() < Date.now());
+        const items = access.allowed ? await prisma.reportCardItem.findMany({ where: { reportCardId: rc.id }, include: { subject: true }, orderBy: { position: "asc" } }) : null;
         gated.push({
           ...rc,
-          access: access.allowed && !(Number(student.feeAmount) > 0 && student.feeDays > 0 && (!student.feePaidThrough || student.feePaidThrough.getTime() < Date.now())) ? "granted" : "locked",
-          gatedReason: Number(student.feeAmount) > 0 && student.feeDays > 0 && (!student.feePaidThrough || student.feePaidThrough.getTime() < Date.now()) ? "fee_expired" : access.reason,
-          items: access.allowed ? await prisma.reportCardItem.findMany({ where: { reportCardId: rc.id }, include: { subject: true }, orderBy: { position: "asc" } }) : null,
+          access: access.allowed && !feeLocked ? "granted" : "locked",
+          gatedReason: feeLocked ? "fee_expired" : access.reason,
+          gpa: gpaOf(items),
+          items,
         });
       }
       return { role, reportCards: gated };
@@ -88,7 +106,7 @@ export const resultsModule: Module = {
       }),
     ]);
     const submissions = await submissionSummary(schoolId, classSubjects);
-    return { role, reportCards, config, submissions };
+    return { role, reportCards: reportCards.map((rc) => ({ ...rc, gpa: gpaOf(rc.items) })), config, submissions };
   },
 
   async get(ctx) {
@@ -118,7 +136,7 @@ export const resultsModule: Module = {
         throw err;
       }
     }
-    return rc;
+    return { ...rc, gpa: (await gpaCalculator(ctx.session.user.schoolId))(rc.items) };
   },
 
   actions: {
@@ -171,7 +189,7 @@ export const resultsModule: Module = {
         if (locked) throw new Error("These scores have been submitted to the admin and are locked. Ask an admin to reopen them.");
       }
 
-      const config = await getResultConfig(schoolId);
+const config = await getResultConfig(schoolId);
       const compNames = new Set(config.components.map((c) => c.name));
 
       for (const r of rows) {

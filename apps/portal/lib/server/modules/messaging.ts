@@ -3,6 +3,70 @@ import { dispatchNotification, logAudit } from "@duga/core/server";
 import type { Module } from ".";
 import { can, str } from "../helpers";
 
+// Number of active users an announcement targets, given its audience.
+async function audienceSize(schoolId: string, a: { audience: string; targetSection?: string | null; targetClassGroupId?: string | null; targetLevelId?: string | null; targetRole?: string | null }): Promise<number> {
+  const activeStudents = { status: "ACTIVE" as const };
+  const activeUsers = { status: "ACTIVE" as const };
+  switch (a.audience) {
+    case "SECTION": {
+      const students = await prisma.student.count({ where: { schoolId, section: a.targetSection as "PRIMARY" | "SECONDARY" | undefined, ...activeStudents } });
+      const links = await prisma.studentParent.count({ where: { student: { schoolId, section: a.targetSection as "PRIMARY" | "SECONDARY" | undefined, status: "ACTIVE" } } });
+      return students + links;
+    }
+    case "CLASS": {
+      if (!a.targetClassGroupId) return 0;
+      const students = await prisma.student.count({ where: { schoolId, currentClassGroupId: a.targetClassGroupId, ...activeStudents } });
+      const links = await prisma.studentParent.count({ where: { student: { schoolId, currentClassGroupId: a.targetClassGroupId, status: "ACTIVE" } } });
+      return students + links;
+    }
+    case "LEVEL": {
+      if (!a.targetLevelId) return 0;
+      const students = await prisma.student.count({ where: { schoolId, classGroup: { levelId: a.targetLevelId }, ...activeStudents } });
+      const links = await prisma.studentParent.count({ where: { student: { schoolId, classGroup: { levelId: a.targetLevelId }, status: "ACTIVE" } } });
+      return students + links;
+    }
+    case "ROLE":
+      return prisma.user.count({ where: { schoolId, role: a.targetRole as never, ...activeUsers } });
+    default:
+      return prisma.user.count({ where: { schoolId, ...activeUsers } });
+  }
+}
+
+// Active user ids an announcement should be pushed to.
+async function targetUserIds(schoolId: string, a: { audience: string; targetSection?: string | null; targetClassGroupId?: string | null; targetLevelId?: string | null; targetRole?: string | null }): Promise<string[]> {
+  const activeStudents = { status: "ACTIVE" as const };
+  let students: Array<{ userId: string | null; parentLinks: Array<{ parent: { userId: string | null } }> }> = [];
+  let roleUsers: Array<{ id: string }> = [];
+  switch (a.audience) {
+    case "SECTION":
+      students = await prisma.student.findMany({ where: { schoolId, section: a.targetSection as "PRIMARY" | "SECONDARY" | undefined, ...activeStudents }, select: { userId: true, parentLinks: { select: { parent: { select: { userId: true } } } } } });
+      break;
+    case "CLASS":
+      students = a.targetClassGroupId
+        ? await prisma.student.findMany({ where: { schoolId, currentClassGroupId: a.targetClassGroupId, ...activeStudents }, select: { userId: true, parentLinks: { select: { parent: { select: { userId: true } } } } } })
+        : [];
+      break;
+    case "LEVEL":
+      students = a.targetLevelId
+        ? await prisma.student.findMany({ where: { schoolId, classGroup: { levelId: a.targetLevelId }, ...activeStudents }, select: { userId: true, parentLinks: { select: { parent: { select: { userId: true } } } } } })
+        : [];
+      break;
+    case "ROLE":
+      roleUsers = await prisma.user.findMany({ where: { schoolId, role: a.targetRole as never, ...activeStudents }, select: { id: true } });
+      break;
+    default:
+      roleUsers = await prisma.user.findMany({ where: { schoolId, ...activeStudents }, select: { id: true } });
+      break;
+  }
+  const ids = new Set<string>();
+  students.forEach((s) => {
+    if (s.userId) ids.add(s.userId);
+    s.parentLinks.forEach((l) => l.parent.userId && ids.add(l.parent.userId));
+  });
+  roleUsers.forEach((u) => ids.add(u.id));
+  return [...ids];
+}
+
 export const messagingModule: Module = {
   // Conversations for the current user
   async list(ctx) {
@@ -114,8 +178,9 @@ export const messagingModule: Module = {
     // Announcements
     announcements: async (ctx) => {
       can(ctx, "announcements:view");
-      const where: Record<string, unknown> = { schoolId: ctx.session.user.schoolId };
+      const schoolId = ctx.session.user.schoolId;
       const role = ctx.session.user.role;
+      const where: Record<string, unknown> = { schoolId };
       if (role === "STUDENT") {
         const student = ctx.session.user.student;
         where.OR = [{ audience: "EVERYONE" }, { audience: "SECTION", targetSection: student?.section }, { audience: "CLASS", targetClassGroupId: student?.currentClassGroupId }];
@@ -128,6 +193,7 @@ export const messagingModule: Module = {
         include: {
           author: { select: { firstName: true, lastName: true, role: true } },
           reads: { where: { userId: ctx.session.user.id }, select: { id: true } },
+          _count: { select: { reads: true } },
         },
         orderBy: [{ isPinned: "desc" }, { createdAt: "desc" }],
         take: 100,
@@ -137,8 +203,29 @@ export const messagingModule: Module = {
           ...a,
           isRead: a.reads.length > 0,
           reads: undefined,
+          readCount: a._count.reads,
+          readBy: null,
         })),
       };
+    },
+
+    // Read receipts for staff: who has seen each announcement.
+    announcementReads: async (ctx) => {
+      can(ctx, "announcements:view");
+      const role = ctx.session.user.role;
+      if (!(role === "OWNER" || role === "ADMIN" || role === "BURSAR" || role === "TEACHER")) throw new Error("Only staff can view read receipts");
+      const announcement = await prisma.announcement.findFirst({ where: { id: ctx.id, schoolId: ctx.session.user.schoolId } });
+      if (!announcement) throw new Error("Announcement not found");
+      const [reads, audience] = await Promise.all([
+        prisma.announcementRead.findMany({
+          where: { announcementId: ctx.id! },
+          include: { user: { select: { id: true, firstName: true, lastName: true, role: true } } },
+          orderBy: { readAt: "desc" },
+          take: 100,
+        }),
+        audienceSize(ctx.session.user.schoolId, announcement),
+      ]);
+      return { reads: reads.map((r) => ({ id: r.id, readAt: r.readAt, user: r.user })), readCount: reads.length, audienceSize: audience };
     },
 
     postAnnouncement: async (ctx) => {
@@ -153,7 +240,7 @@ export const messagingModule: Module = {
           authorId: ctx.session.user.id,
           title,
           body,
-          audience: str(ctx.body.audience) as "EVERYONE" ?? "EVERYONE",
+          audience: (str(ctx.body.audience) as "EVERYONE") ?? "EVERYONE",
           targetClassGroupId: str(ctx.body.targetClassGroupId),
           targetLevelId: str(ctx.body.targetLevelId),
           targetSection: str(ctx.body.targetSection) as "PRIMARY" | "SECONDARY" | undefined,
@@ -163,17 +250,24 @@ export const messagingModule: Module = {
         },
       });
 
-      // Notify relevant users (everyone active at the school for now;
-      // audience-specific targeting can be extended per-role)
-      const users = await prisma.user.findMany({
-        where: { schoolId, status: "ACTIVE", id: { not: ctx.session.user.id } },
-        select: { id: true },
-      });
-      for (const u of users) {
-        await dispatchNotification({ schoolId, userId: u.id, type: "announcement", title, body: body.slice(0, 160), link: "/portal/announcements" });
+      // Push notifications only to the intended audience.
+      const userIds = await targetUserIds(schoolId, announcement);
+      for (const userId of userIds) {
+        if (userId === ctx.session.user.id) continue;
+        await dispatchNotification({ schoolId, userId, type: "announcement", title, body: body.slice(0, 160), link: "/portal/announcements" });
       }
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "announcement.created", entityType: "Announcement", entityId: announcement.id });
       return announcement;
+    },
+
+    deleteAnnouncement: async (ctx) => {
+      can(ctx, "announcements:manage");
+      const deleted = await prisma.announcement.deleteMany({
+        where: { id: ctx.id, schoolId: ctx.session.user.schoolId },
+      });
+      if (deleted.count === 0) throw new Error("Announcement not found");
+      await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "announcement.deleted", entityType: "Announcement", entityId: ctx.id! });
+      return { ok: true };
     },
 
     markAnnouncementRead: async (ctx) => {

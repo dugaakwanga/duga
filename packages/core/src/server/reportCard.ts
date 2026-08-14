@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { computeGrade } from "../grading";
+import { getDefaultGradingScale } from "./school";
 
 export interface ResultComponent {
   name: string;
@@ -106,9 +107,9 @@ export async function collateReportCards(opts: CollateOptions) {
     orderBy: { admissionNumber: "asc" },
   });
 
-  const scale = await prisma.gradingScheme
-    .findFirst({ where: { schoolId, isDefault: true } })
-    .then((s) => (s?.scale as Array<{ min: number; max: number; grade: string; remark: string; gp: number }>) ?? []);
+  // Grading scale: use the school's default scheme, or fall back to the
+  // standard WAEC-style scale when none is configured so grades are never empty.
+  const scale = await getDefaultGradingScale(schoolId);
 
   // Subject score matrix built from per-student SubjectScore rows.
   const subjectScores: Record<string, Record<string, number>> = {};
