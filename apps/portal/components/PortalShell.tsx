@@ -143,10 +143,147 @@ const STUDENT_NAV: NavSection[] = [
   },
 ];
 
+// Parent-facing navigation — a portal for guardians, not staff or students.
+const PARENT_NAV: NavSection[] = [
+  {
+    title: "Overview",
+    items: [
+      { href: "/portal/parent", label: "My Family Home", icon: "home" },
+      { href: "/portal/progress", label: "Children's Progress", icon: "reports" },
+    ],
+  },
+  {
+    title: "My Children",
+    items: [
+      { href: "/portal/results", label: "Results & Report Cards", icon: "results", perm: "results:view", feature: "results" },
+      { href: "/portal/attendance", label: "Attendance", icon: "attendance", perm: "attendance:view", feature: "attendance" },
+      { href: "/portal/timetable", label: "Timetable", icon: "timetable", perm: "timetable:view", feature: "timetable" },
+      { href: "/portal/fees", label: "Fees & Payments", icon: "fees", perm: "fees:view", feature: "fees", subfeature: "finance" },
+    ],
+  },
+  {
+    title: "School Life",
+    items: [
+      { href: "/portal/learning", label: "Assignments & Exams", icon: "quiz", perm: "learning:view", feature: "learning" },
+      { href: "/portal/pta", label: "PTA", icon: "announcements", perm: "pta:view", feature: "pta" },
+      { href: "/portal/library", label: "Library", icon: "notes", perm: "library:view", feature: "library" },
+      { href: "/portal/hostel", label: "Hostel", icon: "hostel", perm: "hostel:view", feature: "hostel" },
+      { href: "/portal/transport", label: "Transport", icon: "bus", perm: "transport:view", feature: "transport" },
+    ],
+  },
+  {
+    title: "Communication",
+    items: [
+      { href: "/portal/messages", label: "Messages", icon: "messages", perm: "messaging:use", feature: "messaging" },
+      { href: "/portal/notifications", label: "Notifications", icon: "notifications", feature: "messaging" },
+    ],
+  },
+];
+
+// Context-aware AI suggestions: they follow where the user is in the portal
+// and what they are trying to do, instead of a one-size-fits-all list.
+function aiSuggestionsFor(path: string, role: string): Array<{ label: string; prompt: string }> {
+  const isStaff = role === "TEACHER" || role === "ADMIN" || role === "OWNER" || role === "BURSAR";
+  const isStudent = role === "STUDENT";
+  const isParent = role === "PARENT";
+
+  const byPage: Array<{ match: string; suggestions: Array<{ label: string; prompt: string }> }> = [
+    {
+      match: "/portal/students",
+      suggestions: [
+        { label: "Welcome a new student", prompt: "Draft a warm welcome message for a newly enrolled student and their family." },
+        { label: "Set up student accounts", prompt: "What should I prepare when creating a new student account and parent login?" },
+      ],
+    },
+    {
+      match: "/portal/classes",
+      suggestions: [
+        { label: "Timetable tips", prompt: "Suggest a sensible weekly timetable for a Nigerian secondary school with JSS and SSS classes." },
+        { label: "Periods per subject", prompt: "How many weekly periods should core subjects like Mathematics and English get?" },
+      ],
+    },
+    {
+      match: "/portal/teacher/notes",
+      suggestions: [{ label: "Draft a lesson note", prompt: "Draft a lesson note on 'Photosynthesis' for Basic 5 Science." }],
+    },
+    {
+      match: "/portal/teacher/assignments",
+      suggestions: [{ label: "Assignment idea", prompt: "Suggest a homework assignment on Nigeria's independence for JSS 1." }],
+    },
+    {
+      match: "/portal/teacher/cbt",
+      suggestions: [{ label: "Create a quiz", prompt: "Create 5 multiple-choice questions on fractions for Primary 4." }],
+    },
+    {
+      match: "/portal/results",
+      suggestions: isStaff
+        ? [{ label: "Report card remark", prompt: "Write a report card remark for a student doing well in most subjects but needing improvement in mathematics." }]
+        : isParent
+          ? [{ label: "Understand results", prompt: "Help me understand what my child's report card results mean." }]
+          : [{ label: "Improve my results", prompt: "How can I improve my grades before the next exam?" }],
+    },
+    {
+      match: "/portal/fees",
+      suggestions: isParent
+        ? [{ label: "Fees explained", prompt: "Explain how school fees work and what my balance means." }]
+        : isStudent
+          ? [{ label: "My fees balance", prompt: "Help me understand my school fees balance and payment." }]
+          : [{ label: "Fees summary", prompt: "How should I follow up on outstanding school fees politely?" }],
+    },
+    {
+      match: "/portal/progress",
+      suggestions: [{ label: "Understand progress", prompt: "What does this progress data tell us and how can we improve it?" }],
+    },
+    {
+      match: "/portal/parent",
+      suggestions: [
+        { label: "Support my child", prompt: "How can I help my child improve their reading at home?" },
+        { label: "School–parent teamwork", prompt: "How can parents and teachers work together to improve a child's performance?" },
+      ],
+    },
+    {
+      match: "/portal/student",
+      suggestions: [
+        { label: "Explain a topic", prompt: "Explain fractions simply to a primary school student." },
+        { label: "Practice questions", prompt: "Give me 5 practice questions on photosynthesis with answers." },
+      ],
+    },
+    {
+      match: "/portal/learning",
+      suggestions: isStudent
+        ? [{ label: "Study tips", prompt: "Give me tips for studying for my exams." }]
+        : [{ label: "Set up learning", prompt: "How should I organise lesson notes, assignments and CBT exams for a term?" }],
+    },
+  ];
+
+  for (const p of byPage) {
+    if (path.startsWith(p.match)) return p.suggestions;
+  }
+
+  if (isStaff)
+    return [
+      { label: "Report card comment", prompt: "Write a report card remark for a student doing well in most subjects but needing improvement in mathematics." },
+      { label: "Draft a lesson note", prompt: "Draft a lesson note on the topic 'Photosynthesis' for Basic 5 Science." },
+      { label: "Create a quiz", prompt: "Create 5 multiple-choice questions on fractions for Primary 4." },
+      { label: "Assignment idea", prompt: "Suggest a homework assignment on Nigeria's independence for JSS 1." },
+    ];
+  if (isStudent)
+    return [
+      { label: "Explain a topic", prompt: "Explain fractions simply to a primary school student." },
+      { label: "Practice questions", prompt: "Give me 5 practice questions on photosynthesis with answers." },
+      { label: "Study tips", prompt: "Give me tips for studying for my exams." },
+    ];
+  return [
+    { label: "Help my child", prompt: "How can I help my child improve their reading at home?" },
+    { label: "Understand progress", prompt: "What should a good report card look like? Help me understand my child's progress." },
+  ];
+}
+
 const TITLES: Array<{ match: string; title: string }> = [
   { match: "/portal/dashboard", title: "Dashboard" },
   { match: "/portal/progress", title: "Progress" },
   { match: "/portal/student", title: "My Home" },
+  { match: "/portal/parent", title: "My Family Home" },
   { match: "/portal/attendance/clock", title: "Clock In / Out" },
   { match: "/portal/attendance/records", title: "Staff Clock Records" },
   { match: "/portal/students", title: "Students" },
@@ -233,7 +370,7 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
     setAiPreset(null);
     setAiBusy(true);
     try {
-      const d = await api<{ reply: string }>("ai/chat", { method: "POST", body: { messages: [...aiMessages, { role: "user", content: prompt }] } });
+      const d = await api<{ reply: string }>("ai/chat", { method: "POST", body: { messages: [...aiMessages, { role: "user", content: prompt }], page: pathname } });
       setAiMessages((prev) => [...prev, { role: "assistant", content: d.reply }]);
     } catch (e) {
       setAiMessages((prev) => [...prev, { role: "assistant", content: (e as Error).message }]);
@@ -242,24 +379,7 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
     }
   }
 
-  const aiSuggestions =
-    user.role === "TEACHER" || user.role === "ADMIN" || user.role === "OWNER"
-      ? [
-          { label: "Write a report card comment", prompt: "Write a report card remark for a student who is doing well in most subjects but needs to improve in mathematics." },
-          { label: "Draft a lesson note", prompt: "Draft a lesson note on the topic 'Photosynthesis' for Basic 5 Science." },
-          { label: "Create a quiz", prompt: "Create 5 multiple-choice questions on fractions for Primary 4." },
-          { label: "Assignment idea", prompt: "Suggest a homework assignment on Nigeria's independence for JSS 1." },
-        ]
-      : user.role === "STUDENT"
-        ? [
-            { label: "Explain a topic", prompt: "Explain fractions simply to a primary school student." },
-            { label: "Practice questions", prompt: "Give me 5 practice questions on photosynthesis with answers." },
-            { label: "Study tips", prompt: "Give me tips for studying for my exams." },
-          ]
-        : [
-            { label: "Help my child", prompt: "How can I help my child improve their reading at home?" },
-            { label: "Understand progress", prompt: "What should a good report card look like? Help me understand my child's progress." },
-          ];
+  const aiSuggestions = aiSuggestionsFor(pathname, user.role);
 
   const loadNotifs = useCallback(async () => {
     try {
@@ -293,7 +413,7 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
     router.refresh();
   }
 
-  const baseNav = user.role === "STUDENT" ? STUDENT_NAV : STAFF_NAV;
+  const baseNav = user.role === "STUDENT" ? STUDENT_NAV : user.role === "PARENT" ? PARENT_NAV : STAFF_NAV;
   const sections = baseNav
     .map((s) => ({
       ...s,
@@ -417,7 +537,7 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
             <div className="duga-ai__head">
               <div>
                 <div className="duga-ai__title">AI Assistant</div>
-                <div className="duga-ai__sub">Free study &amp; lesson help</div>
+                <div className="duga-ai__sub">Helping with {pageTitle}</div>
               </div>
               <button className="duga-btn duga-btn--ghost duga-btn--sm" onClick={() => setAiOpen(false)} aria-label="Close assistant">
                 <Icon name="back" size={16} />
@@ -427,7 +547,10 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
               {aiMessages.length === 0 ? (
                 <div className="duga-ai__empty">
                   <div className="duga-ai__logo">AI</div>
-                  <p>Ask me anything — homework help, lesson notes, report card comments or study tips.</p>
+                  <p>
+                    I can see you&apos;re on <strong>{pageTitle}</strong>. Ask me anything about it — homework help, lesson
+                    notes, report card comments or study tips.
+                  </p>
                   <div className="duga-ai__chips">
                     {aiSuggestions.map((s) => (
                       <button key={s.label} className="duga-btn duga-btn--outline duga-btn--sm" onClick={() => sendAi(s.prompt)}>
@@ -443,7 +566,17 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
                       <div className="duga-ai__bubble">{m.content}</div>
                     </div>
                   ))}
-                  {aiBusy && <div className="duga-ai__msg assistant"><div className="duga-ai__bubble"><span className="duga-spinner" /></div></div>}
+                  {aiBusy && (
+                    <div className="duga-ai__msg assistant">
+                      <div className="duga-ai__bubble">
+                        <span className="duga-ai__typing" aria-label="AI is typing">
+                          <span />
+                          <span />
+                          <span />
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
               {aiPreset && !aiBusy && (

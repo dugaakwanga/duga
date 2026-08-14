@@ -60,7 +60,8 @@ export default function RoleLogin({ config = DEMO }: { config?: Partial<RoleLogi
       router.refresh();
       return;
     }
-    router.push("/portal/dashboard");
+    const home = res.user?.role === "PARENT" ? "/portal/parent" : res.user?.role === "STUDENT" ? "/portal/student" : "/portal/dashboard";
+    router.push(home);
     router.refresh();
   }
 

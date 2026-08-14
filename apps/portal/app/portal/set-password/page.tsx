@@ -9,11 +9,20 @@ export default function SetPasswordPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [mustChange, setMustChange] = useState(false);
+  const [role, setRole] = useState<string>("");
   const [pw, setPw] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const roleLabel = role === "PARENT" ? "parent" : role === "STUDENT" ? "student" : role.toLowerCase() || "account";
+
+  function homeFor(r: string): string {
+    if (r === "PARENT") return "/portal/parent";
+    if (r === "STUDENT") return "/portal/student";
+    return "/portal/dashboard";
+  }
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -23,8 +32,9 @@ export default function SetPasswordPage() {
           router.replace("/login");
           return;
         }
+        setRole(j.user.role ?? "");
         setMustChange(!!j.user.mustChangePassword);
-        if (!j.user.mustChangePassword) router.replace("/portal/dashboard");
+        if (!j.user.mustChangePassword) router.replace(homeFor(j.user.role ?? ""));
       })
       .finally(() => setLoading(false));
   }, [router]);
@@ -58,12 +68,12 @@ export default function SetPasswordPage() {
     <div style={{ maxWidth: 460, margin: "40px auto" }}>
       <Card title="Set your password">
         <div style={{ fontSize: 13.5, color: "var(--duga-muted)", marginBottom: 16 }}>
-          This is your first login. Please choose the password you want to use from now on.
+          This is your first {roleLabel} login. Please choose the password you want to use from now on.
         </div>
         {done ? (
           <div>
             <Alert tone="success">Password set. You&apos;re all set.</Alert>
-            <Button onClick={() => router.push("/portal/dashboard")} style={{ marginTop: 14 }}>Go to dashboard</Button>
+            <Button onClick={() => router.push(homeFor(role))} style={{ marginTop: 14 }}>Continue to your portal</Button>
           </div>
         ) : (
           <form onSubmit={submit}>

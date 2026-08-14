@@ -324,6 +324,32 @@
 }
 .duga-ai__input input:focus { border-color: var(--duga-primary); }
 
+/* Typing indicator inside the assistant bubbles */
+.duga-ai__typing { display: inline-flex; align-items: center; gap: 4px; padding: 2px 0; }
+.duga-ai__typing span {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--duga-muted, #7a8699);
+  animation: duga-typing 1.2s infinite ease-in-out;
+}
+.duga-ai__typing span:nth-child(2) { animation-delay: 0.15s; }
+.duga-ai__typing span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes duga-typing {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+  40% { transform: translateY(-5px); opacity: 1; }
+}
+
+/* Generic small spinner used across the UI */
+.duga-spinner {
+  display: inline-block;
+  width: 16px; height: 16px;
+  border: 2px solid rgba(126, 138, 160, 0.25);
+  border-top-color: var(--duga-primary, #1e3a8a);
+  border-radius: 50%;
+  animation: duga-spin 0.7s linear infinite;
+  vertical-align: middle;
+}
+@keyframes duga-spin { to { transform: rotate(360deg); } }
+
 /* ---------- Route loading spinner ---------- */
 .duga-loading {
   min-height: 60vh;
@@ -847,6 +873,19 @@ body {
 .classes-card__actions .duga-btn:first-child { grid-column: 1 / -1; }
 .classes-section h2 { display: flex; align-items: center; gap: 9px; letter-spacing: -0.01em; }
 .classes-section h2::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--duga-gold); box-shadow: 0 0 0 4px rgba(217, 169, 42, 0.15); }
+
+/* ---------- Parent portal home ---------- */
+.parent-child-card { border-radius: 16px; overflow: hidden; }
+.parent-child-card:hover { box-shadow: var(--duga-shadow, 0 6px 20px rgba(15, 23, 42, 0.1)); transform: translateY(-1px); transition: all 0.18s ease; }
+.parent-child-stat {
+  background: var(--duga-surface, #f4f6fa);
+  border-radius: 10px;
+  padding: 8px 6px;
+  text-align: center;
+  min-width: 0;
+}
+.parent-child-stat__value { font-weight: 800; font-size: 15px; color: var(--duga-ink-1, #0f172a); }
+.parent-child-stat__label { font-size: 10.5px; color: var(--duga-muted, #64748b); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
 
 .subject-list { display: grid; gap: 7px; }
 .subject-list__item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 0 9px 10px; border-bottom: 1px solid var(--duga-border); }

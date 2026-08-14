@@ -27,7 +27,7 @@ export default function ProfilePage() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const [pw, setPw] = useState({ currentPassword: "", newPassword: "" });
+  const [pw, setPw] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
   const [pwMsg, setPwMsg] = useState<string | null>(null);
 
   const canEditPhoto = me ? me.role !== "STUDENT" && me.role !== "PARENT" : false;
@@ -81,9 +81,17 @@ export default function ProfilePage() {
 
   async function changePassword() {
     setPwMsg(null);
+    if (pw.newPassword.length < 8) {
+      setPwMsg("New password must be at least 8 characters.");
+      return;
+    }
+    if (pw.newPassword !== pw.confirmPassword) {
+      setPwMsg("Passwords do not match.");
+      return;
+    }
     try {
-      await api("profile/changePassword", { method: "POST", body: pw });
-      setPw({ currentPassword: "", newPassword: "" });
+      await api("profile/changePassword", { method: "POST", body: { currentPassword: pw.currentPassword, newPassword: pw.newPassword } });
+      setPw({ currentPassword: "", newPassword: "", confirmPassword: "" });
       setPwMsg("Password updated successfully.");
     } catch (e) {
       setPwMsg((e as Error).message);
@@ -155,6 +163,9 @@ export default function ProfilePage() {
           </Field>
           <Field label="New password">
             <Input type="password" value={pw.newPassword} onChange={(e) => setPw({ ...pw, newPassword: e.target.value })} />
+          </Field>
+          <Field label="Confirm new password">
+            <Input type="password" value={pw.confirmPassword} onChange={(e) => setPw({ ...pw, confirmPassword: e.target.value })} />
           </Field>
           {pwMsg && <Alert tone={pwMsg.includes("successfully") ? "success" : "danger"}>{pwMsg}</Alert>}
           <Button onClick={changePassword} style={{ marginTop: 14 }}>Update password</Button>

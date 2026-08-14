@@ -83,12 +83,18 @@ export const aiModule: Module = {
       const last = messages[messages.length - 1];
       const prompt = String(last?.content ?? "").trim();
       if (!prompt) throw new Error("A message is required");
+      // The shell tells us which portal page the user is on so the assistant
+      // can ground its help in what they are actually trying to do.
+      const page = String(ctx.body.page ?? "").trim();
+      const pageHint = page
+        ? `The user is currently on the "${page}" page of the school portal. Make your help relevant to that page and what they would do there.\n\n`
+        : "";
       // Carry a little context from previous turns to keep conversations coherent.
       const history = messages
         .slice(-6, -1)
         .map((m) => `${m.role === "assistant" ? "Assistant" : "User"}: ${String(m.content ?? "")}`)
         .join("\n");
-      const userText = history ? `Previous conversation:\n${history}\n\nNew message:\n${prompt}` : prompt;
+      const userText = pageHint + (history ? `Previous conversation:\n${history}\n\nNew message:\n${prompt}` : prompt);
       const reply = await generate(systemFor(ctx.session.user.role), userText, 0.7, 1024);
       return { reply };
     },

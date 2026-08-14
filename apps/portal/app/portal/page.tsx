@@ -9,5 +9,8 @@ export default async function PortalHome() {
   if (session.user.role === "STUDENT") {
     redirect("/portal/student");
   }
+  if (session.user.role === "PARENT") {
+    redirect("/portal/parent");
+  }
   redirect("/portal/dashboard");
 }

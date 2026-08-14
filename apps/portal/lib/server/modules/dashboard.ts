@@ -68,9 +68,59 @@ export const dashboardModule: Module = {
         include: { student: { include: { classGroup: { include: { level: true } } } } },
       });
       const childIds = children.map((c) => c.studentId);
+      const monthAgo = new Date(Date.now() - 30 * 86400000);
+      const [reportCards, latestInvoices, attendanceRows, subjectCounts] = await Promise.all([
+        prisma.reportCard.findMany({
+          where: { schoolId, studentId: { in: childIds }, isPublished: true },
+          orderBy: { createdAt: "desc" },
+          distinct: ["studentId"],
+          select: { studentId: true, average: true },
+        }),
+        financeOn
+          ? prisma.invoice.findMany({
+              where: { schoolId, studentId: { in: childIds } },
+              orderBy: { createdAt: "desc" },
+              distinct: ["studentId"],
+              select: { studentId: true, balance: true, status: true },
+            })
+          : Promise.resolve([] as Array<{ studentId: string; balance: number; status: string }>),
+        prisma.studentAttendance.findMany({
+          where: { schoolId, studentId: { in: childIds }, date: { gte: monthAgo } },
+          select: { studentId: true, status: true },
+        }),
+        prisma.classSubject.groupBy({
+          by: ["classGroupId"],
+          where: { classGroupId: { in: children.map((c) => c.student.currentClassGroupId ?? "none") } },
+          _count: { _all: true },
+        }),
+      ]);
+      const cardById = new Map(reportCards.map((r) => [r.studentId, r.average]));
+      const invoiceById = new Map(latestInvoices.map((i) => [i.studentId, i]));
+      const attMap = new Map<string, { present: number; total: number }>();
+      for (const a of attendanceRows) {
+        const e = attMap.get(a.studentId) ?? { present: 0, total: 0 };
+        e.total += 1;
+        if (a.status === "PRESENT") e.present += 1;
+        attMap.set(a.studentId, e);
+      }
+      const countByClass = new Map(subjectCounts.map((s) => [s.classGroupId, s._count._all]));
+      const enriched = children.map((c) => {
+        const att = attMap.get(c.studentId);
+        return {
+          ...c,
+          student: {
+            ...c.student,
+            reportAverage: cardById.get(c.studentId) ?? null,
+            feeBalance: invoiceById.get(c.studentId)?.balance ?? null,
+            feeStatus: invoiceById.get(c.studentId)?.status ?? null,
+            attendancePct: att && att.total > 0 ? Math.round((att.present / att.total) * 100) : null,
+            subjectCount: countByClass.get(c.student.currentClassGroupId ?? "") ?? 0,
+          },
+        };
+      });
       return {
         role,
-        children,
+        children: enriched,
         invoices: financeOn
           ? await prisma.invoice.findMany({ where: { schoolId, studentId: { in: childIds }, status: { in: ["UNPAID", "PARTIAL"] } }, take: 5 })
           : null,
