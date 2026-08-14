@@ -84,7 +84,9 @@ export type Permission =
   | "library:view"
   | "library:manage"
   // Audit
-  | "audit:view";
+  | "audit:view"
+  // AI assistant
+  | "ai:use";
 
 export const PERMISSIONS: Permission[] = [
   "students:view",
@@ -144,6 +146,7 @@ export const PERMISSIONS: Permission[] = [
   "library:view",
   "library:manage",
   "audit:view",
+  "ai:use",
 ];
 
 const rolePermissions: Record<Role, Permission[]> = {
@@ -200,10 +203,11 @@ const rolePermissions: Record<Role, Permission[]> = {
     "elearn:view",
     "games:manage",
     "games:play",
+    "ai:use",
   ],
   // Bursar access is intentionally limited to finance. The owner can narrow
   // this further through the bursar permission setting in Payroll.
-  BURSAR: ["fees:view", "fees:manage", "fees:collect", "financials:view", "payroll:view", "payroll:manage"],
+  BURSAR: ["fees:view", "fees:manage", "fees:collect", "financials:view", "payroll:view", "payroll:manage", "ai:use"],
   TEACHER: [
     "learning:manage",
     "learning:view",
@@ -228,6 +232,7 @@ const rolePermissions: Record<Role, Permission[]> = {
     "games:manage",
     "games:play",
     "library:view",
+    "ai:use",
   ],
   PARENT: [
     "students:view",
@@ -249,6 +254,7 @@ const rolePermissions: Record<Role, Permission[]> = {
     "games:play",
     "pta:view",
     "library:view",
+    "ai:use",
   ],
   STUDENT: [
     "learning:view",
@@ -269,6 +275,7 @@ const rolePermissions: Record<Role, Permission[]> = {
     "games:play",
     "pta:view",
     "library:view",
+    "ai:use",
   ],
 };
 

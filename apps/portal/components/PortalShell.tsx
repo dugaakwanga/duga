@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { hasPermission, type Permission, type Role } from "@duga/core";
@@ -200,6 +200,67 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
   const [notifs, setNotifs] = useState<Array<{ id: string; title: string; body: string; read: boolean; link?: string | null; createdAt: string }>>([]);
   const [notifCount, setNotifCount] = useState(0);
 
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiMessages, setAiMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const [aiInput, setAiInput] = useState("");
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiPreset, setAiPreset] = useState<string | null>(null);
+  const aiScrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (aiOpen && aiScrollRef.current) aiScrollRef.current.scrollTop = aiScrollRef.current.scrollHeight;
+  }, [aiMessages, aiOpen]);
+
+  // Allow any page to open the assistant with a suggested prompt.
+  useEffect(() => {
+    const onAiPrompt = (e: Event) => {
+      const detail = (e as CustomEvent).detail as string | undefined;
+      if (detail) {
+        setAiPreset(detail);
+        setAiInput(detail);
+        setAiOpen(true);
+      }
+    };
+    window.addEventListener("duga-ai-prompt", onAiPrompt);
+    return () => window.removeEventListener("duga-ai-prompt", onAiPrompt);
+  }, []);
+
+  async function sendAi(text: string) {
+    const prompt = text.trim();
+    if (!prompt || aiBusy) return;
+    setAiMessages((prev) => [...prev, { role: "user", content: prompt }]);
+    setAiInput("");
+    setAiPreset(null);
+    setAiBusy(true);
+    try {
+      const d = await api<{ reply: string }>("ai/chat", { method: "POST", body: { messages: [...aiMessages, { role: "user", content: prompt }] } });
+      setAiMessages((prev) => [...prev, { role: "assistant", content: d.reply }]);
+    } catch (e) {
+      setAiMessages((prev) => [...prev, { role: "assistant", content: (e as Error).message }]);
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
+  const aiSuggestions =
+    user.role === "TEACHER" || user.role === "ADMIN" || user.role === "OWNER"
+      ? [
+          { label: "Write a report card comment", prompt: "Write a report card remark for a student who is doing well in most subjects but needs to improve in mathematics." },
+          { label: "Draft a lesson note", prompt: "Draft a lesson note on the topic 'Photosynthesis' for Basic 5 Science." },
+          { label: "Create a quiz", prompt: "Create 5 multiple-choice questions on fractions for Primary 4." },
+          { label: "Assignment idea", prompt: "Suggest a homework assignment on Nigeria's independence for JSS 1." },
+        ]
+      : user.role === "STUDENT"
+        ? [
+            { label: "Explain a topic", prompt: "Explain fractions simply to a primary school student." },
+            { label: "Practice questions", prompt: "Give me 5 practice questions on photosynthesis with answers." },
+            { label: "Study tips", prompt: "Give me tips for studying for my exams." },
+          ]
+        : [
+            { label: "Help my child", prompt: "How can I help my child improve their reading at home?" },
+            { label: "Understand progress", prompt: "What should a good report card look like? Help me understand my child's progress." },
+          ];
+
   const loadNotifs = useCallback(async () => {
     try {
       const data = await api<{ items: Array<{ id: string; title: string; body: string; read: boolean; link?: string | null; createdAt: string }> }>("messages/notifications");
@@ -344,6 +405,77 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
         </header>
 
         <main className="portal-content">{children}</main>
+      </div>
+
+      {/* AI assistant floating panel */}
+      {aiOpen && (
+        <div className="duga-ai-scrim" onClick={() => setAiOpen(false)} />
+      )}
+      <div className={`duga-ai${aiOpen ? " open" : ""}`}>
+        {aiOpen && (
+          <>
+            <div className="duga-ai__head">
+              <div>
+                <div className="duga-ai__title">AI Assistant</div>
+                <div className="duga-ai__sub">Free study &amp; lesson help</div>
+              </div>
+              <button className="duga-btn duga-btn--ghost duga-btn--sm" onClick={() => setAiOpen(false)} aria-label="Close assistant">
+                <Icon name="back" size={16} />
+              </button>
+            </div>
+            <div className="duga-ai__body" ref={aiScrollRef}>
+              {aiMessages.length === 0 ? (
+                <div className="duga-ai__empty">
+                  <div className="duga-ai__logo">AI</div>
+                  <p>Ask me anything — homework help, lesson notes, report card comments or study tips.</p>
+                  <div className="duga-ai__chips">
+                    {aiSuggestions.map((s) => (
+                      <button key={s.label} className="duga-btn duga-btn--outline duga-btn--sm" onClick={() => sendAi(s.prompt)}>
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="duga-ai__msgs">
+                  {aiMessages.map((m, i) => (
+                    <div key={i} className={`duga-ai__msg ${m.role}`}>
+                      <div className="duga-ai__bubble">{m.content}</div>
+                    </div>
+                  ))}
+                  {aiBusy && <div className="duga-ai__msg assistant"><div className="duga-ai__bubble"><span className="duga-spinner" /></div></div>}
+                </div>
+              )}
+              {aiPreset && !aiBusy && (
+                <div className="duga-ai__preset">
+                  Suggested: <button className="duga-btn duga-btn--ghost duga-btn--sm" onClick={() => sendAi(aiPreset)}>{aiPreset}</button>
+                </div>
+              )}
+            </div>
+            <form
+              className="duga-ai__input"
+              onSubmit={(e) => {
+                e.preventDefault();
+                sendAi(aiInput);
+              }}
+            >
+              <input
+                value={aiInput}
+                onChange={(e) => setAiInput(e.target.value)}
+                placeholder="Ask the AI assistant…"
+                aria-label="Ask the AI assistant"
+              />
+              <button className="duga-btn duga-btn--accent duga-btn--md" type="submit" disabled={aiBusy || !aiInput.trim()}>
+                Send
+              </button>
+            </form>
+          </>
+        )}
+        {!aiOpen && (
+          <button className="duga-ai__fab" onClick={() => setAiOpen(true)} aria-label="Open AI assistant">
+            <Icon name="notes" size={20} /> AI
+          </button>
+        )}
       </div>
     </div>
   );

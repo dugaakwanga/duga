@@ -137,6 +137,13 @@ export const FEATURES: FeatureDef[] = [
     roles: ["ADMIN", "TEACHER", "PARENT", "STUDENT"],
   },
   {
+    id: "ai",
+    label: "AI assistant",
+    group: "Academics",
+    resources: ["ai"],
+    roles: ["ADMIN", "BURSAR", "TEACHER", "PARENT", "STUDENT"],
+  },
+  {
     id: "reports",
     label: "Reports & financials",
     group: "Operations",

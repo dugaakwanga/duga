@@ -206,6 +206,124 @@
 .portal-notif-item:hover { background: var(--duga-surface); }
 .portal-notif-item.unread { background: var(--duga-info-soft); border-left: 3px solid var(--duga-primary); }
 
+/* ---------- AI assistant ---------- */
+.duga-ai {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 300;
+}
+.duga-ai-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(16, 24, 40, 0.35);
+  z-index: 290;
+}
+.duga-ai__fab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 12px 18px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--duga-primary, #1e3a8a), var(--duga-gold, #d4af37));
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  box-shadow: var(--duga-shadow-xl, 0 8px 24px rgba(0, 0, 0, 0.25));
+}
+.duga-ai__fab:hover { transform: translateY(-2px); }
+.duga-ai.open {
+  width: min(380px, calc(100vw - 24px));
+  height: 70vh;
+  max-height: 560px;
+  background: #fff;
+  border: 1px solid var(--duga-border);
+  border-radius: 18px;
+  box-shadow: var(--duga-shadow-xl);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.duga-ai__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, var(--duga-primary, #1e3a8a), var(--duga-gold, #d4af37));
+  color: #fff;
+}
+.duga-ai__title { font-weight: 800; font-size: 15px; }
+.duga-ai__sub { font-size: 11.5px; opacity: 0.85; }
+.duga-ai__head .duga-btn { color: #fff; }
+.duga-ai__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.duga-ai__empty { text-align: center; color: var(--duga-muted); font-size: 13.5px; padding: 10px 4px; }
+.duga-ai__logo {
+  width: 48px; height: 48px;
+  margin: 6px auto 10px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--duga-primary, #1e3a8a), var(--duga-gold, #d4af37));
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+}
+.duga-ai__chips { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.duga-ai__chips .duga-btn { width: 100%; justify-content: center; text-align: center; }
+.duga-ai__msgs { display: flex; flex-direction: column; gap: 10px; }
+.duga-ai__msg { display: flex; }
+.duga-ai__msg.user { justify-content: flex-end; }
+.duga-ai__msg.assistant { justify-content: flex-start; }
+.duga-ai__bubble {
+  max-width: 86%;
+  padding: 9px 12px;
+  border-radius: 14px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.duga-ai__msg.user .duga-ai__bubble {
+  background: var(--duga-primary, #1e3a8a);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+.duga-ai__msg.assistant .duga-ai__bubble {
+  background: var(--duga-surface, #f4f6fa);
+  color: var(--duga-ink);
+  border-bottom-left-radius: 4px;
+}
+.duga-ai__preset {
+  font-size: 12px;
+  color: var(--duga-muted);
+  padding: 2px 4px;
+}
+.duga-ai__input {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--duga-border);
+}
+.duga-ai__input input {
+  flex: 1;
+  border: 1px solid var(--duga-border);
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+}
+.duga-ai__input input:focus { border-color: var(--duga-primary); }
+
 /* ---------- Route loading spinner ---------- */
 .duga-loading {
   min-height: 60vh;

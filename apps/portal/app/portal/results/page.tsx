@@ -92,6 +92,18 @@ function computeTotals(r: EntryRow, config: ResultConfig) {
   return { ca, exam, total: ca + exam };
 }
 
+function gradeOf(score: number): string {
+  if (score >= 75) return "A1";
+  if (score >= 70) return "B2";
+  if (score >= 65) return "B3";
+  if (score >= 60) return "C4";
+  if (score >= 55) return "C5";
+  if (score >= 50) return "C6";
+  if (score >= 45) return "D7";
+  if (score >= 40) return "E8";
+  return "F9";
+}
+
 export default function ResultsPage() {
   const [role, setRole] = useState<string>("");
   const [cards, setCards] = useState<ReportCard[]>([]);
@@ -146,6 +158,30 @@ export default function ResultsPage() {
       await api(`results/${rc.id}/updateDetails`, { method: "POST", body: { psychomotor: toRatings(psychomotorText), coCurricular: toRatings(activitiesText), attendanceRemark: window.prompt("Attendance / conduct remark", rc.attendanceRemark ?? "") ?? "", remark: window.prompt("Teacher's remark", rc.remark ?? "") ?? "" } });
       setCards((old) => old.map((card) => card.id === rc.id ? { ...card, psychomotor: toRatings(psychomotorText), coCurricular: toRatings(activitiesText) } : card));
     } catch (e) { alert((e as Error).message); }
+  }
+
+  async function draftRemark(rc: ReportCard) {
+    try {
+      const d = await api<{ reply: string }>("ai/remark", {
+        method: "POST",
+        body: {
+          studentName: `${rc.student.user.firstName} ${rc.student.user.lastName}`,
+          className: rc.classGroup ? `${rc.classGroup.level.name} ${rc.classGroup.name}` : undefined,
+          average: rc.average != null ? String(Number(rc.average).toFixed(1)) : undefined,
+          grade: rc.average != null ? gradeOf(Number(rc.average)) : undefined,
+        },
+      });
+      const remark = window.prompt("AI-drafted remark — edit or press OK to keep:", d.reply);
+      if (remark === null) return;
+      await api(`results/${rc.id}/updateDetails`, {
+        method: "POST",
+        body: { psychomotor: rc.psychomotor ?? {}, coCurricular: rc.coCurricular ?? {}, attendanceRemark: rc.attendanceRemark ?? "", remark },
+      });
+      setCards((old) => old.map((card) => (card.id === rc.id ? { ...card, remark } : card)));
+      setRankMsg("Remark saved.");
+    } catch (e) {
+      alert((e as Error).message);
+    }
   }
 
   useEffect(() => {
@@ -521,6 +557,7 @@ export default function ResultsPage() {
                       <Button size="sm" variant="accent" onClick={() => publishStudent(rc)}>Publish</Button>
                     )}
                     {(role === "TEACHER" || role === "ADMIN" || role === "OWNER") && <Button size="sm" variant="ghost" onClick={() => editDetails(rc)}>Rate extras</Button>}
+                    {(role === "TEACHER" || role === "ADMIN" || role === "OWNER") && <Button size="sm" variant="outline" onClick={() => draftRemark(rc)}>Draft remark</Button>}
                   </div>
                 </td>
               </tr>
