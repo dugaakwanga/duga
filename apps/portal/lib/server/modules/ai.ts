@@ -11,7 +11,7 @@ import { can, str } from "../helpers";
 // clear message instead of crashing.
 // ---------------------------------------------------------------------------
 
-const DEFAULT_MODEL = "google/gemma-4-31b-it:free";
+const DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
 
 const MODEL = process.env.OPENROUTER_MODEL || DEFAULT_MODEL;
 const API_KEY = process.env.OPENROUTER_API_KEY || "";
