@@ -16,7 +16,7 @@ interface ClassGroup {
   session: Session;
   formTeacherId?: string | null;
   formTeacher?: { id: string; user: { firstName: string; lastName: string } } | null;
-  classSubjects?: { id: string; subject?: { id: string; name: string; section: string }; teacher?: { id: string } | null }[];
+  classSubjects?: { id: string; subject?: { id: string; name: string; section: string }; teacher?: { id: string; user?: { firstName: string; lastName: string } } | null }[];
   _count?: { students: number };
 }
 
@@ -37,6 +37,7 @@ export default function ClassesPage() {
   const [assignTarget, setAssignTarget] = useState<ClassGroup | null>(null);
   const [assignSection, setAssignSection] = useState<"PRIMARY" | "SECONDARY">("SECONDARY");
   const [assignSubjectIds, setAssignSubjectIds] = useState<string[]>([]);
+  const [assignTeachers, setAssignTeachers] = useState<Record<string, string>>({});
   const [shownSubjects, setShownSubjects] = useState<Record<string, boolean>>({});
   const [editingClass, setEditingClass] = useState<ClassGroup | null>(null);
   const [editingItem, setEditingItem] = useState<{ kind: "subject" | "level" | "session"; id: string } | null>(null);
@@ -179,9 +180,10 @@ export default function ClassesPage() {
     if (!assignTarget) return;
     if (assignSubjectIds.length === 0) return alert("Choose at least one subject");
     try {
-      await api(`classes/${assignTarget.id}/assignSubject`, { method: "POST", body: { subjectIds: assignSubjectIds } });
+      await api(`classes/${assignTarget.id}/assignSubject`, { method: "POST", body: { subjectIds: assignSubjectIds, teachers: assignTeachers } });
       setAssignTarget(null);
       setAssignSubjectIds([]);
+      setAssignTeachers({});
       load();
     } catch (e) {
       alert((e as Error).message);
@@ -247,7 +249,7 @@ export default function ClassesPage() {
                     <Button size="sm" variant={shownSubjects[c.id] ? "ghost" : "outline"} onClick={() => setShownSubjects((prev) => ({ ...prev, [c.id]: !prev[c.id] }))}>
                       Subjects ({c.classSubjects?.length ?? 0})
                     </Button>
-                    <Button size="sm" variant="outline" onClick={() => { setAssignTarget(c); setAssignSection(c.level.section === "PRIMARY" ? "PRIMARY" : "SECONDARY"); setAssignSubjectIds((c.classSubjects ?? []).map((cs) => cs.subject?.id ?? "").filter(Boolean)); }}>Assign subject</Button>
+                    <Button size="sm" variant="outline" onClick={() => { setAssignTarget(c); setAssignSection(c.level.section === "PRIMARY" ? "PRIMARY" : "SECONDARY"); setAssignSubjectIds((c.classSubjects ?? []).map((cs) => cs.subject?.id ?? "").filter(Boolean)); setAssignTeachers(Object.fromEntries((c.classSubjects ?? []).map((cs) => [cs.subject?.id ?? "", cs.teacher?.id ?? ""]).filter(([id]) => id))); }}>Assign subject</Button>
                     <Button size="sm" variant="outline" onClick={() => openEditClass(c)}>Edit</Button>
                     <Button size="sm" variant="danger" onClick={() => deleteClass(c)} title={`Delete ${c.level.name} ${c.name}`}>Delete</Button>
                   </div>
@@ -263,7 +265,7 @@ export default function ClassesPage() {
                               title={`Unassign ${cs.subject!.name}`}
                               style={{ fontSize: 12, padding: "2px 8px", maxWidth: "100%", overflowWrap: "anywhere" }}
                             >
-                              {cs.subject!.name} ×
+                              {cs.subject!.name}{cs.teacher?.user ? ` · ${cs.teacher.user.firstName} ${cs.teacher.user.lastName}` : ""} ×
                             </button>
                           ))}
                         </div>
@@ -406,19 +408,31 @@ export default function ClassesPage() {
             <option value="SECONDARY">Secondary</option>
           </Select>
         </Field>
-        <Field label="Subjects" required hint="Select one or more subjects to assign to this class.">
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 220, overflowY: "auto", border: "1px solid var(--duga-border)", borderRadius: 8, padding: 8 }}>
+        <Field label="Subjects" required hint="Select one or more subjects and pick the teacher assigned to each.">
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 260, overflowY: "auto", border: "1px solid var(--duga-border)", borderRadius: 8, padding: 8 }}>
             {assignableSubjects.map((s) => {
               const checked = assignSubjectIds.includes(s.id);
               return (
-                <label key={s.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, cursor: "pointer" }}>
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => setAssignSubjectIds((prev) => (checked ? prev.filter((id) => id !== s.id) : [...prev, s.id]))}
-                  />
-                  <span>{s.name}</span>
-                </label>
+                <div key={s.id} style={{ display: "grid", gridTemplateColumns: "auto 1fr 180px", gap: 8, alignItems: "center" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => setAssignSubjectIds((prev) => (checked ? prev.filter((id) => id !== s.id) : [...prev, s.id]))}
+                    />
+                    <span>{s.name}</span>
+                  </label>
+                  <Select
+                    value={assignTeachers[s.id] ?? ""}
+                    disabled={!checked}
+                    onChange={(e) => setAssignTeachers((prev) => ({ ...prev, [s.id]: e.target.value }))}
+                  >
+                    <option value="">— Teacher —</option>
+                    {teachers.map((t) => (
+                      <option key={t.id} value={t.id}>{t.firstName} {t.lastName}</option>
+                    ))}
+                  </Select>
+                </div>
               );
             })}
           </div>

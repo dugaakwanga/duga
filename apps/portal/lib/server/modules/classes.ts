@@ -16,7 +16,7 @@ export const classesModule: Module = {
           level: true,
           session: true,
           formTeacher: { include: { user: { select: { firstName: true, lastName: true } } } },
-          classSubjects: { include: { subject: { select: { id: true, name: true, section: true } }, teacher: { select: { id: true } } } },
+          classSubjects: { include: { subject: { select: { id: true, name: true, section: true } }, teacher: { include: { user: { select: { firstName: true, lastName: true } } } } } },
           _count: { select: { students: true } },
         },
         orderBy: { createdAt: "asc" },
@@ -107,7 +107,7 @@ export const classesModule: Module = {
   },
 
   actions: {
-    // Assign one or more subjects (optionally with a teacher) to a class
+    // Assign one or more subjects (each optionally with a teacher) to a class
     assignSubject: async (ctx) => {
       can(ctx, "classes:manage");
       const schoolId = ctx.session.user.schoolId;
@@ -118,13 +118,17 @@ export const classesModule: Module = {
       if (!cls) throw new Error("Class not found");
       const subjects = await prisma.subject.findMany({ where: { id: { in: subjectIds }, schoolId } });
       if (subjects.length !== subjectIds.length) throw new Error("One or more subjects not found");
-      const teacherId = str(ctx.body.teacherId);
-      const teacher = teacherId
-        ? await prisma.teacher.findFirst({ where: { schoolId, OR: [{ id: teacherId }, { userId: teacherId }] } })
-        : null;
-      if (teacherId && !teacher) throw new Error("Teacher not found");
+      // Per-subject teacher map (subjectId -> teacherId) with single-teacher fallback.
+      const teachers = ctx.body.teachers && typeof ctx.body.teachers === "object" ? (ctx.body.teachers as Record<string, unknown>) : {};
+      const singleTeacherId = str(ctx.body.teacherId);
       const assigned: string[] = [];
       for (const subjectId of subjectIds) {
+        const teacherId = str(teachers[subjectId]) ?? singleTeacherId;
+        let teacher = null;
+        if (teacherId) {
+          teacher = await prisma.teacher.findFirst({ where: { schoolId, OR: [{ id: teacherId }, { userId: teacherId }] } });
+          if (!teacher) throw new Error(`Teacher not found for subject ${subjectId}`);
+        }
         const cs = await prisma.classSubject.upsert({
           where: { classGroupId_subjectId: { classGroupId: ctx.id!, subjectId } },
           update: { teacherId: teacher?.id ?? null },
