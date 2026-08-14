@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Card, Badge, Table, PageHeader, Button, Modal, Field, Input, Select, EmptyState, Alert, Spinner, Icon } from "@duga/ui";
 import { api } from "@/lib/client/api";
+import { useSection } from "@/components/SectionContext";
 
 interface FeeInfo {
   feeAmount: string;
@@ -71,7 +72,9 @@ export default function StudentsPage() {
   }
   const classGroups = [...byClass.entries()].sort(([a], [b]) => a.localeCompare(b));
 
+  const { section } = useSection();
   const load = useCallback(async () => {
+    void section;
     setLoading(true);
     setError(null);
     try {
@@ -82,11 +85,17 @@ export default function StudentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [search]);
+  }, [search, section]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  // When a global section is active, auto-open that section's group.
+  useEffect(() => {
+    if (!section) return;
+    setView((v) => (v.name === "overview" ? { name: "category", section } : v));
+  }, [section]);
 
   useEffect(() => {
     api<{ items: ClassOption[]; levels: { id: string; name: string; section: string }[]; sessions: { id: string; name: string }[] }>("classes")

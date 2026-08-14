@@ -2,7 +2,7 @@ import { prisma } from "@duga/core/server";
 import { withinRadiusMeters, schoolConfig } from "@duga/core";
 import { logAudit } from "@duga/core/server";
 import type { Module } from ".";
-import { can, todayUTC, isoDay, str, num } from "../helpers";
+import { can, todayUTC, isoDay, str, num, resolveSection } from "../helpers";
 
 // Resolve the staff member to clock for. When `targetUserId` is supplied the
 // caller clocks in/out on behalf of that staff member (proxy clock). The target
@@ -49,6 +49,10 @@ export const attendanceModule: Module = {
       const groups = [...new Set([...classes.map((c) => c.classGroupId), ...formClasses.map((c) => c.id)])];
       where.classGroupId = { in: groups };
     }
+
+    // Scope to the active school section (Primary/Secondary) when set.
+    const section = await resolveSection(ctx);
+    if (section) where.classGroup = { is: { level: { section } } };
 
     const records = await prisma.studentAttendance.findMany({
       where,

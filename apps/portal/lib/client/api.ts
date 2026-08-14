@@ -12,15 +12,29 @@ type Opts = {
   query?: Record<string, string | number | undefined>;
 };
 
+// The globally active school section (PRIMARY/SECONDARY). Set by the portal
+// shell when the user switches sections; every API call automatically carries
+// it so staff pages only ever see the section they are working in.
+let activeSection: string | null = null;
+
+export function setActiveSection(s: string | null): void {
+  activeSection = s;
+}
+
+export function getActiveSection(): string | null {
+  return activeSection;
+}
+
 export async function api<T = unknown>(path: string, opts: Opts = {}): Promise<T> {
   const { method = "GET", body, query } = opts;
   let url = `/api/v1/${path.replace(/^\//, "")}`;
+  const q = new URLSearchParams();
+  if (activeSection && !query?.section) q.set("section", activeSection);
   if (query) {
-    const q = new URLSearchParams();
     for (const [k, v] of Object.entries(query)) if (v !== undefined) q.set(k, String(v));
-    const s = q.toString();
-    if (s) url += `?${s}`;
   }
+  const s = q.toString();
+  if (s) url += `?${s}`;
   const res = await fetch(url, {
     method,
     headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,

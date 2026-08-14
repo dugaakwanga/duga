@@ -1,7 +1,7 @@
 import { prisma } from "@duga/core/server";
 import { logAudit } from "@duga/core/server";
 import type { Module } from ".";
-import { can, str, num, dayOfWeekNames } from "../helpers";
+import { can, str, num, dayOfWeekNames, resolveSection } from "../helpers";
 
 export const timetableModule: Module = {
   async list(ctx) {
@@ -10,6 +10,8 @@ export const timetableModule: Module = {
     const role = ctx.session.user.role;
     const termId = ctx.query.get("termId");
     const classGroupId = ctx.query.get("classGroupId");
+    const isManager = role === "OWNER" || role === "ADMIN";
+    const section = await resolveSection(ctx);
 
     const entriesWhere: Record<string, unknown> = { schoolId };
     if (termId) entriesWhere.termId = termId;
@@ -26,6 +28,9 @@ export const timetableModule: Module = {
       entriesWhere.classGroupId = classGroupId;
     }
 
+    // Scope timetable data to the active school section for staff.
+    if (isManager && section) entriesWhere.classGroup = { is: { level: { section } } };
+
     const entries = await prisma.timetableEntry.findMany({
       where: entriesWhere,
       include: { subject: true, classGroup: { include: { level: true } }, teacher: { include: { user: { select: { firstName: true, lastName: true } } } } },
@@ -40,18 +45,22 @@ export const timetableModule: Module = {
       entries: entries.filter((e) => e.dayOfWeek === index),
     }));
 
+    const examTimetableWhere: Record<string, unknown> = {
+      schoolId,
+      ...(role === "STUDENT" ? { classGroupId: ctx.session.user.student!.currentClassGroupId ?? undefined } : {}),
+    };
+    if (isManager && section) examTimetableWhere.classGroup = { is: { level: { section } } };
     const examTimetable = await prisma.examTimetableEntry.findMany({
-      where: { schoolId, ...(role === "STUDENT" ? { classGroupId: ctx.session.user.student!.currentClassGroupId ?? undefined } : {}) },
+      where: examTimetableWhere,
       include: { subject: true, classGroup: { include: { level: true } } },
       orderBy: [{ date: "asc" }, { startTime: "asc" }],
       take: 200,
     });
 
-    const isManager = role === "OWNER" || role === "ADMIN";
     const refs = isManager
       ? {
-          classes: await prisma.classGroup.findMany({ where: { schoolId }, include: { level: true }, orderBy: { name: "asc" }, take: 300 }),
-          subjects: await prisma.subject.findMany({ where: { schoolId }, orderBy: { name: "asc" }, take: 200 }),
+          classes: await prisma.classGroup.findMany({ where: { schoolId, ...(section ? { level: { section } } : {}) }, include: { level: true }, orderBy: { name: "asc" }, take: 300 }),
+          subjects: await prisma.subject.findMany({ where: { schoolId, ...(section ? { section } : {}) }, orderBy: { name: "asc" }, take: 200 }),
           teachers: await prisma.user.findMany({ where: { schoolId, role: "TEACHER" }, select: { id: true, firstName: true, lastName: true }, orderBy: { firstName: "asc" }, take: 300 }),
           terms: await prisma.term.findMany({ where: { schoolId }, orderBy: { name: "asc" }, take: 100 }),
         }

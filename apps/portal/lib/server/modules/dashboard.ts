@@ -1,7 +1,8 @@
 import { prisma } from "@duga/core/server";
 import type { Module } from ".";
 import { subfeatureEnabled } from "../features";
-import { feeInfoOf } from "../helpers";
+import { feeInfoOf, resolveSection } from "../helpers";
+import type { Section } from "@/lib/sections";
 
 // Role-aware dashboard summaries.
 export const dashboardModule: Module = {
@@ -11,13 +12,20 @@ export const dashboardModule: Module = {
     const financeOn = await subfeatureEnabled(schoolId, role, "finance");
 
     if (role === "OWNER" || role === "ADMIN") {
+      const section = await resolveSection(ctx);
+      const studentWhere: { schoolId: string; status: "ACTIVE"; section?: Section } = {
+        schoolId,
+        status: "ACTIVE",
+        ...(section ? { section } : {}),
+      };
+      const classWhere = { schoolId, ...(section ? { level: { section } } : {}) };
       const [studentCount, staffCount, classCount, invoiceStats, applications, unpaid, today] = await Promise.all([
-        prisma.student.count({ where: { schoolId, status: "ACTIVE" } }),
+        prisma.student.count({ where: studentWhere }),
         prisma.user.count({ where: { schoolId, role: { in: ["TEACHER", "ADMIN", "BURSAR"] }, status: "ACTIVE" } }),
-        prisma.classGroup.count({ where: { schoolId } }),
+        prisma.classGroup.count({ where: classWhere }),
         prisma.invoice.aggregate({ where: { schoolId }, _sum: { totalAmount: true, paidAmount: true, balance: true } }),
-        prisma.application.count({ where: { schoolId, status: "RECEIVED" } }),
-        prisma.invoice.count({ where: { schoolId, status: { in: ["UNPAID", "PARTIAL"] } } }),
+        prisma.application.count({ where: { schoolId, status: "RECEIVED", ...(section ? { section } : {}) } }),
+        prisma.invoice.count({ where: { schoolId, status: { in: ["UNPAID", "PARTIAL"] }, ...(section ? { student: { is: { section } } } : {}) } }),
         prisma.studentAttendance.count({ where: { schoolId, date: new Date() } }),
       ]);
       // Finance figures are owner-only by default; the admin sees them only if

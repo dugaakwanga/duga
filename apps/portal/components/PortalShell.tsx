@@ -5,8 +5,10 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { hasPermission, type Permission, type Role } from "@duga/core";
 import { Icon, Avatar } from "@duga/ui";
-import { api } from "@/lib/client/api";
+import { api, getActiveSection } from "@/lib/client/api";
 import { siteHomeUrl } from "@/lib/client/site";
+import { SectionProvider, useSection } from "@/components/SectionContext";
+import type { Section } from "@/lib/sections";
 
 interface NavItem {
   href: string;
@@ -327,6 +329,36 @@ interface ShellUser {
   financeAccess?: boolean;
   features?: string[];
   subfeatures?: string[];
+  sections?: Section[];
+  canSwitchSection?: boolean;
+}
+
+// Primary | Secondary switcher shown to admins/bursars; auto-scoped pill for
+// teachers (based on the classes assigned to them).
+function SectionSwitcher() {
+  const { section, available, canSwitch, setSection } = useSection();
+  if (available.length === 0) return null;
+  if (canSwitch) {
+    return (
+      <div className="duga-seg" aria-label="School section">
+        {available.map((s) => (
+          <button
+            key={s}
+            className={section === s ? "active" : ""}
+            onClick={() => setSection(s)}
+            aria-pressed={section === s}
+          >
+            {s === "SECONDARY" ? "Secondary" : "Primary"}
+          </button>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div className="duga-seg duga-seg--locked" title="Auto-scoped to your assigned classes">
+      <span>{available[0] === "SECONDARY" ? "Secondary" : "Primary"}</span>
+    </div>
+  );
 }
 
 export function PortalShell({ user, children }: { user: ShellUser; children: React.ReactNode }) {
@@ -370,7 +402,7 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
     setAiPreset(null);
     setAiBusy(true);
     try {
-      const d = await api<{ reply: string }>("ai/chat", { method: "POST", body: { messages: [...aiMessages, { role: "user", content: prompt }], page: pathname } });
+      const d = await api<{ reply: string }>("ai/chat", { method: "POST", body: { messages: [...aiMessages, { role: "user", content: prompt }], page: pathname, section: getActiveSection() ?? undefined } });
       setAiMessages((prev) => [...prev, { role: "assistant", content: d.reply }]);
     } catch (e) {
       setAiMessages((prev) => [...prev, { role: "assistant", content: (e as Error).message }]);
@@ -431,7 +463,8 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
   const pageTitle = TITLES.find((t) => pathname === t.match || pathname.startsWith(t.match + "/"))?.title ?? "Portal";
 
   return (
-    <div className="portal-shell">
+    <SectionProvider available={user.sections ?? []} canSwitch={user.canSwitchSection ?? false}>
+      <div className="portal-shell">
       {sidebarOpen && <div className="portal-sidebar-scrim" onClick={() => setSidebarOpen(false)} />}
       <aside className={`portal-sidebar${sidebarOpen ? " open" : ""}`}>
         <div className="portal-sidebar__brand">
@@ -478,6 +511,7 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
           </div>
 
           <div className="portal-topbar__actions">
+            <SectionSwitcher />
             <div className="portal-topbar__user">
               <Avatar name={user.name} src={user.photoUrl} size={38} />
               <div className="portal-topbar__user-details">
@@ -610,6 +644,7 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
           </button>
         )}
       </div>
-    </div>
+      </div>
+    </SectionProvider>
   );
 }

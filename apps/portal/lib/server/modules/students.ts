@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import { prisma } from "@duga/core/server";
 import type { Module } from ".";
-import { can, pick, str, num, bool, studentScope, feeInfoOf, assertContactFree } from "../helpers";
+import { can, pick, str, num, bool, studentScope, feeInfoOf, assertContactFree, resolveSection } from "../helpers";
 
 // Create or update the primary linked parent for a student. If an email is
 // given that matches the current parent, only name/phone are updated; otherwise
@@ -81,9 +81,11 @@ export const studentsModule: Module = {
     const schoolId = ctx.session.user.schoolId;
     const level = ctx.query.get("level");
     const search = ctx.query.get("search");
+    const section = await resolveSection(ctx);
     const students = await prisma.student.findMany({
       where: {
         schoolId,
+        ...(section ? { section } : {}),
         ...(level ? { classGroup: { levelId: level } } : {}),
         ...(search
           ? {

@@ -1,17 +1,19 @@
 import { prisma } from "@duga/core/server";
 import { logAudit } from "@duga/core/server";
 import type { Module } from ".";
-import { can, str, num } from "../helpers";
+import { can, str, num, resolveSection } from "../helpers";
 
 export const classesModule: Module = {
   async list(ctx) {
     can(ctx, "classes:view");
     const schoolId = ctx.session.user.schoolId;
+    const section = await resolveSection(ctx);
+    const sectionWhere = section ? { section } : {};
     const [sessions, levels, classGroups, subjects, teachers] = await Promise.all([
       prisma.academicSession.findMany({ where: { schoolId }, orderBy: { createdAt: "desc" } }),
-      prisma.classLevel.findMany({ where: { schoolId }, orderBy: { order: "asc" } }),
+      prisma.classLevel.findMany({ where: { schoolId, ...sectionWhere }, orderBy: { order: "asc" } }),
       prisma.classGroup.findMany({
-        where: { schoolId },
+        where: { schoolId, ...(section ? { level: { section } } : {}) },
         include: {
           level: true,
           session: true,
@@ -21,7 +23,7 @@ export const classesModule: Module = {
         },
         orderBy: { createdAt: "asc" },
       }),
-      prisma.subject.findMany({ where: { schoolId }, orderBy: { name: "asc" } }),
+      prisma.subject.findMany({ where: { schoolId, ...sectionWhere }, orderBy: { name: "asc" } }),
       prisma.user.findMany({
         where: { schoolId, role: "TEACHER" },
         include: { teacher: true },

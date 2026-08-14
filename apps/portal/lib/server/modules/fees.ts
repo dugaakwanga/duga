@@ -1,7 +1,7 @@
 import { prisma, initializePayment, verifyPayment, logAudit, dispatchNotification } from "@duga/core/server";
 import { generateReference, formatNaira } from "@duga/core";
 import type { Module } from ".";
-import { can, str, num, studentScope } from "../helpers";
+import { can, str, num, studentScope, resolveSection } from "../helpers";
 
 function assertFinanceManager(ctx: { session: { user: { role: string } } }) {
   if (!["OWNER", "BURSAR"].includes(ctx.session.user.role)) {
@@ -81,13 +81,15 @@ export const feesModule: Module = {
     }
     assertFinanceManager(ctx);
 
+    const section = await resolveSection(ctx);
+    const studentSectionWhere = section ? { student: { is: { section } } } : {};
     const agg = await prisma.invoice.aggregate({
-      where: { schoolId },
+      where: { schoolId, ...studentSectionWhere },
       _sum: { totalAmount: true, paidAmount: true, balance: true },
     });
     const { totalAmount, paidAmount, balance } = agg._sum;
     const invoices = await prisma.invoice.findMany({
-      where: { schoolId },
+      where: { schoolId, ...studentSectionWhere },
       include: { student: { include: { user: { select: { firstName: true, lastName: true } } } }, term: true, payments: true, items: true },
       orderBy: { createdAt: "desc" },
       take: 400,
@@ -97,8 +99,8 @@ export const feesModule: Module = {
       prisma.feeStructure.findMany({ where: { schoolId }, include: { feeType: true, level: true, classGroup: { include: { level: true } }, term: true } }),
       prisma.feeOverride.findMany({ where: { schoolId, isActive: true }, include: { student: { include: { user: { select: { firstName: true, lastName: true } } } }, term: true } }),
       prisma.term.findMany({ where: { schoolId }, include: { session: true }, orderBy: [{ session: { createdAt: "desc" } }, { termNumber: "asc" }] }),
-      prisma.classLevel.findMany({ where: { schoolId }, orderBy: [{ section: "asc" }, { order: "asc" }] }),
-      prisma.classGroup.findMany({ where: { schoolId }, include: { level: true } }),
+      prisma.classLevel.findMany({ where: { schoolId, ...(section ? { section } : {}) }, orderBy: [{ section: "asc" }, { order: "asc" }] }),
+      prisma.classGroup.findMany({ where: { schoolId, ...(section ? { level: { section } } : {}) }, include: { level: true } }),
     ]);
     return {
       role,

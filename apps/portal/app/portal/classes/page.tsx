@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Card, PageHeader, Badge, Alert, Spinner, EmptyState, Button, Modal, Field, Input, Select, Icon } from "@duga/ui";
 import { api } from "@/lib/client/api";
+import { useSection } from "@/components/SectionContext";
 
 interface Level { id: string; name: string; section: string; order: number }
 interface Session { id: string; name: string }
@@ -102,6 +103,7 @@ export default function ClassesPage() {
     | { name: "classes-list"; section: "PRIMARY" | "SECONDARY" }
     | { name: "subjects-list"; section: "PRIMARY" | "SECONDARY" };
   const [view, setView] = useState<View>({ name: "overview" });
+  const { section } = useSection();
   const isAdmin = role === "OWNER" || role === "ADMIN";
   const primaryClasses = classes.filter((c) => c.level.section === "PRIMARY");
   const secondaryClasses = classes.filter((c) => c.level.section === "SECONDARY");
@@ -111,7 +113,20 @@ export default function ClassesPage() {
     ? subjects.filter((s) => s.section === assignSection)
     : subjects;
 
+  // When a global section is active, auto-drill into that section's list.
+  useEffect(() => {
+    if (!section) return;
+    setView((v) =>
+      v.name === "classes"
+        ? { name: "classes-list", section }
+        : v.name === "subjects"
+          ? { name: "subjects-list", section }
+          : v,
+    );
+  }, [section]);
+
   const load = useCallback(async () => {
+    void section;
     try {
       const d = await api<{ items: ClassGroup[]; levels: Level[]; sessions: Session[]; subjects: Subject[]; teachers: Teacher[]; role: string }>("classes");
       setClasses(d.items);
@@ -125,7 +140,7 @@ export default function ClassesPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [section]);
 
   useEffect(() => {
     load();

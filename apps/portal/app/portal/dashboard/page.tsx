@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Card, Stat, Badge, Table, PageHeader, Icon, EmptyState, Alert, Spinner } from "@duga/ui";
 import { api } from "@/lib/client/api";
+import { useSection } from "@/components/SectionContext";
 
 interface InvoiceLike {
   id: string;
@@ -37,10 +38,11 @@ function naira(v: string | number | undefined): string {
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { section } = useSection();
 
   useEffect(() => {
     api<DashboardData>("dashboard").then(setData).catch((e) => setError(e.message));
-  }, []);
+  }, [section]);
 
   if (error) return <Alert tone="danger">{error}</Alert>;
   if (!data) return <Spinner size={28} />;

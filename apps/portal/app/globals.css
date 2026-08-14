@@ -1013,3 +1013,38 @@ body {
   /* Keep the title visible next to the bell/sign-out on very small screens */
   .portal-topbar__signout { padding: 8px; }
 }
+
+/* Primary | Secondary section switcher (topbar) */
+.duga-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--duga-surface-2, #eef1f6);
+  border: 1px solid var(--duga-border);
+}
+.duga-seg button {
+  border: none;
+  background: transparent;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--duga-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.duga-seg button:hover { color: var(--duga-primary); }
+.duga-seg button.active {
+  background: linear-gradient(135deg, var(--duga-primary), var(--duga-gold));
+  color: #fff;
+}
+.duga-seg--locked {
+  padding: 5px 14px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--duga-primary);
+}
+.portal-topbar__actions .duga-seg { margin-right: 6px; }

@@ -89,12 +89,17 @@ export const aiModule: Module = {
       const pageHint = page
         ? `The user is currently on the "${page}" page of the school portal. Make your help relevant to that page and what they would do there.\n\n`
         : "";
+      // The school section (Primary/Secondary) the user is working in.
+      const section = str(ctx.body.section);
+      const sectionHint = section
+        ? `The user is currently managing the ${section === "PRIMARY" ? "PRIMARY school" : "SECONDARY school"} section. Tailor examples (classes, levels, subjects) to that section.\n\n`
+        : "";
       // Carry a little context from previous turns to keep conversations coherent.
       const history = messages
         .slice(-6, -1)
         .map((m) => `${m.role === "assistant" ? "Assistant" : "User"}: ${String(m.content ?? "")}`)
         .join("\n");
-      const userText = pageHint + (history ? `Previous conversation:\n${history}\n\nNew message:\n${prompt}` : prompt);
+      const userText = sectionHint + pageHint + (history ? `Previous conversation:\n${history}\n\nNew message:\n${prompt}` : prompt);
       const reply = await generate(systemFor(ctx.session.user.role), userText, 0.7, 1024);
       return { reply };
     },

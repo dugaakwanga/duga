@@ -1,6 +1,54 @@
 import { assertPermission, type Permission, type Role } from "@duga/core";
 import type { Ctx } from "@/app/api/v1/[...path]/route";
 import { prisma } from "@duga/core/server";
+import type { Section } from "@/lib/sections";
+
+export function sectionOf(v: unknown): Section | undefined {
+  const s = str(v);
+  return s === "PRIMARY" || s === "SECONDARY" ? s : undefined;
+}
+
+export function isStaff(role: string): boolean {
+  return role === "OWNER" || role === "ADMIN" || role === "BURSAR" || role === "TEACHER";
+}
+
+// Distinct school sections a teacher is assigned to, derived from their classes.
+export async function sectionsOfTeacher(teacherId: string): Promise<Section[]> {
+  const rows = await prisma.classSubject.findMany({
+    where: { teacherId },
+    select: { classGroup: { select: { level: { select: { section: true } } } } },
+    distinct: ["classGroupId"],
+  });
+  return [...new Set(rows.map((r) => r.classGroup.level.section))];
+}
+
+// Sections that actually have data in the school — used for the admin switcher.
+export async function schoolSections(schoolId: string): Promise<Section[]> {
+  const rows = await prisma.classLevel.findMany({ where: { schoolId }, select: { section: true }, distinct: ["section"] });
+  const present = new Set<Section>(rows.map((r) => r.section));
+  const ordered: Section[] = [];
+  for (const s of ["SECONDARY", "PRIMARY"] as Section[]) if (present.has(s)) ordered.push(s);
+  return ordered.length ? ordered : ["SECONDARY", "PRIMARY"];
+}
+
+// The effective section scope for a request:
+// - OWNER/ADMIN/BURSAR: the `section` query/body value (validated), else all.
+// - TEACHER: the requested section if they teach it, else their sole section, else all their classes.
+// - STUDENT: their own section. PARENT: all linked children.
+export async function resolveSection(ctx: Ctx): Promise<Section | undefined> {
+  const role = ctx.session.user.role;
+  if (role === "STUDENT") return sectionOf(ctx.session.user.student?.section);
+  const asked = sectionOf(ctx.query.get("section") ?? ctx.body.section);
+  if (role === "OWNER" || role === "ADMIN" || role === "BURSAR") return asked;
+  if (role === "TEACHER") {
+    const teacher = ctx.session.user.teacher;
+    if (!teacher) return undefined;
+    const secs = await sectionsOfTeacher(teacher.id);
+    if (asked && secs.includes(asked)) return asked;
+    return secs.length === 1 ? secs[0] : undefined;
+  }
+  return undefined;
+}
 
 export function can(ctx: Ctx, permission: Permission): void {
   assertPermission(ctx.session.user.role as Role, permission);
