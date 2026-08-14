@@ -20,6 +20,58 @@ interface ClassGroup {
   _count?: { students: number };
 }
 
+function DrillCard({
+  icon,
+  title,
+  subtitle,
+  count,
+  label,
+  onClick,
+}: {
+  icon: Parameters<typeof Icon>[0]["name"];
+  title: string;
+  subtitle: string;
+  count: number;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button className="classes-drill-card" onClick={onClick}>
+      <div className="classes-drill-card__icon"><Icon name={icon} size={20} /></div>
+      <div className="classes-drill-card__title">{title}</div>
+      <div className="classes-drill-card__sub">{subtitle}</div>
+      <div className="classes-drill-card__foot">
+        <Badge tone="accent">{count}</Badge>
+        <span className="classes-drill-card__manage">Manage {label} →</span>
+      </div>
+    </button>
+  );
+}
+
+function CategoryPicker({
+  sections,
+  onPick,
+}: {
+  sections: Array<{ section: "PRIMARY" | "SECONDARY"; label: string; count: number; items: string[] }>;
+  onPick: (s: "PRIMARY" | "SECONDARY") => void;
+}) {
+  return (
+    <div className="classes-drill">
+      {sections.map((s) => (
+        <button key={s.section} className={`classes-drill-card classes-drill-card--${s.section.toLowerCase()}`} onClick={() => onPick(s.section)}>
+          <div className="classes-drill-card__icon"><Icon name="classes" size={20} /></div>
+          <div className="classes-drill-card__title">{s.label}</div>
+          <div className="classes-drill-card__sub">
+            {s.count} item{s.count === 1 ? "" : "s"} · {s.items.slice(0, 5).join(", ") || "Nothing added yet"}
+            {s.items.length > 5 ? "…" : ""}
+          </div>
+          <div className="classes-drill-card__foot"><span className="classes-drill-card__manage">Open {s.label} →</span></div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function ClassesPage() {
   const [classes, setClasses] = useState<ClassGroup[]>([]);
   const [levels, setLevels] = useState<Level[]>([]);
@@ -41,9 +93,20 @@ export default function ClassesPage() {
   const [shownSubjects, setShownSubjects] = useState<Record<string, boolean>>({});
   const [editingClass, setEditingClass] = useState<ClassGroup | null>(null);
   const [editingItem, setEditingItem] = useState<{ kind: "subject" | "level" | "session"; id: string } | null>(null);
+  // Drill-down navigation: overview -> (classes | subjects | sessions) -> section -> items.
+  type View =
+    | { name: "overview" }
+    | { name: "classes" }
+    | { name: "subjects" }
+    | { name: "sessions" }
+    | { name: "classes-list"; section: "PRIMARY" | "SECONDARY" }
+    | { name: "subjects-list"; section: "PRIMARY" | "SECONDARY" };
+  const [view, setView] = useState<View>({ name: "overview" });
   const isAdmin = role === "OWNER" || role === "ADMIN";
   const primaryClasses = classes.filter((c) => c.level.section === "PRIMARY");
   const secondaryClasses = classes.filter((c) => c.level.section === "SECONDARY");
+  const primarySubjects = subjects.filter((s) => s.section === "PRIMARY");
+  const secondarySubjects = subjects.filter((s) => s.section === "SECONDARY");
   const assignableSubjects = assignTarget
     ? subjects.filter((s) => s.section === assignSection)
     : subjects;
@@ -202,159 +265,209 @@ export default function ClassesPage() {
     <div>
       <PageHeader
         title="Classes"
-        subtitle="Class groups, levels, sessions and subjects."
+        subtitle="Manage classes, subjects and sessions."
         actions={
           isAdmin ? (
-            <>
-              <Button variant="outline" onClick={() => openAdd("session")} style={{ marginRight: 10 }}>Add session</Button>
-              <Button variant="outline" onClick={() => openAdd("level")} style={{ marginRight: 10 }}>Add level</Button>
-              <Button variant="outline" onClick={() => openAdd("subject")} style={{ marginRight: 10 }}>Add subject</Button>
+            view.name === "classes-list" ? (
               <Button onClick={() => setOpen(true)}><Icon name="plus" size={16} /> New class</Button>
-            </>
+            ) : view.name === "subjects-list" ? (
+              <Button variant="outline" onClick={() => openAdd("subject")}><Icon name="plus" size={16} /> Add subject</Button>
+            ) : view.name === "sessions" ? (
+              <Button variant="outline" onClick={() => openAdd("session")}><Icon name="plus" size={16} /> Add session</Button>
+            ) : view.name === "classes" ? (
+              <Button variant="outline" onClick={() => openAdd("level")}><Icon name="plus" size={16} /> Add level</Button>
+            ) : undefined
           ) : undefined
         }
       />
       {error && <Alert tone="danger">{error}</Alert>}
       {loading ? (
         <Spinner size={28} />
-      ) : classes.length === 0 ? (
-        <EmptyState title="No classes yet" />
       ) : (
-        <div style={{ display: "grid", gap: 28 }}>
-          {([
-            ["Secondary", "secondary", secondaryClasses],
-            ["Primary", "primary", primaryClasses],
-          ] as const).map(([title, key, sectionClasses]) => sectionClasses.length > 0 && (
-            <section key={key} className="classes-section">
-              <h2 style={{ fontSize: 17, margin: "0 0 12px", color: "var(--duga-primary-ink)" }}>
-                {title} classes
-                <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--duga-muted)", marginLeft: 6 }}>({sectionClasses.length})</span>
-              </h2>
-              <div className="classes-card-grid">
-                {[...sectionClasses]
-                  .sort((a, b) => (a.level.order ?? 0) - (b.level.order ?? 0) || a.name.localeCompare(b.name))
-                  .map((c) => (
-                    <Card key={c.id} title={`${c.level.name} ${c.name}`} className="classes-card">
-                      <div style={{ fontSize: 13, color: "var(--duga-muted)", marginBottom: 8 }}>
-                        {c.session.name}
-                        {c.room ? ` · Room ${c.room}` : ""}
-                      </div>
-                      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                        <Badge tone={c.level.section === "PRIMARY" ? "info" : "accent"}>{c.level.section.toLowerCase()}</Badge>
-                        <Badge tone="neutral">{c._count?.students ?? 0} students</Badge>
-                        <Badge tone="neutral">{c.classSubjects?.length ?? 0} subjects</Badge>
-                      </div>
-                      <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginTop: 10 }}>
-                        Class teacher: {c.formTeacher ? `${c.formTeacher.user.firstName} ${c.formTeacher.user.lastName}` : "Not set"}
-                      </div>
-                      {isAdmin && (
-                        <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-                          <div className="classes-card__actions">
-                            <Button size="sm" variant={shownSubjects[c.id] ? "ghost" : "outline"} onClick={() => setShownSubjects((prev) => ({ ...prev, [c.id]: !prev[c.id] }))}>
-                              Subjects ({c.classSubjects?.length ?? 0})
-                            </Button>
-                            <Button size="sm" variant="outline" onClick={() => { setAssignTarget(c); setAssignSection(c.level.section === "PRIMARY" ? "PRIMARY" : "SECONDARY"); setAssignSubjectIds((c.classSubjects ?? []).map((cs) => cs.subject?.id ?? "").filter(Boolean)); setAssignTeachers(Object.fromEntries((c.classSubjects ?? []).map((cs) => [cs.subject?.id ?? "", cs.teacher?.id ?? ""]).filter(([id]) => id))); }}>Assign subject</Button>
-                            <Button size="sm" variant="outline" onClick={() => openEditClass(c)}>Edit</Button>
-                            <Button size="sm" variant="danger" onClick={() => deleteClass(c)} title={`Delete ${c.level.name} ${c.name}`}>Delete</Button>
-                          </div>
-                          {shownSubjects[c.id] && (
-                            <>
-                              {(c.classSubjects?.length ?? 0) > 0 ? (
-                                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                                  {(c.classSubjects ?? []).map((cs) => (
-                                    <button
-                                      key={cs.id}
-                                      onClick={() => unassignSubject(c, cs.subject!.id)}
-                                      className="duga-btn duga-btn--sm duga-btn--ghost"
-                                      title={`Unassign ${cs.subject!.name}`}
-                                      style={{ fontSize: 12, padding: "2px 8px", maxWidth: "100%", overflowWrap: "anywhere" }}
-                                    >
-                                      {cs.subject!.name}{cs.teacher?.user ? ` · ${cs.teacher.user.firstName} ${cs.teacher.user.lastName}` : ""} ×
-                                    </button>
-                                  ))}
-                                </div>
-                              ) : (
-                                <Alert tone="info">No subjects assigned yet.</Alert>
-                              )}
-                            </>
-                          )}
-                          <Select value={c.formTeacher?.id ?? ""} onChange={(e) => assignFormTeacher(c, e.target.value)}>
-                            <option value="">— Select class teacher —</option>
-                            {teachers.map((t) => (
-                              <option key={t.id} value={t.id}>{t.firstName} {t.lastName}</option>
-                            ))}
-                          </Select>
-                        </div>
-                      )}
-                    </Card>
-                  ))}
-              </div>
-            </section>
-          ))}
-        </div>
-      )}
+        <div style={{ display: "grid", gap: 18 }}>
+          {/* Breadcrumb */}
+          <div className="classes-crumb">
+            {view.name !== "overview" && (
+              <Button variant="ghost" size="sm" onClick={() => setView({ name: "overview" })}>
+                <Icon name="back" size={14} /> Classes
+              </Button>
+            )}
+            {view.name === "classes" && <span className="classes-crumb__current">Classes</span>}
+            {view.name === "subjects" && <span className="classes-crumb__current">Subjects</span>}
+            {view.name === "sessions" && <span className="classes-crumb__current">Sessions</span>}
+            {view.name === "classes-list" && (
+              <>
+                <button className="classes-crumb__link" onClick={() => setView({ name: "classes" })}>Classes</button>
+                <span className="classes-crumb__sep">/</span>
+                <span className="classes-crumb__current">{view.section === "SECONDARY" ? "Secondary" : "Primary"}</span>
+              </>
+            )}
+            {view.name === "subjects-list" && (
+              <>
+                <button className="classes-crumb__link" onClick={() => setView({ name: "subjects" })}>Subjects</button>
+                <span className="classes-crumb__sep">/</span>
+                <span className="classes-crumb__current">{view.section === "SECONDARY" ? "Secondary" : "Primary"}</span>
+              </>
+            )}
+          </div>
 
-      {isAdmin && (
-        <div style={{ marginTop: 28, display: "grid", gap: 16 }}>
-          {([
-            ["Secondary", "SECONDARY"],
-            ["Primary", "PRIMARY"],
-          ] as const).map(([title, section]) => {
-            const sectionLevels = levels.filter((l) => l.section === section);
-            const sectionSubjects = subjects.filter((s) => s.section === section);
-            return (
-              <div key={section} className="classes-section">
-                <h2 style={{ fontSize: 17, margin: "0 0 12px", color: "var(--duga-primary-ink)" }}>{title} category</h2>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 16 }}>
-                  <Card key={`${section}-levels`} title={`${title} levels`}>
-                    {sectionLevels.length === 0 ? <EmptyState title={`No ${title.toLowerCase()} levels`} /> : (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                        {sectionLevels.map((l) => (
-                          <div key={l.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "wrap" }}>
-                            <span style={{ fontSize: 13.5, overflowWrap: "anywhere" }}>{l.name}</span>
-                            <div style={{ display: "flex", gap: 4 }}>
-                              <Button size="sm" variant="ghost" onClick={() => openEditItem("level", l.id)}>Edit</Button>
-                              <Button size="sm" variant="ghost" onClick={() => deleteItem("level", l.id)}>Delete</Button>
+          {/* Overview */}
+          {view.name === "overview" && (
+            <div className="classes-drill">
+              <DrillCard icon="classes" title="Classes" subtitle="Class groups organised into Primary & Secondary" count={classes.length} label="classes" onClick={() => setView({ name: "classes" })} />
+              <DrillCard icon="notes" title="Subjects" subtitle="Subjects taught across Primary & Secondary" count={subjects.length} label="subjects" onClick={() => setView({ name: "subjects" })} />
+              <DrillCard icon="timetable" title="Sessions" subtitle="Academic years, e.g. 2025/2026" count={sessions.length} label="sessions" onClick={() => setView({ name: "sessions" })} />
+            </div>
+          )}
+
+          {/* Classes -> pick a category */}
+          {view.name === "classes" && (
+            <CategoryPicker
+              onPick={(s) => setView({ name: "classes-list", section: s })}
+              sections={[
+                { section: "SECONDARY", label: "Secondary", count: secondaryClasses.length, items: [...secondaryClasses].sort((a, b) => (a.level.order ?? 0) - (b.level.order ?? 0)).map((c) => `${c.level.name} ${c.name}`) },
+                { section: "PRIMARY", label: "Primary", count: primaryClasses.length, items: [...primaryClasses].sort((a, b) => (a.level.order ?? 0) - (b.level.order ?? 0)).map((c) => `${c.level.name} ${c.name}`) },
+              ]}
+            />
+          )}
+
+          {/* Classes -> category -> list */}
+          {view.name === "classes-list" &&
+            (() => {
+              const sectionClasses = view.section === "SECONDARY" ? secondaryClasses : primaryClasses;
+              return (
+                <section className="classes-section">
+                  <h2 style={{ fontSize: 17, margin: "0 0 12px", color: "var(--duga-primary-ink)" }}>
+                    {view.section === "SECONDARY" ? "Secondary" : "Primary"} classes
+                    <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--duga-muted)", marginLeft: 6 }}>({sectionClasses.length})</span>
+                  </h2>
+                  {sectionClasses.length === 0 ? (
+                    <EmptyState title={`No ${view.section.toLowerCase()} classes yet`} hint={isAdmin ? "Create your first class with the “New class” button above." : "Check back later."} />
+                  ) : (
+                    <div className="classes-card-grid">
+                      {[...sectionClasses]
+                        .sort((a, b) => (a.level.order ?? 0) - (b.level.order ?? 0) || a.name.localeCompare(b.name))
+                        .map((c) => (
+                          <Card key={c.id} title={`${c.level.name} ${c.name}`} className="classes-card">
+                            <div style={{ fontSize: 13, color: "var(--duga-muted)", marginBottom: 8 }}>
+                              {c.session.name}
+                              {c.room ? ` · Room ${c.room}` : ""}
                             </div>
-                          </div>
+                            <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                              <Badge tone={c.level.section === "PRIMARY" ? "info" : "accent"}>{c.level.section.toLowerCase()}</Badge>
+                              <Badge tone="neutral">{c._count?.students ?? 0} students</Badge>
+                              <Badge tone="neutral">{c.classSubjects?.length ?? 0} subjects</Badge>
+                            </div>
+                            <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginTop: 10 }}>
+                              Class teacher: {c.formTeacher ? `${c.formTeacher.user.firstName} ${c.formTeacher.user.lastName}` : "Not set"}
+                            </div>
+                            {isAdmin && (
+                              <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                                <div className="classes-card__actions">
+                                  <Button size="sm" variant={shownSubjects[c.id] ? "ghost" : "outline"} onClick={() => setShownSubjects((prev) => ({ ...prev, [c.id]: !prev[c.id] }))}>
+                                    Subjects ({c.classSubjects?.length ?? 0})
+                                  </Button>
+                                  <Button size="sm" variant="outline" onClick={() => { setAssignTarget(c); setAssignSection(c.level.section === "PRIMARY" ? "PRIMARY" : "SECONDARY"); setAssignSubjectIds((c.classSubjects ?? []).map((cs) => cs.subject?.id ?? "").filter(Boolean)); setAssignTeachers(Object.fromEntries((c.classSubjects ?? []).map((cs) => [cs.subject?.id ?? "", cs.teacher?.id ?? ""]).filter(([id]) => id))); }}>Assign subject</Button>
+                                  <Button size="sm" variant="outline" onClick={() => openEditClass(c)}>Edit</Button>
+                                  <Button size="sm" variant="danger" onClick={() => deleteClass(c)} title={`Delete ${c.level.name} ${c.name}`}>Delete</Button>
+                                </div>
+                                {shownSubjects[c.id] && (
+                                  <>
+                                    {(c.classSubjects?.length ?? 0) > 0 ? (
+                                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                        {(c.classSubjects ?? []).map((cs) => (
+                                          <button
+                                            key={cs.id}
+                                            onClick={() => unassignSubject(c, cs.subject!.id)}
+                                            className="duga-btn duga-btn--sm duga-btn--ghost"
+                                            title={`Unassign ${cs.subject!.name}`}
+                                            style={{ fontSize: 12, padding: "2px 8px", maxWidth: "100%", overflowWrap: "anywhere" }}
+                                          >
+                                            {cs.subject!.name}{cs.teacher?.user ? ` · ${cs.teacher.user.firstName} ${cs.teacher.user.lastName}` : ""} ×
+                                          </button>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <Alert tone="info">No subjects assigned yet.</Alert>
+                                    )}
+                                  </>
+                                )}
+                                <Select value={c.formTeacher?.id ?? ""} onChange={(e) => assignFormTeacher(c, e.target.value)}>
+                                  <option value="">— Select class teacher —</option>
+                                  {teachers.map((t) => (
+                                    <option key={t.id} value={t.id}>{t.firstName} {t.lastName}</option>
+                                  ))}
+                                </Select>
+                              </div>
+                            )}
+                          </Card>
                         ))}
-                      </div>
-                    )}
-                  </Card>
-                  <Card key={`${section}-subjects`} title={`${title} subjects`}>
-                    {sectionSubjects.length === 0 ? <EmptyState title={`No ${title.toLowerCase()} subjects`} /> : (
-                      <div className="subject-list">
-                        {sectionSubjects.map((s) => (
-                          <div key={s.id} className="subject-list__item">
-                            <span>{s.name}</span>
+                    </div>
+                  )}
+                </section>
+              );
+            })()}
+
+          {/* Subjects -> pick a category */}
+          {view.name === "subjects" && (
+            <CategoryPicker
+              onPick={(s) => setView({ name: "subjects-list", section: s })}
+              sections={[
+                { section: "SECONDARY", label: "Secondary", count: secondarySubjects.length, items: secondarySubjects.map((s) => s.name) },
+                { section: "PRIMARY", label: "Primary", count: primarySubjects.length, items: primarySubjects.map((s) => s.name) },
+              ]}
+            />
+          )}
+
+          {/* Subjects -> category -> list */}
+          {view.name === "subjects-list" &&
+            (() => {
+              const sectionSubjects = view.section === "SECONDARY" ? secondarySubjects : primarySubjects;
+              return (
+                <Card title={`${view.section === "SECONDARY" ? "Secondary" : "Primary"} subjects`}>
+                  {sectionSubjects.length === 0 ? (
+                    <EmptyState title={`No ${view.section.toLowerCase()} subjects yet`} hint={isAdmin ? "Create one with the “Add subject” button above." : "Check back later."} />
+                  ) : (
+                    <div className="subject-list">
+                      {sectionSubjects.map((s) => (
+                        <div key={s.id} className="subject-list__item">
+                          <span>{s.name}</span>
+                          {isAdmin && (
                             <div className="subject-list__actions">
                               <Button size="sm" variant="ghost" onClick={() => openEditItem("subject", s.id)}>Edit</Button>
                               <Button size="sm" variant="ghost" onClick={() => deleteItem("subject", s.id)}>Delete</Button>
                             </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </Card>
-                </div>
-              </div>
-            );
-          })}
-          <Card title="Sessions">
-            {sessions.length === 0 ? <EmptyState title="No sessions" /> : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {sessions.map((s) => (
-                  <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 13.5 }}>{s.name}</span>
-                    <div style={{ display: "flex", gap: 4 }}>
-                      <Button size="sm" variant="ghost" onClick={() => openEditItem("session", s.id)}>Edit</Button>
-                      <Button size="sm" variant="ghost" onClick={() => deleteItem("session", s.id)}>Delete</Button>
+                          )}
+                        </div>
+                      ))}
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
+                  )}
+                </Card>
+              );
+            })()}
+
+          {/* Sessions */}
+          {view.name === "sessions" && (
+            <Card title="Sessions">
+              {sessions.length === 0 ? (
+                <EmptyState title="No sessions yet" hint={isAdmin ? "Create one with the “Add session” button above." : "Check back later."} />
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {sessions.map((s) => (
+                    <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 13.5 }}>{s.name}</span>
+                      {isAdmin && (
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <Button size="sm" variant="ghost" onClick={() => openEditItem("session", s.id)}>Edit</Button>
+                          <Button size="sm" variant="ghost" onClick={() => deleteItem("session", s.id)}>Delete</Button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          )}
         </div>
       )}
 

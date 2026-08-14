@@ -887,6 +887,73 @@ body {
 .parent-child-stat__value { font-weight: 800; font-size: 15px; color: var(--duga-ink-1, #0f172a); }
 .parent-child-stat__label { font-size: 10.5px; color: var(--duga-muted, #64748b); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
 
+/* ---------- Classes drill-down ---------- */
+.classes-crumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.classes-crumb__link {
+  border: 0;
+  background: none;
+  padding: 2px 4px;
+  color: var(--duga-primary, #1e3a8a);
+  font-weight: 700;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.classes-crumb__link:hover { background: var(--duga-info-soft, #eef2ff); }
+.classes-crumb__sep { color: var(--duga-muted, #64748b); }
+.classes-crumb__current { font-weight: 700; color: var(--duga-ink-1, #0f172a); }
+.classes-drill {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: 16px;
+}
+.classes-drill-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  padding: 18px 16px;
+  border: 1px solid var(--duga-border, #e2e8f0);
+  border-radius: 16px;
+  background: #fff;
+  cursor: pointer;
+  font-family: inherit;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+.classes-drill-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--duga-shadow, 0 8px 24px rgba(15, 23, 42, 0.12));
+  border-color: var(--duga-gold, #d4af37);
+}
+.classes-drill-card__icon {
+  width: 42px; height: 42px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, var(--duga-primary, #1e3a8a), var(--duga-gold, #d4af37));
+  color: #fff;
+  margin-bottom: 4px;
+}
+.classes-drill-card--primary .classes-drill-card__icon { background: linear-gradient(135deg, var(--duga-teal, #0f766e), var(--duga-sky, #38bdf8)); }
+.classes-drill-card__title { font-weight: 800; font-size: 16px; color: var(--duga-ink-1, #0f172a); }
+.classes-drill-card__sub { font-size: 12.5px; color: var(--duga-muted, #64748b); line-height: 1.5; min-height: 38px; }
+.classes-drill-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 8px;
+}
+.classes-drill-card__manage { font-size: 12.5px; font-weight: 700; color: var(--duga-primary, #1e3a8a); }
+
 .subject-list { display: grid; gap: 7px; }
 .subject-list__item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 0 9px 10px; border-bottom: 1px solid var(--duga-border); }
 .subject-list__item:last-child { border-bottom: 0; }
