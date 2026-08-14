@@ -2,34 +2,42 @@ import type { Module } from ".";
 import { can, str } from "../helpers";
 
 // ---------------------------------------------------------------------------
-// AI assistant (Google Gemini free tier)
+// AI assistant (OpenRouter — free tier)
 //
-// Server-side wrapper so the API key never leaves the server. Uses the free
-// Gemini model by default; rate limits are the provider's, not ours. The
-// feature degrades gracefully: when no GEMINI_API_KEY is configured the
-// actions return a clear message instead of crashing.
+// Server-side wrapper so the API key never leaves the server. Routes chat,
+// report-card remarks and lesson drafts through a single OpenRouter call, so
+// the model can be swapped freely via OPENROUTER_MODEL. The feature degrades
+// gracefully: when no OPENROUTER_API_KEY is configured the actions return a
+// clear message instead of crashing.
 // ---------------------------------------------------------------------------
 
-const DEFAULT_MODEL = "gemini-3.5-flash";
+const DEFAULT_MODEL = "google/gemma-4-31b-it:free";
 
-const MODEL = process.env.GEMINI_MODEL || DEFAULT_MODEL;
-const API_KEY = process.env.GEMINI_API_KEY || "";
+const MODEL = process.env.OPENROUTER_MODEL || DEFAULT_MODEL;
+const API_KEY = process.env.OPENROUTER_API_KEY || "";
 
 function available(): boolean {
   return API_KEY.length > 0;
 }
 
-async function gemini(system: string, userText: string, temperature = 0.7, maxTokens = 1024): Promise<string> {
+async function generate(system: string, userText: string, temperature = 0.7, maxTokens = 1024): Promise<string> {
   if (!available()) {
-    throw new Error("AI is not configured yet. Add a GEMINI_API_KEY to the server environment to enable the assistant.");
+    throw new Error("AI is not configured yet. Add an OPENROUTER_API_KEY to the server environment to enable the assistant.");
   }
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${encodeURIComponent(API_KEY)}`, {
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${API_KEY}`,
+    },
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: system }] },
-      contents: [{ role: "user", parts: [{ text: userText }] }],
-      generationConfig: { temperature, maxOutputTokens: maxTokens },
+      model: MODEL,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: userText },
+      ],
+      temperature,
+      max_tokens: maxTokens,
     }),
   });
   if (!res.ok) {
@@ -39,8 +47,7 @@ async function gemini(system: string, userText: string, temperature = 0.7, maxTo
     throw err;
   }
   const data = await res.json();
-  const parts: Array<{ text?: string }> = data?.candidates?.[0]?.content?.parts ?? [];
-  const text = parts.map((p) => p.text ?? "").join("").trim();
+  const text = String(data?.choices?.[0]?.message?.content ?? "").trim();
   if (!text) throw new Error("The AI assistant returned an empty reply. Please try again.");
   return text;
 }
@@ -82,7 +89,7 @@ export const aiModule: Module = {
         .map((m) => `${m.role === "assistant" ? "Assistant" : "User"}: ${String(m.content ?? "")}`)
         .join("\n");
       const userText = history ? `Previous conversation:\n${history}\n\nNew message:\n${prompt}` : prompt;
-      const reply = await gemini(systemFor(ctx.session.user.role), userText, 0.7, 1024);
+      const reply = await generate(systemFor(ctx.session.user.role), userText, 0.7, 1024);
       return { reply };
     },
 
@@ -109,7 +116,7 @@ export const aiModule: Module = {
       const system =
         "You write warm, professional Nigerian school report card remarks. " +
         "Output ONLY the remark (2-4 sentences), first-person teacher voice, no greeting or signature.";
-      const reply = await gemini(
+      const reply = await generate(
         system,
         `Write a report card remark for ${student}.\n${detail}\n\nMake it encouraging, mention strengths and one specific area to improve.`,
         0.8,
@@ -137,7 +144,7 @@ export const aiModule: Module = {
       const prompt = `Subject: ${subject}\nTopic: ${topic}${level ? `\nLevel/Class: ${level}` : ""}${
         kind === "quiz" ? `\nCreate ${count} questions.` : ""
       }`;
-      const reply = await gemini(system, prompt, 0.7, 1200);
+      const reply = await generate(system, prompt, 0.7, 1200);
       return { reply };
     },
   },
