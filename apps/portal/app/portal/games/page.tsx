@@ -95,8 +95,10 @@ const ACTIVITY_CHALLENGES: Record<string, Challenge[]> = {
   ],
 };
 
+const DEFAULT_CHALLENGES: Challenge[] = ACTIVITY_CHALLENGES.QUIZ ?? [];
+
 function challengesFor(item: GameItem): Challenge[] {
-  return ACTIVITY_CHALLENGES[item.category] ?? ACTIVITY_CHALLENGES.QUIZ ?? [];
+  return ACTIVITY_CHALLENGES[item.category] ?? DEFAULT_CHALLENGES;
 }
 
 export default function GamesPage() {
