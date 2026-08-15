@@ -88,8 +88,8 @@ async function main() {
     const user = await upsertUser({ email: `${key}@deultimateglory.com`, role: "TEACHER", firstName: title, lastName: lname, phone });
     const teacher = await prisma.teacher.upsert({
       where: { userId: user.id },
-      update: {},
-      create: { userId: user.id, schoolId, staffNumber: `STF-${key.toUpperCase()}`, specialty, designation: "Teacher" },
+      update: { sections: ["PRIMARY", "SECONDARY"] },
+      create: { userId: user.id, schoolId, staffNumber: `STF-${key.toUpperCase()}`, specialty, designation: "Teacher", sections: ["PRIMARY", "SECONDARY"] },
     });
     teachers[key] = teacher;
   }

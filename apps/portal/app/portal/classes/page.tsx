@@ -7,7 +7,7 @@ import { useSection } from "@/components/SectionContext";
 
 interface Level { id: string; name: string; section: string; order: number }
 interface Session { id: string; name: string }
-interface Teacher { id: string; firstName: string; lastName: string }
+interface Teacher { id: string; firstName: string; lastName: string; subjectIds: string[]; sections: string[] }
 interface Subject { id: string; name: string; section: string }
 interface ClassGroup {
   id: string;
@@ -110,8 +110,11 @@ export default function ClassesPage() {
   const primarySubjects = subjects.filter((s) => s.section === "PRIMARY");
   const secondarySubjects = subjects.filter((s) => s.section === "SECONDARY");
   const assignableSubjects = assignTarget
-    ? subjects.filter((s) => s.section === assignSection)
+    ? subjects.filter((s) => s.section === assignTarget.level.section)
     : subjects;
+  const teachersFor = (schoolSection: string, subjectId?: string) => teachers.filter((teacher) =>
+    teacher.sections.includes(schoolSection) && (!subjectId || teacher.subjectIds.includes(subjectId)),
+  );
 
   // When a global section is active, auto-drill into that section's list.
   useEffect(() => {
@@ -409,7 +412,7 @@ export default function ClassesPage() {
                                 )}
                                 <Select value={c.formTeacher?.id ?? ""} onChange={(e) => assignFormTeacher(c, e.target.value)}>
                                   <option value="">— Select class teacher —</option>
-                                  {teachers.map((t) => (
+                                  {teachersFor(c.level.section).map((t) => (
                                     <option key={t.id} value={t.id}>{t.firstName} {t.lastName}</option>
                                   ))}
                                 </Select>
@@ -527,7 +530,7 @@ export default function ClassesPage() {
         <Field label="Class teacher">
           <Select value={form.formTeacherId ?? ""} onChange={(e) => setForm({ ...form, formTeacherId: e.target.value })}>
             <option value="">— None —</option>
-            {teachers.map((t) => (
+            {teachersFor(editingClass?.level.section ?? levels.find((level) => level.id === form.levelId)?.section ?? "").map((t) => (
               <option key={t.id} value={t.id}>{t.firstName} {t.lastName}</option>
             ))}
           </Select>
@@ -541,14 +544,9 @@ export default function ClassesPage() {
       <Modal open={!!assignTarget} onClose={() => setAssignTarget(null)} title={assignTarget ? `Assign subjects — ${assignTarget.level.name} ${assignTarget.name}` : ""}>
         <div style={{ marginBottom: 12 }}>
           {subjects.length === 0 && <Alert tone="warning">No subjects yet — create one with the &quot;Add subject&quot; button first.</Alert>}
-          {subjects.length > 0 && assignableSubjects.length === 0 && <Alert tone="warning">No {assignSection.toLowerCase()} subjects yet — create one with the &quot;Add subject&quot; button first.</Alert>}
+          {subjects.length > 0 && assignableSubjects.length === 0 && <Alert tone="warning">No {assignTarget?.level.section.toLowerCase()} subjects yet — create one with the &quot;Add subject&quot; button first.</Alert>}
         </div>
-        <Field label="Section" required>
-          <Select value={assignSection} onChange={(e) => setAssignSection(e.target.value as "PRIMARY" | "SECONDARY")}>
-            <option value="PRIMARY">Primary</option>
-            <option value="SECONDARY">Secondary</option>
-          </Select>
-        </Field>
+        <Alert tone="info">{assignTarget?.level.section === "PRIMARY" ? "Primary" : "Secondary"} subjects only. Teachers shown are assigned to this section and subject.</Alert>
         <Field label="Subjects" required hint="Select one or more subjects and pick the teacher assigned to each.">
           <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 260, overflowY: "auto", border: "1px solid var(--duga-border)", borderRadius: 8, padding: 8 }}>
             {assignableSubjects.map((s) => {
@@ -569,7 +567,7 @@ export default function ClassesPage() {
                     onChange={(e) => setAssignTeachers((prev) => ({ ...prev, [s.id]: e.target.value }))}
                   >
                     <option value="">— Teacher —</option>
-                    {teachers.map((t) => (
+                    {teachersFor(assignTarget?.level.section ?? assignSection, s.id).map((t) => (
                       <option key={t.id} value={t.id}>{t.firstName} {t.lastName}</option>
                     ))}
                   </Select>

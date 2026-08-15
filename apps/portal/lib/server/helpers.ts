@@ -8,18 +8,29 @@ export function sectionOf(v: unknown): Section | undefined {
   return s === "PRIMARY" || s === "SECONDARY" ? s : undefined;
 }
 
+export function sectionArray(v: unknown): Section[] {
+  if (!Array.isArray(v)) return [];
+  return [...new Set(v.filter((item): item is Section => item === "PRIMARY" || item === "SECONDARY"))];
+}
+
 export function isStaff(role: string): boolean {
   return role === "OWNER" || role === "ADMIN" || role === "BURSAR" || role === "TEACHER";
 }
 
 // Distinct school sections a teacher is assigned to, derived from their classes.
 export async function sectionsOfTeacher(teacherId: string): Promise<Section[]> {
-  const rows = await prisma.classSubject.findMany({
+  const [teacher, rows] = await Promise.all([
+    prisma.teacher.findUnique({ where: { id: teacherId }, select: { sections: true } }),
+    prisma.classSubject.findMany({
     where: { teacherId },
     select: { classGroup: { select: { level: { select: { section: true } } } } },
     distinct: ["classGroupId"],
-  });
-  return [...new Set(rows.map((r) => r.classGroup.level.section))];
+    }),
+  ]);
+  // Existing schools may have teachers created before explicit sections were
+  // introduced. Keep their existing class assignments visible while new
+  // assignments are always validated against the explicit setting.
+  return [...new Set([...sectionArray(teacher?.sections), ...rows.map((r) => r.classGroup.level.section)])];
 }
 
 // Sections that actually have data in the school — used for the admin switcher.

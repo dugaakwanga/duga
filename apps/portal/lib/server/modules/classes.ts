@@ -1,7 +1,7 @@
 import { prisma } from "@duga/core/server";
 import { logAudit } from "@duga/core/server";
 import type { Module } from ".";
-import { can, str, num, resolveSection } from "../helpers";
+import { can, str, num, resolveSection, sectionsOfTeacher } from "../helpers";
 
 export const classesModule: Module = {
   async list(ctx) {
@@ -33,9 +33,15 @@ export const classesModule: Module = {
     ]);
     // ClassGroup.formTeacherId and ClassSubject.teacherId reference Teacher IDs,
     // not User IDs. Return the matching IDs to prevent failed assignments.
-    const teacherOptions = teachers
+    const teacherOptions = await Promise.all(teachers
       .filter((user) => user.teacher)
-      .map((user) => ({ id: user.teacher!.id, firstName: user.firstName, lastName: user.lastName }));
+      .map(async (user) => ({
+        id: user.teacher!.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        subjectIds: (user.teacher!.subjectIds as string[] | null) ?? [],
+        sections: await sectionsOfTeacher(user.teacher!.id),
+      })));
     return { items: classGroups, levels, sessions, subjects, teachers: teacherOptions, role: ctx.session.user.role };
   },
 
@@ -74,6 +80,7 @@ export const classesModule: Module = {
     if (b.formTeacherId) {
       const ft = await prisma.teacher.findFirst({ where: { schoolId, OR: [{ id: String(b.formTeacherId) }, { userId: String(b.formTeacherId) }] } });
       if (!ft) throw new Error("Form teacher not found");
+      if (!(await sectionsOfTeacher(ft.id)).includes(level.section)) throw new Error("Form teacher is not assigned to this school section");
       b.formTeacherId = ft.id;
     }
     const dup = await prisma.classGroup.findUnique({
@@ -101,6 +108,8 @@ export const classesModule: Module = {
     if (data.formTeacherId) {
       const ft = await prisma.teacher.findFirst({ where: { schoolId, OR: [{ id: String(data.formTeacherId) }, { userId: String(data.formTeacherId) }] } });
       if (!ft) throw new Error("Form teacher not found");
+      const level = await prisma.classLevel.findUnique({ where: { id: existing.levelId }, select: { section: true } });
+      if (!level || !(await sectionsOfTeacher(ft.id)).includes(level.section)) throw new Error("Form teacher is not assigned to this school section");
       data.formTeacherId = ft.id;
     }
     const cls = await prisma.classGroup.update({ where: { id: ctx.id }, data });
@@ -116,10 +125,13 @@ export const classesModule: Module = {
       const raw = ctx.body.subjectIds ?? (ctx.body.subjectId ? [ctx.body.subjectId] : []);
       const subjectIds: string[] = (Array.isArray(raw) ? raw.map((s: unknown) => str(s)) : [str(raw)]).filter((s): s is string => !!s);
       if (subjectIds.length === 0) throw new Error("subjectIds required");
-      const cls = await prisma.classGroup.findFirst({ where: { id: ctx.id, schoolId } });
+      const cls = await prisma.classGroup.findFirst({ where: { id: ctx.id, schoolId }, include: { level: { select: { section: true } } } });
       if (!cls) throw new Error("Class not found");
       const subjects = await prisma.subject.findMany({ where: { id: { in: subjectIds }, schoolId } });
       if (subjects.length !== subjectIds.length) throw new Error("One or more subjects not found");
+      if (subjects.some((subject) => subject.section !== cls.level.section)) {
+        throw new Error(`Only ${cls.level.section.toLowerCase()} subjects can be assigned to this class`);
+      }
       // Per-subject teacher map (subjectId -> teacherId) with single-teacher fallback.
       const teachers = ctx.body.teachers && typeof ctx.body.teachers === "object" ? (ctx.body.teachers as Record<string, unknown>) : {};
       const singleTeacherId = str(ctx.body.teacherId);
@@ -130,6 +142,12 @@ export const classesModule: Module = {
         if (teacherId) {
           teacher = await prisma.teacher.findFirst({ where: { schoolId, OR: [{ id: teacherId }, { userId: teacherId }] } });
           if (!teacher) throw new Error(`Teacher not found for subject ${subjectId}`);
+          if (!(await sectionsOfTeacher(teacher.id)).includes(cls.level.section)) {
+            throw new Error("Selected teacher is not assigned to this school section");
+          }
+          if (!((teacher.subjectIds as string[] | null) ?? []).includes(subjectId)) {
+            throw new Error("Selected teacher has not been assigned this subject in Staff");
+          }
         }
         const cs = await prisma.classSubject.upsert({
           where: { classGroupId_subjectId: { classGroupId: ctx.id!, subjectId } },

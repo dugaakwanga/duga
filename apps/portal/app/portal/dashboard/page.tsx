@@ -35,6 +35,11 @@ function naira(v: string | number | undefined): string {
   return `₦${Number(v ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
+function ProgressBar({ value, tone = "blue" }: { value: number; tone?: "blue" | "gold" | "green" }) {
+  const safe = Math.max(0, Math.min(100, Math.round(value)));
+  return <div className="portal-progress" aria-label={`${safe}%`}><span className={`portal-progress__bar portal-progress__bar--${tone}`} style={{ width: `${safe}%` }} /></div>;
+}
+
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +74,7 @@ export default function DashboardPage() {
 
       {data.role === "OWNER" || data.role === "ADMIN" ? (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 14, marginBottom: 20 }}>
+          <div className="portal-metrics" style={{ marginBottom: 20 }}>
             <Stat label="Students" value={data.counts?.studentCount} />
             <Stat label="Staff" value={data.counts?.staffCount} />
             <Stat label="Classes" value={data.counts?.classCount} />
@@ -79,6 +84,14 @@ export default function DashboardPage() {
             <Stat label="Attendance today" value={data.counts?.today} />
           </div>
 
+          <div className="portal-dashboard-grid">
+          <Card title="School monitoring" className="portal-monitor-card">
+            <div className="portal-monitor-row"><div><strong>Fee collection</strong><small>{naira(data.feeSummary?.paid)} received</small></div><b>{data.feeSummary ? Math.round((Number(data.feeSummary.paid) / Math.max(1, Number(data.feeSummary.total))) * 100) : 0}%</b></div>
+            <ProgressBar tone="green" value={data.feeSummary ? (Number(data.feeSummary.paid) / Math.max(1, Number(data.feeSummary.total))) * 100 : 0} />
+            <div className="portal-monitor-row"><div><strong>Attendance captured</strong><small>{data.counts?.today ?? 0} records today</small></div><b>{data.counts?.studentCount ? Math.round(((data.counts?.today ?? 0) / data.counts.studentCount) * 100) : 0}%</b></div>
+            <ProgressBar tone="gold" value={data.counts?.studentCount ? ((data.counts?.today ?? 0) / data.counts.studentCount) * 100 : 0} />
+            <div className="portal-monitor-row"><div><strong>Admissions pipeline</strong><small>{data.counts?.applications ?? 0} new applications</small></div><Badge tone="info">Live</Badge></div>
+          </Card>
           <Card title="Recent announcements">
             {data.recentAnnouncements?.length ? (
               <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
@@ -95,11 +108,12 @@ export default function DashboardPage() {
               <EmptyState title="No announcements yet" hint="Post one from the Messages page." />
             )}
           </Card>
+          </div>
         </>
       ) : null}
 
       {data.role === "TEACHER" ? (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 18 }}>
+        <div className="portal-dashboard-grid">
           <Card title="My classes & subjects">
             {data.classSubjects?.length ? (
               <Table headers={["Subject", "Class"]}>

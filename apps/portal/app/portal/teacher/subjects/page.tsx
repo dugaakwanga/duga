@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { PageHeader, Card, Alert, Spinner, EmptyState } from "@duga/ui";
 import { api } from "@/lib/client/api";
+import { useSection } from "@/components/SectionContext";
 
 interface SubjectRow {
   id: string;
@@ -24,13 +25,14 @@ export default function MySubjectsPage() {
   const [subjects, setSubjects] = useState<SubjectRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { section } = useSection();
 
   useEffect(() => {
     api<SubjectRow[]>("teacher")
       .then(setSubjects)
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [section]);
 
   const classes = new Map<string, ClassGroup>();
   for (const s of subjects) {

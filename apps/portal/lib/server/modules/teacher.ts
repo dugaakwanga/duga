@@ -1,6 +1,6 @@
 import { prisma } from "@duga/core/server";
 import type { Module } from ".";
-import { can, str } from "../helpers";
+import { can, str, resolveSection } from "../helpers";
 
 async function taughtClassIds(teacherId: string, withTeacher: boolean): Promise<string[] | undefined> {
   if (!withTeacher) return undefined;
@@ -16,8 +16,12 @@ export const teacherModule: Module = {
     const teacher = ctx.session.user.teacher;
     const role = ctx.session.user.role;
     const schoolId = ctx.session.user.schoolId;
+    const section = await resolveSection(ctx);
 
-    const where = role === "OWNER" || role === "ADMIN" ? { schoolId } : { teacherId: teacher!.id };
+    const where = {
+      ...(role === "OWNER" || role === "ADMIN" ? { schoolId } : { teacherId: teacher!.id }),
+      ...(section ? { classGroup: { level: { section } } } : {}),
+    };
     const classSubjects = await prisma.classSubject.findMany({
       where,
       include: {
@@ -39,11 +43,12 @@ export const teacherModule: Module = {
       const teacher = ctx.session.user.teacher;
       const role = ctx.session.user.role;
       const schoolId = ctx.session.user.schoolId;
+      const section = await resolveSection(ctx);
       const groups = await prisma.classGroup.findMany({
         where:
           role === "OWNER" || role === "ADMIN"
-            ? { schoolId }
-            : { classSubjects: { some: { teacherId: teacher!.id } } },
+            ? { schoolId, ...(section ? { level: { section } } : {}) }
+            : { classSubjects: { some: { teacherId: teacher!.id, ...(section ? { classGroup: { level: { section } } } : {}) } } },
         include: { level: true, session: true, _count: { select: { students: true, classSubjects: true } } },
         orderBy: { createdAt: "asc" },
         take: 100,
@@ -58,8 +63,9 @@ export const teacherModule: Module = {
       const teacher = ctx.session.user.teacher;
       const role = ctx.session.user.role;
       const schoolId = ctx.session.user.schoolId;
+      const section = await resolveSection(ctx);
       const groups = await prisma.classGroup.findMany({
-        where: role === "OWNER" || role === "ADMIN" ? { schoolId } : { formTeacherId: teacher!.id },
+        where: role === "OWNER" || role === "ADMIN" ? { schoolId, ...(section ? { level: { section } } : {}) } : { formTeacherId: teacher!.id, ...(section ? { level: { section } } : {}) },
         include: { level: true, _count: { select: { students: true } } },
         orderBy: { createdAt: "asc" },
         take: 100,
@@ -72,9 +78,10 @@ export const teacherModule: Module = {
     roster: async (ctx) => {
       can(ctx, "classes:view");
       const schoolId = ctx.session.user.schoolId;
+      const section = await resolveSection(ctx);
       const classGroupId = str(ctx.body.classGroupId) ?? ctx.query.get("classGroupId") ?? "";
       if (!classGroupId) throw new Error("classGroupId required");
-      const classGroup = await prisma.classGroup.findFirst({ where: { id: classGroupId, schoolId } });
+      const classGroup = await prisma.classGroup.findFirst({ where: { id: classGroupId, schoolId, ...(section ? { level: { section } } : {}) } });
       if (!classGroup) throw new Error("Class not found");
 
       const students = await prisma.student.findMany({
@@ -109,13 +116,14 @@ export const teacherModule: Module = {
       const teacher = ctx.session.user.teacher;
       const role = ctx.session.user.role;
       const schoolId = ctx.session.user.schoolId;
+      const section = await resolveSection(ctx);
       const asTeacher = role === "OWNER" || role === "ADMIN" ? false : true;
       const tId = asTeacher ? teacher!.id : undefined;
 
       const [classSubjectsCount, classCount, students, notesCount, assignmentsCount, testsCount, pendingGrading, contentCount, gameCount, upcomingLive, today] =
         await Promise.all([
-          prisma.classSubject.count({ where: { schoolId, ...(tId ? { teacherId: tId } : {}) } }),
-          prisma.classGroup.count({ where: tId ? { classSubjects: { some: { teacherId: tId } } } : { schoolId } }),
+          prisma.classSubject.count({ where: { schoolId, ...(tId ? { teacherId: tId } : {}), ...(section ? { classGroup: { level: { section } } } : {}) } }),
+          prisma.classGroup.count({ where: tId ? { classSubjects: { some: { teacherId: tId, ...(section ? { classGroup: { level: { section } } } : {}) } } } : { schoolId, ...(section ? { level: { section } } : {}) } }),
           (async () => {
             if (tId) {
               const ids = await taughtClassIds(tId, true);

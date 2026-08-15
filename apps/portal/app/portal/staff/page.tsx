@@ -13,7 +13,7 @@ interface StaffUser {
   status: string;
   firstName: string;
   lastName: string;
-  teacher?: { staffNumber: string; specialty: string | null; subjectIds?: string[] | null; designation: string | null } | null;
+  teacher?: { staffNumber: string; specialty: string | null; subjectIds?: string[] | null; sections?: string[] | null; designation: string | null } | null;
   admin?: { designation: string | null } | null;
 }
 interface Subject { id: string; name: string; section: string }
@@ -22,6 +22,7 @@ export default function StaffPage() {
   const [items, setItems] = useState<StaffUser[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [selectedSubjectIds, setSelectedSubjectIds] = useState<string[]>([]);
+  const [selectedSections, setSelectedSections] = useState<string[]>([]);
   const [currentRole, setCurrentRole] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -60,10 +61,10 @@ export default function StaffPage() {
     setSaving(true);
     try {
       if (editing) {
-        await api(`staff/${editing.id}`, { method: "PATCH", body: { ...form, subjectIds: selectedSubjectIds } });
+        await api(`staff/${editing.id}`, { method: "PATCH", body: { ...form, subjectIds: selectedSubjectIds, sections: selectedSections } });
         setNotice("Staff member updated.");
       } else {
-        await api("staff", { method: "POST", body: { ...form, subjectIds: selectedSubjectIds } });
+        await api("staff", { method: "POST", body: { ...form, subjectIds: selectedSubjectIds, sections: selectedSections } });
         setNotice(form.tempPassword
           ? `Staff member added. Temporary password: ${form.tempPassword} — they will be asked to change it on first login.`
           : "Staff member added. They will be asked to set their own password on first login.");
@@ -72,6 +73,7 @@ export default function StaffPage() {
       setEditing(null);
       setForm({});
       setSelectedSubjectIds([]);
+      setSelectedSections([]);
       load();
     } catch (e) {
       alert((e as Error).message);
@@ -94,6 +96,7 @@ export default function StaffPage() {
       designation: u.teacher?.designation ?? u.admin?.designation ?? "",
     });
     setSelectedSubjectIds(u.teacher?.subjectIds ?? []);
+    setSelectedSections(u.teacher?.sections ?? []);
     setError(null);
     setOpen(true);
   }
@@ -134,7 +137,7 @@ export default function StaffPage() {
       <PageHeader
         title="Staff"
         subtitle="Teachers, administrators, bursars and the proprietor."
-        actions={<Button onClick={() => { setEditing(null); setForm({}); setSelectedSubjectIds([]); setOpen(true); }}><Icon name="plus" size={16} /> Add staff</Button>}
+        actions={<Button onClick={() => { setEditing(null); setForm({}); setSelectedSubjectIds([]); setSelectedSections([]); setOpen(true); }}><Icon name="plus" size={16} /> Add staff</Button>}
       />
       {error && <Alert tone="danger">{error}</Alert>}
       {notice && <Alert tone="success">{notice}</Alert>}
@@ -262,12 +265,35 @@ export default function StaffPage() {
           {(form.role === "TEACHER" || editing?.role === "TEACHER") && (
             <div className="staff-subject-picker">
               <div className="staff-subject-picker__heading">
+                <span>School sections</span>
+                <small>Choose where this teacher is allowed to teach.</small>
+              </div>
+              <div className="staff-subject-picker__grid staff-section-picker">
+                {(["PRIMARY", "SECONDARY"] as const).map((schoolSection) => {
+                  const selected = selectedSections.includes(schoolSection);
+                  return (
+                    <button key={schoolSection} type="button" className={`staff-subject-picker__option${selected ? " is-selected" : ""}`}
+                      onClick={() => {
+                        setSelectedSections((sections) => selected ? sections.filter((item) => item !== schoolSection) : [...sections, schoolSection]);
+                        if (selected) setSelectedSubjectIds((ids) => ids.filter((id) => subjects.find((subject) => subject.id === id)?.section !== schoolSection));
+                      }} aria-pressed={selected}>
+                      <span>{schoolSection === "PRIMARY" ? "Primary" : "Secondary"}</span>
+                      <Badge tone={schoolSection === "PRIMARY" ? "info" : "accent"}>{selected ? "Assigned" : "Not assigned"}</Badge>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {(form.role === "TEACHER" || editing?.role === "TEACHER") && (
+            <div className="staff-subject-picker">
+              <div className="staff-subject-picker__heading">
                 <span>Teaching subjects</span>
                 <small>Select one or more subjects for this teacher.</small>
               </div>
               {subjects.length === 0 ? <Alert tone="warning">Add subjects in Classes first.</Alert> : (
                 <div className="staff-subject-picker__grid">
-                  {subjects.map((subject) => {
+                  {subjects.filter((subject) => selectedSections.includes(subject.section)).map((subject) => {
                     const selected = selectedSubjectIds.includes(subject.id);
                     return (
                       <button

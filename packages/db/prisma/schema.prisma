@@ -386,6 +386,9 @@ model Teacher {
   staffNumber String
   specialty   String?
   subjectIds  Json?
+  // Explicit school sections this teacher may teach in. This keeps Primary
+  // and Secondary assignments separate even before a teacher has a class.
+  sections    Json?
   designation String?
   hireDate    DateTime @default(now())
   createdAt   DateTime @default(now())

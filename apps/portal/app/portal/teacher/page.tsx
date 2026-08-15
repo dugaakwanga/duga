@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { PageHeader, Card, Stat, Badge, Alert, Spinner, EmptyState, Icon } from "@duga/ui";
 import { api } from "@/lib/client/api";
+import { useSection } from "@/components/SectionContext";
 
 interface SubjectRow {
   id: string;
@@ -38,6 +39,7 @@ export default function TeacherHomePage() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { section } = useSection();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -53,7 +55,7 @@ export default function TeacherHomePage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [section]);
 
   useEffect(() => {
     load();

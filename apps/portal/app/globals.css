@@ -944,6 +944,22 @@ body {
 .classes-drill-card--primary .classes-drill-card__icon { background: linear-gradient(135deg, var(--duga-teal, #0f766e), var(--duga-sky, #38bdf8)); }
 .classes-drill-card__title { font-weight: 800; font-size: 16px; color: var(--duga-ink-1, #0f172a); }
 .classes-drill-card__sub { font-size: 12.5px; color: var(--duga-muted, #64748b); line-height: 1.5; min-height: 38px; }
+
+/* Dashboard monitoring cards: compact, readable operational signals. */
+.portal-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; }
+.portal-dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr); gap: 18px; align-items: start; }
+.portal-monitor-card { min-height: 100%; }
+.portal-monitor-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin: 0 0 8px; }
+.portal-monitor-row + .portal-monitor-row { margin-top: 18px; }
+.portal-monitor-row strong { display: block; font-size: 14px; color: var(--duga-primary-ink); }
+.portal-monitor-row small { display: block; margin-top: 3px; color: var(--duga-muted); font-size: 12px; font-weight: 600; }
+.portal-monitor-row > b { color: var(--duga-primary); font-size: 14px; }
+.portal-progress { height: 8px; overflow: hidden; border-radius: 999px; background: var(--duga-surface, #f1f5f9); box-shadow: inset 0 1px 2px rgba(15, 23, 42, .08); }
+.portal-progress__bar { display: block; height: 100%; border-radius: inherit; transition: width .35s ease; }
+.portal-progress__bar--blue { background: linear-gradient(90deg, var(--duga-primary), #4f8fff); }
+.portal-progress__bar--gold { background: linear-gradient(90deg, var(--duga-gold), #f2cc61); }
+.portal-progress__bar--green { background: linear-gradient(90deg, #16855b, #49bd8c); }
+@media (max-width: 760px) { .portal-dashboard-grid { grid-template-columns: 1fr; } }
 .classes-drill-card__foot {
   display: flex;
   align-items: center;

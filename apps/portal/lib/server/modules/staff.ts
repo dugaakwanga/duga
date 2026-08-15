@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@duga/core/server";
 import { logAudit } from "@duga/core/server";
 import type { Module } from ".";
-import { can, str, assertContactFree } from "../helpers";
+import { can, str, assertContactFree, resolveSection, sectionArray, sectionsOfTeacher } from "../helpers";
 
 function assertStaffTargetAccess(actorRole: string, targetRole: string) {
   if (actorRole !== "OWNER" && ["OWNER", "ADMIN", "BURSAR"].includes(targetRole)) {
@@ -15,9 +15,14 @@ function subjectIds(value: unknown): string[] {
   return [...new Set(value.filter((id): id is string => typeof id === "string" && id.length > 0))];
 }
 
+function teacherSections(value: unknown): ("PRIMARY" | "SECONDARY")[] {
+  return sectionArray(value);
+}
+
 export const staffModule: Module = {
   async list(ctx) {
     can(ctx, "staff:view");
+    const section = await resolveSection(ctx);
     const [users, subjects] = await Promise.all([prisma.user.findMany({
       where: {
         schoolId: ctx.session.user.schoolId,
@@ -37,8 +42,14 @@ export const staffModule: Module = {
       },
       orderBy: { createdAt: "desc" },
       take: 300,
-    }), prisma.subject.findMany({ where: { schoolId: ctx.session.user.schoolId }, select: { id: true, name: true, section: true }, orderBy: [{ section: "asc" }, { name: "asc" }] })]);
-    return { items: users, subjects, total: users.length, role: ctx.session.user.role };
+    }), prisma.subject.findMany({ where: { schoolId: ctx.session.user.schoolId, ...(section ? { section } : {}) }, select: { id: true, name: true, section: true }, orderBy: [{ section: "asc" }, { name: "asc" }] })]);
+    const scopedUsers = section
+      ? await Promise.all(users.map(async (user) => {
+          if (!user.teacher) return user;
+          return (await sectionsOfTeacher(user.teacher.id)).includes(section) ? user : null;
+        })).then((rows) => rows.filter((row): row is typeof users[number] => !!row))
+      : users;
+    return { items: scopedUsers, subjects, total: scopedUsers.length, role: ctx.session.user.role };
   },
 
   async get(ctx) {
@@ -63,6 +74,7 @@ export const staffModule: Module = {
     const staffNumber = str(b.staffNumber);
     const tempPassword = str(b.tempPassword);
     const assignedSubjectIds = subjectIds(b.subjectIds);
+    const assignedSections = teacherSections(b.sections);
     // The teacher can be created with any single identifier — email, phone or staff number.
     if (!role || !firstName || !lastName) throw new Error("role, firstName and lastName are required");
     if (!email && !phone && !staffNumber) throw new Error("Provide at least one of email, phone number or staff ID");
@@ -70,8 +82,10 @@ export const staffModule: Module = {
     assertStaffTargetAccess(ctx.session.user.role, role);
     if (tempPassword && tempPassword.length < 8) throw new Error("Temporary password must be at least 8 characters");
     if (role !== "TEACHER" && assignedSubjectIds.length) throw new Error("Only teachers can be assigned subjects");
+    if (role !== "TEACHER" && assignedSections.length) throw new Error("Only teachers can be assigned school sections");
+    if (role === "TEACHER" && assignedSections.length === 0) throw new Error("Assign the teacher to Primary, Secondary, or both");
     if (assignedSubjectIds.length) {
-      const count = await prisma.subject.count({ where: { schoolId, id: { in: assignedSubjectIds } } });
+      const count = await prisma.subject.count({ where: { schoolId, id: { in: assignedSubjectIds }, section: { in: assignedSections } } });
       if (count !== assignedSubjectIds.length) throw new Error("One or more selected subjects were not found");
     }
 
@@ -105,6 +119,7 @@ export const staffModule: Module = {
           staffNumber: staffNumber ?? `STF-${String((await prisma.teacher.count({ where: { schoolId } })) + 1).padStart(3, "0")}`,
           specialty: str(b.specialty),
           subjectIds: assignedSubjectIds,
+          sections: assignedSections,
           designation: str(b.designation) ?? "Teacher",
         },
       });
@@ -148,6 +163,7 @@ export const staffModule: Module = {
 
     const finalRole = (data.role as string) ?? target.role;
     const assignedSubjectIds = subjectIds(b.subjectIds);
+    const assignedSections = teacherSections(b.sections);
 
     if (finalRole === "TEACHER") {
       if (!target.teacher) {
@@ -162,6 +178,7 @@ export const staffModule: Module = {
             staffNumber,
             specialty: str(b.specialty),
             subjectIds: assignedSubjectIds,
+            sections: assignedSections,
             designation: str(b.designation) ?? "Teacher",
           },
         });
@@ -178,9 +195,22 @@ export const staffModule: Module = {
         if (b.designation) await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { designation: String(b.designation) } });
       }
       if (b.subjectIds !== undefined) {
-        const count = await prisma.subject.count({ where: { schoolId, id: { in: assignedSubjectIds } } });
+        const effectiveSections = b.sections !== undefined ? assignedSections : sectionArray(target.teacher?.sections);
+        if (effectiveSections.length === 0) throw new Error("Assign the teacher to a school section before assigning subjects");
+        const count = await prisma.subject.count({ where: { schoolId, id: { in: assignedSubjectIds }, section: { in: effectiveSections } } });
         if (count !== assignedSubjectIds.length) throw new Error("One or more selected subjects were not found");
         await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { subjectIds: assignedSubjectIds } });
+      }
+      if (b.sections !== undefined && target.teacher) {
+        if (assignedSections.length === 0) throw new Error("Assign the teacher to Primary, Secondary, or both");
+        const assignedClasses = await prisma.classSubject.findMany({ where: { teacherId: target.teacher.id }, select: { classGroup: { select: { level: { select: { section: true } } } } } });
+        if (assignedClasses.some((row) => !assignedSections.includes(row.classGroup.level.section))) {
+          throw new Error("This teacher still has class assignments in a section you are removing");
+        }
+        const currentSubjects = b.subjectIds !== undefined ? assignedSubjectIds : ((target.teacher.subjectIds as string[] | null) ?? []);
+        const validSubjectCount = await prisma.subject.count({ where: { schoolId, id: { in: currentSubjects }, section: { in: assignedSections } } });
+        if (validSubjectCount !== currentSubjects.length) throw new Error("Remove subjects outside the selected school section first");
+        await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { sections: assignedSections } });
       }
       if (data.role) await prisma.admin.deleteMany({ where: { userId: ctx.id, schoolId } });
     } else {

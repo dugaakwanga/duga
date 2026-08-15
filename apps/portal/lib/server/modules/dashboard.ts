@@ -57,9 +57,10 @@ export const dashboardModule: Module = {
 
     if (role === "TEACHER") {
       const teacher = ctx.session.user.teacher!;
+      const section = await resolveSection(ctx);
       const [classSubjects, upcomingLive, pendingGrading] = await Promise.all([
         prisma.classSubject.findMany({
-          where: { teacherId: teacher.id },
+          where: { teacherId: teacher.id, ...(section ? { classGroup: { level: { section } } } : {}) },
           include: { classGroup: { include: { level: true } }, subject: true },
           take: 8,
         }),
