@@ -88,7 +88,7 @@ export const timetableModule: Module = {
       entriesWhere.classGroupId = ctx.session.user.student!.currentClassGroupId ?? "none";
     } else if (role === "PARENT") {
       const links = await prisma.studentParent.findMany({ where: { parentId: ctx.session.user.parent!.id }, include: { student: { select: { currentClassGroupId: true } } } });
-      const groups = [...new Set(links.map((l) => l.student.currentClassGroupId).filter(Boolean))];
+      const groups = [...new Set(links.map((l) => l.student.currentClassGroupId).filter((id): id is string => !!id))];
       entriesWhere.classGroupId = { in: groups };
     } else if (classGroupId) {
       entriesWhere.classGroupId = classGroupId;

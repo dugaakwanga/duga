@@ -134,8 +134,8 @@ export const dashboardModule: Module = {
         };
       });
       const childSections = [...new Set(children.map((child) => child.student.section))];
-      const childClassIds = [...new Set(children.map((child) => child.student.currentClassGroupId).filter(Boolean))];
-      const childLevelIds = [...new Set(children.map((child) => child.student.classGroup?.levelId).filter(Boolean))];
+      const childClassIds = [...new Set(children.map((child) => child.student.currentClassGroupId).filter((id): id is string => !!id))];
+      const childLevelIds = [...new Set(children.map((child) => child.student.classGroup?.levelId).filter((id): id is string => !!id))];
       const announcements = await prisma.announcement.findMany({
         where: {
           schoolId,

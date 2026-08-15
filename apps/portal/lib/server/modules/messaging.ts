@@ -220,8 +220,8 @@ export const messagingModule: Module = {
           select: { student: { select: { section: true, currentClassGroupId: true, classGroup: { select: { levelId: true } } } } },
         });
         const sections = [...new Set(links.map((link) => link.student.section))];
-        const classIds = [...new Set(links.map((link) => link.student.currentClassGroupId).filter(Boolean))];
-        const levelIds = [...new Set(links.map((link) => link.student.classGroup?.levelId).filter(Boolean))];
+        const classIds = [...new Set(links.map((link) => link.student.currentClassGroupId).filter((id): id is string => !!id))];
+        const levelIds = [...new Set(links.map((link) => link.student.classGroup?.levelId).filter((id): id is string => !!id))];
         where.OR = [
           { audience: "EVERYONE" },
           { audience: "ROLE", targetRole: "PARENT" },
