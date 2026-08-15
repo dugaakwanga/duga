@@ -83,7 +83,7 @@ export class AcademicsService {
   setCurrentSession(id: string): boolean {
     const idx = this.sessions.findIndex((s) => s.id === id);
     if (idx < 0) return false;
-    this.sessions[idx].is_current = true;
+    this.sessions[idx]!.is_current = true;
     return true;
   }
 

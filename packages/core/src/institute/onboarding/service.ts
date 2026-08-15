@@ -30,26 +30,28 @@ export class OnboardingService {
   getCurrentStepData(): OnboardingStepData {
     const step = this.state.currentStep;
     const stepData = this.state[`step${step}` as keyof OnboardingState] as OnboardingStepData | null;
-    return { step, title: ONBOARDING_STEPS[step - 1].title, description: ONBOARDING_STEPS[step - 1].description, completed: !!stepData };
+    const currentStepData = ONBOARDING_STEPS[step - 1]!;
+    return { step, title: currentStepData.title, description: currentStepData.description, completed: !!stepData };
   }
 
   nextStep(): void {
     const current = this.state.currentStep;
     if (current < OnboardingStep.STEP4) {
-      this.state.currentStep = OnboardingStep[current + 1] || current;
+      const nextStep = (current + 1) as OnboardingStep;
+      this.state.currentStep = nextStep;
     }
   }
 
   prevStep(): void {
     const current = this.state.currentStep;
     if (current > OnboardingStep.STEP1) {
-      const steps: Record<OnboardingStep, OnboardingStep> = {
+      const steps: Record<number, OnboardingStep> = {
         [OnboardingStep.STEP1]: OnboardingStep.STEP1,
         [OnboardingStep.STEP2]: OnboardingStep.STEP1,
         [OnboardingStep.STEP3]: OnboardingStep.STEP2,
         [OnboardingStep.STEP4]: OnboardingStep.STEP3,
       };
-      this.state.currentStep = steps[current] || current;
+      this.state.currentStep = steps[current] ?? OnboardingStep.STEP1;
     }
   }
 

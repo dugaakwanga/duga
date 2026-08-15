@@ -1,6 +1,9 @@
 import { ProfileApprovalStatusEnum, ProfileApprovalStatusMessages } from "./models";
 import { user_is_verified, user_is_admin_or_su, can_access_dashboard } from "./mixins";
 
+// Re-export from models
+export { ProfileApprovalStatusEnum, ProfileApprovalStatusMessages };
+
 // Re-export auth-related types from the auth module to avoid conflicts
 export type { PortalClaims, SuperAdminClaims } from "../auth";
 

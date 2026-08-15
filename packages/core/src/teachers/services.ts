@@ -1,13 +1,5 @@
-import { Teacher, Designation, TeacherFormData, createTeacher, updateTeacher } from "./models";
+import { Teacher, Designation, TeacherFormData, TeachersListItem, createTeacher, updateTeacher } from "./models";
 import { user_is_teacher_or_administrative } from "../accounts/mixins";
-
-export interface TeachersListItem {
-  id: string;
-  name: string;
-  designation: Designation;
-  mobile: string;
-  email: string;
-}
 
 export class TeachersService {
   private teachers: TeachersListItem[] = [];
