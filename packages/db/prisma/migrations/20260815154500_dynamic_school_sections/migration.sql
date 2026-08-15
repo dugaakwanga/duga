@@ -2,7 +2,7 @@ ALTER TABLE "Student" ALTER COLUMN "section" TYPE TEXT USING "section"::text;
 ALTER TABLE "ClassLevel" ALTER COLUMN "section" TYPE TEXT USING "section"::text;
 ALTER TABLE "Subject" ALTER COLUMN "section" TYPE TEXT USING "section"::text;
 ALTER TABLE "Announcement" ALTER COLUMN "targetSection" TYPE TEXT USING "targetSection"::text;
-ALTER TABLE "FeeItem" ALTER COLUMN "section" TYPE TEXT USING "section"::text;
+ALTER TABLE "FeeStructure" ALTER COLUMN "section" TYPE TEXT USING "section"::text;
 ALTER TABLE "Application" ALTER COLUMN "section" TYPE TEXT USING "section"::text;
 DROP TYPE "Section";
 
