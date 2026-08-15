@@ -54,14 +54,17 @@ export default function StudentsPage() {
   const [newClassOpen, setNewClassOpen] = useState(false);
   const [newClass, setNewClass] = useState<Record<string, string>>({});
   const [creatingClass, setCreatingClass] = useState(false);
-  // Drill-down navigation: overview -> (secondary | primary | unassigned) -> classes -> students.
-  type View = { name: "overview" } | { name: "category"; section: "SECONDARY" | "PRIMARY" | "UNASSIGNED" };
+  // Drill-down navigation: overview -> a configured school section (or unassigned) -> classes -> students.
+  type View = { name: "overview" } | { name: "category"; section: string };
   const [view, setView] = useState<View>({ name: "overview" });
-  const secondaryStudents = items.filter((s) => s.classGroup?.level.section === "SECONDARY");
-  const primaryStudents = items.filter((s) => s.classGroup?.level.section === "PRIMARY");
   const unassignedStudents = items.filter((s) => !s.classGroup);
+  const schoolSections = [...new Set([
+    ...classes.map((item) => item.level.section),
+    ...levels.map((item) => item.section),
+    ...items.flatMap((item) => item.classGroup ? [item.classGroup.level.section] : []),
+  ].filter(Boolean))];
   const sectionItems = view.name === "category"
-    ? view.section === "SECONDARY" ? secondaryStudents : view.section === "PRIMARY" ? primaryStudents : unassignedStudents
+    ? view.section === "UNASSIGNED" ? unassignedStudents : items.filter((item) => item.classGroup?.level.section === view.section)
     : [];
   const byClass = new Map<string, Student[]>();
   for (const s of sectionItems) {
@@ -259,24 +262,20 @@ export default function StudentsPage() {
         <EmptyState title="No students found" hint="Enroll a new student to get started." />
       ) : view.name === "overview" ? (
         <div className="classes-drill">
-          <button className="classes-drill-card" onClick={() => setView({ name: "category", section: "SECONDARY" })}>
-            <div className="classes-drill-card__icon"><Icon name="students" size={20} /></div>
-            <div className="classes-drill-card__title">Secondary</div>
-            <div className="classes-drill-card__sub">JSS &amp; SSS students grouped by class</div>
-            <div className="classes-drill-card__foot">
-              <Badge tone="accent">{secondaryStudents.length}</Badge>
-              <span className="classes-drill-card__manage">Open Secondary →</span>
-            </div>
-          </button>
-          <button className="classes-drill-card classes-drill-card--primary" onClick={() => setView({ name: "category", section: "PRIMARY" })}>
-            <div className="classes-drill-card__icon"><Icon name="students" size={20} /></div>
-            <div className="classes-drill-card__title">Primary</div>
-            <div className="classes-drill-card__sub">Primary school students grouped by class</div>
-            <div className="classes-drill-card__foot">
-              <Badge tone="info">{primaryStudents.length}</Badge>
-              <span className="classes-drill-card__manage">Open Primary →</span>
-            </div>
-          </button>
+          {schoolSections.map((schoolSection, index) => {
+            const count = items.filter((item) => item.classGroup?.level.section === schoolSection).length;
+            return (
+              <button key={schoolSection} className={`classes-drill-card${index % 2 ? " classes-drill-card--primary" : ""}`} onClick={() => setView({ name: "category", section: schoolSection })}>
+                <div className="classes-drill-card__icon"><Icon name="students" size={20} /></div>
+                <div className="classes-drill-card__title">{schoolSection}</div>
+                <div className="classes-drill-card__sub">Students grouped by class</div>
+                <div className="classes-drill-card__foot">
+                  <Badge tone={index % 2 ? "info" : "accent"}>{count}</Badge>
+                  <span className="classes-drill-card__manage">Open {schoolSection} →</span>
+                </div>
+              </button>
+            );
+          })}
           {unassignedStudents.length > 0 && (
             <button className="classes-drill-card" onClick={() => setView({ name: "category", section: "UNASSIGNED" })}>
               <div className="classes-drill-card__icon"><Icon name="students" size={20} /></div>
@@ -297,13 +296,13 @@ export default function StudentsPage() {
             </Button>
             <span className="classes-crumb__sep">/</span>
             <span className="classes-crumb__current">
-              {view.section === "SECONDARY" ? "Secondary" : view.section === "PRIMARY" ? "Primary" : "Unassigned"}
+              {view.section === "UNASSIGNED" ? "Unassigned" : view.section}
             </span>
           </div>
 
           <div>
             <h2 style={{ fontSize: 17, margin: "0 0 12px", color: "var(--duga-primary-ink)" }}>
-              {view.section === "SECONDARY" ? "Secondary" : view.section === "PRIMARY" ? "Primary" : "Unassigned"} classes
+              {view.section === "UNASSIGNED" ? "Unassigned" : view.section} classes
               <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--duga-muted)", marginLeft: 6 }}>({sectionItems.length} students)</span>
             </h2>
             {classGroups.length === 0 ? (
@@ -385,12 +384,10 @@ export default function StudentsPage() {
                 <Field label="Level" required>
                   <Select value={newClass.levelId ?? ""} onChange={(e) => setNewClass({ ...newClass, levelId: e.target.value })}>
                     <option value="">Select level…</option>
-                    <optgroup label="Secondary">
-                      {levels.filter((l) => l.section === "SECONDARY").map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                    </optgroup>
-                    <optgroup label="Primary">
-                      {levels.filter((l) => l.section === "PRIMARY").map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                    </optgroup>
+                    {schoolSections.map((schoolSection) => {
+                      const sectionLevels = levels.filter((level) => level.section === schoolSection);
+                      return sectionLevels.length > 0 ? <optgroup key={schoolSection} label={schoolSection}>{sectionLevels.map((level) => <option key={level.id} value={level.id}>{level.name}</option>)}</optgroup> : null;
+                    })}
                   </Select>
                 </Field>
                 <Field label="Session" required>
