@@ -96,7 +96,7 @@ const ACTIVITY_CHALLENGES: Record<string, Challenge[]> = {
 };
 
 function challengesFor(item: GameItem): Challenge[] {
-  return ACTIVITY_CHALLENGES[item.category] ?? ACTIVITY_CHALLENGES.QUIZ;
+  return ACTIVITY_CHALLENGES[item.category] ?? ACTIVITY_CHALLENGES.QUIZ ?? [];
 }
 
 export default function GamesPage() {
