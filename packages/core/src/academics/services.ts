@@ -28,8 +28,8 @@ export class AcademicsService {
   updateSemester(id: string, data: Partial<CreateSemesterForm>): Semester | undefined {
     const idx = this.semesters.findIndex((s) => s.id === id);
     if (idx < 0) return undefined;
-    const s = this.semesters[idx];
-    // Semester is guaranteed valid since idx >= 0
+    // Use non-null assertion since idx >= 0 is guaranteed
+    const s = this.semesters[idx]!;
     const semester: Semester = {
       id: s.id,
       number: data.number != null ? data.number : s.number,
