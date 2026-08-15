@@ -226,7 +226,7 @@ export const staffModule: Module = {
       if (!target.admin) await prisma.admin.create({ data: { userId: target.id, schoolId, designation: str(b.designation) ?? "Staff" } });
       if (b.sections !== undefined) {
         if (ctx.session.user.role !== "OWNER") throw new Error("Only the school owner can assign sections to administrators or bursars");
-        await prisma.admin.updateMany({ where: { userId: ctx.id, schoolId }, data: { sections: assignedSections.length ? assignedSections : null } });
+        await prisma.admin.updateMany({ where: { userId: ctx.id, schoolId }, data: { sections: assignedSections } });
       }
       if (data.role && target.teacher) {
         // Teacher profile may have dependencies (class subjects etc.); drop it
