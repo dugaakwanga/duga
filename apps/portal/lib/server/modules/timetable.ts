@@ -26,8 +26,10 @@ function overlaps(aStart: string, aEnd: string, bStart: string, bEnd: string) {
 }
 
 function timeAfter(start: string, minutes: number) {
-  const [hours, mins] = start.split(":").map(Number);
-  const value = hours * 60 + mins + minutes;
+  const [hourText = "0", minuteText = "0"] = start.split(":");
+  const hours = Number(hourText);
+  const mins = Number(minuteText);
+  const value = (Number.isFinite(hours) ? hours : 0) * 60 + (Number.isFinite(mins) ? mins : 0) + minutes;
   return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
 }
 
