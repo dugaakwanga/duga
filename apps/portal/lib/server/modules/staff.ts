@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@duga/core/server";
 import { logAudit } from "@duga/core/server";
 import type { Module } from ".";
-import { can, str, assertContactFree, resolveSection, sectionArray, sectionsOfTeacher } from "../helpers";
+import { can, str, assertContactFree, resolveSection, sectionArray, sectionsOfAdmin, sectionsOfTeacher } from "../helpers";
 
 function assertStaffTargetAccess(actorRole: string, targetRole: string) {
   if (actorRole !== "OWNER" && ["OWNER", "ADMIN", "BURSAR"].includes(targetRole)) {
@@ -15,7 +15,7 @@ function subjectIds(value: unknown): string[] {
   return [...new Set(value.filter((id): id is string => typeof id === "string" && id.length > 0))];
 }
 
-function teacherSections(value: unknown): ("PRIMARY" | "SECONDARY")[] {
+function teacherSections(value: unknown): string[] {
   return sectionArray(value);
 }
 
@@ -45,8 +45,12 @@ export const staffModule: Module = {
     }), prisma.subject.findMany({ where: { schoolId: ctx.session.user.schoolId, ...(section ? { section } : {}) }, select: { id: true, name: true, section: true }, orderBy: [{ section: "asc" }, { name: "asc" }] })]);
     const scopedUsers = section
       ? await Promise.all(users.map(async (user) => {
-          if (!user.teacher) return user;
-          return (await sectionsOfTeacher(user.teacher.id)).includes(section) ? user : null;
+          const sections = user.teacher
+            ? await sectionsOfTeacher(user.teacher.id)
+            : user.admin
+              ? await sectionsOfAdmin(user.admin.id, user.schoolId)
+              : [];
+          return sections.includes(section) ? user : null;
         })).then((rows) => rows.filter((row): row is typeof users[number] => !!row))
       : users;
     return { items: scopedUsers, subjects, total: scopedUsers.length, role: ctx.session.user.role };
@@ -82,7 +86,7 @@ export const staffModule: Module = {
     assertStaffTargetAccess(ctx.session.user.role, role);
     if (tempPassword && tempPassword.length < 8) throw new Error("Temporary password must be at least 8 characters");
     if (role !== "TEACHER" && assignedSubjectIds.length) throw new Error("Only teachers can be assigned subjects");
-    if (role !== "TEACHER" && assignedSections.length) throw new Error("Only teachers can be assigned school sections");
+    if (ctx.session.user.role !== "OWNER" && role !== "TEACHER" && assignedSections.length) throw new Error("Only the school owner can assign sections to administrators or bursars");
     if (role === "TEACHER" && assignedSections.length === 0) throw new Error("Assign the teacher to Primary, Secondary, or both");
     if (assignedSubjectIds.length) {
       const count = await prisma.subject.count({ where: { schoolId, id: { in: assignedSubjectIds }, section: { in: assignedSections } } });
@@ -124,7 +128,7 @@ export const staffModule: Module = {
         },
       });
     } else {
-      await prisma.admin.create({ data: { userId: user.id, schoolId, designation: str(b.designation) ?? "Staff" } });
+      await prisma.admin.create({ data: { userId: user.id, schoolId, designation: str(b.designation) ?? "Staff", sections: assignedSections.length ? assignedSections : undefined } });
     }
 
     await logAudit({ schoolId, userId: ctx.session.user.id, action: "staff.created", entityType: "User", entityId: user.id, meta: { role } });
@@ -219,6 +223,10 @@ export const staffModule: Module = {
         await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { designation: String(b.designation) } });
       }
       if (!target.admin) await prisma.admin.create({ data: { userId: target.id, schoolId, designation: str(b.designation) ?? "Staff" } });
+      if (b.sections !== undefined) {
+        if (ctx.session.user.role !== "OWNER") throw new Error("Only the school owner can assign sections to administrators or bursars");
+        await prisma.admin.updateMany({ where: { userId: ctx.id, schoolId }, data: { sections: assignedSections.length ? assignedSections : null } });
+      }
       if (data.role && target.teacher) {
         // Teacher profile may have dependencies (class subjects etc.); drop it
         // when possible, otherwise it is kept harmless for history.

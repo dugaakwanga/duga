@@ -21,6 +21,7 @@ interface ContentItem {
   rewardPoints: number;
   targetClassGroupIds: unknown;
   targetStudentIds: unknown;
+  targetParentIds: unknown;
   isPublished: boolean;
   completedCount?: number;
   assignedCount?: number;
@@ -49,9 +50,15 @@ interface RosterStudent {
   admissionNumber: string;
 }
 
+interface ParentOption {
+  id: string;
+  user: { firstName: string; lastName: string };
+}
+
 export default function ElearnPage() {
   const [list, setList] = useState<ApiList | null>(null);
   const [classes, setClasses] = useState<ClassOption[]>([]);
+  const [parents, setParents] = useState<ParentOption[]>([]);
   const [rosters, setRosters] = useState<Record<string, RosterStudent[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -59,19 +66,23 @@ export default function ElearnPage() {
   const [form, setForm] = useState<Record<string, string>>({});
   const [selClassIds, setSelClassIds] = useState<string[]>([]);
   const [selStudentIds, setSelStudentIds] = useState<string[]>([]);
+  const [selParentIds, setSelParentIds] = useState<string[]>([]);
   const [btn, setBtn] = useState<Record<string, boolean>>({});
 
   const isManager = list?.role === "manage";
+  const isParent = list?.role === "PARENT";
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [data, cs] = await Promise.all([
+      const [data, cs, parentOptions] = await Promise.all([
         api<ApiList>("elearn"),
         api<ClassOption[]>("teacher/classes", { method: "POST" }).catch(() => []),
+        api<ParentOption[]>("elearn/parentOptions", { method: "POST", body: {} }).catch(() => []),
       ]);
       setList(data);
       setClasses(cs);
+      setParents(parentOptions);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -102,7 +113,8 @@ export default function ElearnPage() {
     if (!form.title) return alert("Enter a title");
     const classIds = selClassIds;
     const studentIds = selStudentIds;
-    if (classIds.length === 0 && studentIds.length === 0) return alert("Assign to at least one class or student");
+    const parentIds = selParentIds;
+    if (classIds.length === 0 && studentIds.length === 0 && parentIds.length === 0) return alert("Assign to at least one class, student, or parent");
     try {
       await api("elearn", {
         method: "POST",
@@ -115,6 +127,7 @@ export default function ElearnPage() {
           rewardPoints: form.rewardPoints ? Number(form.rewardPoints) : 0,
           targetClassGroupIds: classIds,
           targetStudentIds: studentIds,
+          targetParentIds: parentIds,
           isPublished: form.publish === "1",
         },
       });
@@ -122,6 +135,7 @@ export default function ElearnPage() {
       setForm({});
       setSelClassIds([]);
       setSelStudentIds([]);
+      setSelParentIds([]);
       load();
     } catch (e) {
       alert((e as Error).message);
@@ -168,6 +182,7 @@ export default function ElearnPage() {
     });
     setSelClassIds(Array.isArray(item.targetClassGroupIds) ? item.targetClassGroupIds as string[] : []);
     setSelStudentIds(Array.isArray(item.targetStudentIds) ? item.targetStudentIds as string[] : []);
+    setSelParentIds(Array.isArray(item.targetParentIds) ? item.targetParentIds as string[] : []);
     setOpen(true);
   }
 
@@ -184,6 +199,9 @@ export default function ElearnPage() {
           url: form.url || null,
           body: form.body || null,
           rewardPoints: form.rewardPoints ? Number(form.rewardPoints) : 0,
+          targetClassGroupIds: selClassIds,
+          targetStudentIds: selStudentIds,
+          targetParentIds: selParentIds,
           isPublished: form.publish === "1",
         },
       });
@@ -192,6 +210,7 @@ export default function ElearnPage() {
       setForm({});
       setSelClassIds([]);
       setSelStudentIds([]);
+      setSelParentIds([]);
       load();
     } catch (e) {
       alert((e as Error).message);
@@ -202,8 +221,8 @@ export default function ElearnPage() {
     <div>
       <PageHeader
         title="Online Learning & Rewards"
-        subtitle={isManager ? "Assign learning content to classes or students and track reward points." : "Earn reward points by completing the content your teachers assign you."}
-        actions={isManager ? <Button onClick={() => { setForm({}); setOpen(true); }}><Icon name="plus" size={16} /> New content</Button> : undefined}
+        subtitle={isManager ? "Assign learning content to classes or students and track reward points." : isParent ? "Learning content assigned to your children. Parents can learn alongside them without rewards." : "Earn reward points by completing the content your teachers assign you."}
+        actions={isManager ? <Button onClick={() => { setForm({}); setSelClassIds([]); setSelStudentIds([]); setSelParentIds([]); setOpen(true); }}><Icon name="plus" size={16} /> New content</Button> : undefined}
       />
       {error && <Alert tone="danger">{error}</Alert>}
       {loading ? (
@@ -212,7 +231,7 @@ export default function ElearnPage() {
         <EmptyState title="No learning content" hint={isManager ? "Assign new content using the New content button." : "Your teachers haven" + "t assigned you any content yet."} />
       ) : (
         <>
-          {!isManager && (
+          {!isManager && !isParent && (
             <Card style={{ marginBottom: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ fontWeight: 600 }}>My reward points</span>
@@ -229,13 +248,13 @@ export default function ElearnPage() {
                 <Card key={item.id} title={item.title}>
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
                     <Badge tone="info">{item.category}</Badge>
-                    <Badge tone="accent">⭐ {item.rewardPoints} pts</Badge>
+                    {!isParent && <Badge tone="accent">⭐ {item.rewardPoints} pts</Badge>}
                     {isManager ? (
                       <>
                         <Badge tone={item.isPublished ? "success" : "neutral"}>{item.isPublished ? "Published" : "Draft"}</Badge>
                         <Badge tone="neutral">{item.assignedCount ?? 0} assigned · {item.completedCount ?? 0} done</Badge>
                       </>
-                    ) : prog ? (
+                    ) : prog && !isParent ? (
                       <Badge tone={prog.status === "COMPLETED" ? "success" : prog.status === "STARTED" ? "warning" : "neutral"}>
                         {prog.status === "COMPLETED" ? `Done · ${prog.pointsEarned} pts` : prog.status}
                       </Badge>
@@ -254,6 +273,8 @@ export default function ElearnPage() {
                       <Button size="sm" variant="outline" onClick={() => openEdit(item)}>Edit</Button>
                       <Button size="sm" variant="danger" loading={btn[`delete-${item.id}`]} onClick={() => action(item, "delete")}>Delete</Button>
                     </div>
+                  ) : isParent ? (
+                    <Badge tone="neutral">Assigned to your child</Badge>
                   ) : (
                     <div style={{ display: "flex", gap: 8 }}>
                       {item.url && (
@@ -331,6 +352,15 @@ export default function ElearnPage() {
                 >
                   {studentsOfSelected.map((s) => (
                     <option key={s.id} value={s.id}>{s.firstName} {s.lastName} ({s.admissionNumber})</option>
+                  ))}
+                </Select>
+              </Field>
+            )}
+            {parents.length > 0 && (
+              <Field label="Also assign directly to parents" hint="Parents can learn this content but do not earn points or mark it complete.">
+                <Select multiple value={selParentIds} onChange={(e) => setSelParentIds(Array.from(e.target.selectedOptions, (option) => option.value))}>
+                  {parents.map((parent) => (
+                    <option key={parent.id} value={parent.id}>{parent.user.firstName} {parent.user.lastName}</option>
                   ))}
                 </Select>
               </Field>

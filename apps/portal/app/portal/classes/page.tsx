@@ -9,6 +9,7 @@ interface Level { id: string; name: string; section: string; order: number }
 interface Session { id: string; name: string }
 interface Teacher { id: string; firstName: string; lastName: string; subjectIds: string[]; sections: string[] }
 interface Subject { id: string; name: string; section: string }
+interface SchoolSection { id: string; name: string; order: number }
 interface ClassGroup {
   id: string;
   name: string;
@@ -53,8 +54,8 @@ function CategoryPicker({
   sections,
   onPick,
 }: {
-  sections: Array<{ section: "PRIMARY" | "SECONDARY"; label: string; count: number; items: string[] }>;
-  onPick: (s: "PRIMARY" | "SECONDARY") => void;
+  sections: Array<{ section: string; label: string; count: number; items: string[] }>;
+  onPick: (s: string) => void;
 }) {
   return (
     <div className="classes-drill">
@@ -78,17 +79,18 @@ export default function ClassesPage() {
   const [levels, setLevels] = useState<Level[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [schoolSections, setSchoolSections] = useState<SchoolSection[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [role, setRole] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
-  const [addKind, setAddKind] = useState<"" | "subject" | "level" | "session">("");
+  const [addKind, setAddKind] = useState<"" | "section" | "subject" | "level" | "session">("");
   const [addForm, setAddForm] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [assignTarget, setAssignTarget] = useState<ClassGroup | null>(null);
-  const [assignSection, setAssignSection] = useState<"PRIMARY" | "SECONDARY">("SECONDARY");
+  const [assignSection, setAssignSection] = useState<string>("");
   const [assignSubjectIds, setAssignSubjectIds] = useState<string[]>([]);
   const [assignTeachers, setAssignTeachers] = useState<Record<string, string>>({});
   const [shownSubjects, setShownSubjects] = useState<Record<string, boolean>>({});
@@ -100,15 +102,12 @@ export default function ClassesPage() {
     | { name: "classes" }
     | { name: "subjects" }
     | { name: "sessions" }
-    | { name: "classes-list"; section: "PRIMARY" | "SECONDARY" }
-    | { name: "subjects-list"; section: "PRIMARY" | "SECONDARY" };
+    | { name: "classes-list"; section: string }
+    | { name: "subjects-list"; section: string };
   const [view, setView] = useState<View>({ name: "overview" });
   const { section } = useSection();
   const isAdmin = role === "OWNER" || role === "ADMIN";
-  const primaryClasses = classes.filter((c) => c.level.section === "PRIMARY");
-  const secondaryClasses = classes.filter((c) => c.level.section === "SECONDARY");
-  const primarySubjects = subjects.filter((s) => s.section === "PRIMARY");
-  const secondarySubjects = subjects.filter((s) => s.section === "SECONDARY");
+  const sectionNames = [...new Set([...schoolSections.map((item) => item.name), ...classes.map((item) => item.level.section), ...subjects.map((item) => item.section)])];
   const assignableSubjects = assignTarget
     ? subjects.filter((s) => s.section === assignTarget.level.section)
     : subjects;
@@ -131,11 +130,12 @@ export default function ClassesPage() {
   const load = useCallback(async () => {
     void section;
     try {
-      const d = await api<{ items: ClassGroup[]; levels: Level[]; sessions: Session[]; subjects: Subject[]; teachers: Teacher[]; role: string }>("classes");
+      const d = await api<{ items: ClassGroup[]; levels: Level[]; sessions: Session[]; subjects: Subject[]; sections?: SchoolSection[]; teachers: Teacher[]; role: string }>("classes");
       setClasses(d.items);
       setLevels(d.levels);
       setSessions(d.sessions);
       setSubjects(d.subjects ?? []);
+      setSchoolSections(d.sections ?? []);
       setTeachers(d.teachers ?? []);
       setRole(d.role);
     } catch (e) {
@@ -183,17 +183,17 @@ export default function ClassesPage() {
     }
   }
 
-  function openAdd(kind: "subject" | "level" | "session") {
+  function openAdd(kind: "section" | "subject" | "level" | "session") {
     setAddKind(kind);
     setEditingItem(null);
-    setAddForm(kind === "session" ? {} : { section: "SECONDARY" });
+    setAddForm(kind === "session" || kind === "section" ? {} : { section: sectionNames[0] ?? "" });
   }
 
   function openEditItem(kind: "subject" | "level" | "session", id: string) {
     setEditingItem({ kind, id });
     const item = kind === "subject" ? subjects.find((s) => s.id === id) : kind === "level" ? levels.find((l) => l.id === id) : sessions.find((s) => s.id === id);
     if (!item) return;
-    setAddForm({ name: item.name, section: (item as Subject | Level).section ?? "SECONDARY" });
+    setAddForm({ name: item.name, section: (item as Subject | Level).section ?? sectionNames[0] ?? "" });
     setAddKind(kind as "subject" | "level" | "session");
   }
 
@@ -229,11 +229,11 @@ export default function ClassesPage() {
     if (!addKind) return;
     setSaving(true);
     try {
-      const endpoint = addKind === "subject" ? "classes/addSubject" : addKind === "level" ? "classes/addLevel" : "classes/addSession";
+      const endpoint = addKind === "section" ? "classes/addSection" : addKind === "subject" ? "classes/addSubject" : addKind === "level" ? "classes/addLevel" : "classes/addSession";
       const body =
-        addKind === "session"
+        addKind === "session" || addKind === "section"
           ? addForm
-          : { name: addForm.name, section: (addForm.section ?? "SECONDARY") as "PRIMARY" | "SECONDARY" };
+          : { name: addForm.name, section: addForm.section ?? "" };
       if (!(body as { name?: string }).name) throw new Error("Name is required");
       await api(endpoint, { method: "POST", body });
       setAddKind("");
@@ -286,7 +286,9 @@ export default function ClassesPage() {
         subtitle="Manage classes, subjects and sessions."
         actions={
           isAdmin ? (
-            view.name === "classes-list" ? (
+            view.name === "overview" && role === "OWNER" ? (
+              <Button variant="outline" onClick={() => openAdd("section")}><Icon name="plus" size={16} /> Add section</Button>
+            ) : view.name === "classes-list" ? (
               <Button onClick={() => setOpen(true)}><Icon name="plus" size={16} /> New class</Button>
             ) : view.name === "subjects-list" ? (
               <Button variant="outline" onClick={() => openAdd("subject")}><Icon name="plus" size={16} /> Add subject</Button>
@@ -317,14 +319,14 @@ export default function ClassesPage() {
               <>
                 <button className="classes-crumb__link" onClick={() => setView({ name: "classes" })}>Classes</button>
                 <span className="classes-crumb__sep">/</span>
-                <span className="classes-crumb__current">{view.section === "SECONDARY" ? "Secondary" : "Primary"}</span>
+                <span className="classes-crumb__current">{view.section}</span>
               </>
             )}
             {view.name === "subjects-list" && (
               <>
                 <button className="classes-crumb__link" onClick={() => setView({ name: "subjects" })}>Subjects</button>
                 <span className="classes-crumb__sep">/</span>
-                <span className="classes-crumb__current">{view.section === "SECONDARY" ? "Secondary" : "Primary"}</span>
+                <span className="classes-crumb__current">{view.section}</span>
               </>
             )}
           </div>
@@ -332,8 +334,8 @@ export default function ClassesPage() {
           {/* Overview */}
           {view.name === "overview" && (
             <div className="classes-drill">
-              <DrillCard icon="classes" title="Classes" subtitle="Class groups organised into Primary & Secondary" count={classes.length} label="classes" onClick={() => setView({ name: "classes" })} />
-              <DrillCard icon="notes" title="Subjects" subtitle="Subjects taught across Primary & Secondary" count={subjects.length} label="subjects" onClick={() => setView({ name: "subjects" })} />
+              <DrillCard icon="classes" title="Classes" subtitle="Class groups organised by school section" count={classes.length} label="classes" onClick={() => setView({ name: "classes" })} />
+              <DrillCard icon="notes" title="Subjects" subtitle="Subjects taught across your school sections" count={subjects.length} label="subjects" onClick={() => setView({ name: "subjects" })} />
               <DrillCard icon="timetable" title="Sessions" subtitle="Academic years, e.g. 2025/2026" count={sessions.length} label="sessions" onClick={() => setView({ name: "sessions" })} />
             </div>
           )}
@@ -342,21 +344,21 @@ export default function ClassesPage() {
           {view.name === "classes" && (
             <CategoryPicker
               onPick={(s) => setView({ name: "classes-list", section: s })}
-              sections={[
-                { section: "SECONDARY", label: "Secondary", count: secondaryClasses.length, items: [...secondaryClasses].sort((a, b) => (a.level.order ?? 0) - (b.level.order ?? 0)).map((c) => `${c.level.name} ${c.name}`) },
-                { section: "PRIMARY", label: "Primary", count: primaryClasses.length, items: [...primaryClasses].sort((a, b) => (a.level.order ?? 0) - (b.level.order ?? 0)).map((c) => `${c.level.name} ${c.name}`) },
-              ]}
+              sections={sectionNames.map((section) => {
+                const items = classes.filter((item) => item.level.section === section).sort((a, b) => (a.level.order ?? 0) - (b.level.order ?? 0));
+                return { section, label: section, count: items.length, items: items.map((item) => `${item.level.name} ${item.name}`) };
+              })}
             />
           )}
 
           {/* Classes -> category -> list */}
           {view.name === "classes-list" &&
             (() => {
-              const sectionClasses = view.section === "SECONDARY" ? secondaryClasses : primaryClasses;
+              const sectionClasses = classes.filter((item) => item.level.section === view.section);
               return (
                 <section className="classes-section">
                   <h2 style={{ fontSize: 17, margin: "0 0 12px", color: "var(--duga-primary-ink)" }}>
-                    {view.section === "SECONDARY" ? "Secondary" : "Primary"} classes
+                    {view.section} classes
                     <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--duga-muted)", marginLeft: 6 }}>({sectionClasses.length})</span>
                   </h2>
                   {sectionClasses.length === 0 ? (
@@ -385,7 +387,7 @@ export default function ClassesPage() {
                                   <Button size="sm" variant={shownSubjects[c.id] ? "ghost" : "outline"} onClick={() => setShownSubjects((prev) => ({ ...prev, [c.id]: !prev[c.id] }))}>
                                     Subjects ({c.classSubjects?.length ?? 0})
                                   </Button>
-                                  <Button size="sm" variant="outline" onClick={() => { setAssignTarget(c); setAssignSection(c.level.section === "PRIMARY" ? "PRIMARY" : "SECONDARY"); setAssignSubjectIds((c.classSubjects ?? []).map((cs) => cs.subject?.id ?? "").filter(Boolean)); setAssignTeachers(Object.fromEntries((c.classSubjects ?? []).map((cs) => [cs.subject?.id ?? "", cs.teacher?.id ?? ""]).filter(([id]) => id))); }}>Assign subject</Button>
+                                  <Button size="sm" variant="outline" onClick={() => { setAssignTarget(c); setAssignSection(c.level.section); setAssignSubjectIds((c.classSubjects ?? []).map((cs) => cs.subject?.id ?? "").filter(Boolean)); setAssignTeachers(Object.fromEntries((c.classSubjects ?? []).map((cs) => [cs.subject?.id ?? "", cs.teacher?.id ?? ""]).filter(([id]) => id))); }}>Assign subject</Button>
                                   <Button size="sm" variant="outline" onClick={() => openEditClass(c)}>Edit</Button>
                                   <Button size="sm" variant="danger" onClick={() => deleteClass(c)} title={`Delete ${c.level.name} ${c.name}`}>Delete</Button>
                                 </div>
@@ -430,19 +432,19 @@ export default function ClassesPage() {
           {view.name === "subjects" && (
             <CategoryPicker
               onPick={(s) => setView({ name: "subjects-list", section: s })}
-              sections={[
-                { section: "SECONDARY", label: "Secondary", count: secondarySubjects.length, items: secondarySubjects.map((s) => s.name) },
-                { section: "PRIMARY", label: "Primary", count: primarySubjects.length, items: primarySubjects.map((s) => s.name) },
-              ]}
+              sections={sectionNames.map((section) => {
+                const items = subjects.filter((item) => item.section === section);
+                return { section, label: section, count: items.length, items: items.map((item) => item.name) };
+              })}
             />
           )}
 
           {/* Subjects -> category -> list */}
           {view.name === "subjects-list" &&
             (() => {
-              const sectionSubjects = view.section === "SECONDARY" ? secondarySubjects : primarySubjects;
+              const sectionSubjects = subjects.filter((item) => item.section === view.section);
               return (
-                <Card title={`${view.section === "SECONDARY" ? "Secondary" : "Primary"} subjects`}>
+                <Card title={`${view.section} subjects`}>
                   {sectionSubjects.length === 0 ? (
                     <EmptyState title={`No ${view.section.toLowerCase()} subjects yet`} hint={isAdmin ? "Create one with the “Add subject” button above." : "Check back later."} />
                   ) : (
@@ -499,10 +501,10 @@ export default function ClassesPage() {
             <Field label="Level" required>
               <Select value={form.levelId ?? ""} onChange={(e) => setForm({ ...form, levelId: e.target.value })}>
                 <option value="">Select level…</option>
-                {(["SECONDARY", "PRIMARY"] as const).map((section) => {
+                {sectionNames.map((section) => {
                   const sectionLevels = levels.filter((l) => l.section === section);
                   return sectionLevels.length > 0 ? (
-                    <optgroup key={section} label={section === "SECONDARY" ? "Secondary" : "Primary"}>
+                    <optgroup key={section} label={section}>
                       {sectionLevels.map((l) => (
                         <option key={l.id} value={l.id}>{l.name}</option>
                       ))}
@@ -546,7 +548,7 @@ export default function ClassesPage() {
           {subjects.length === 0 && <Alert tone="warning">No subjects yet — create one with the &quot;Add subject&quot; button first.</Alert>}
           {subjects.length > 0 && assignableSubjects.length === 0 && <Alert tone="warning">No {assignTarget?.level.section.toLowerCase()} subjects yet — create one with the &quot;Add subject&quot; button first.</Alert>}
         </div>
-        <Alert tone="info">{assignTarget?.level.section === "PRIMARY" ? "Primary" : "Secondary"} subjects only. Teachers shown are assigned to this section and subject.</Alert>
+        <Alert tone="info">{assignTarget?.level.section ?? "Selected"} subjects only. Teachers shown are assigned to this section and subject.</Alert>
         <Field label="Subjects" required hint="Select one or more subjects and pick the teacher assigned to each.">
           <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 260, overflowY: "auto", border: "1px solid var(--duga-border)", borderRadius: 8, padding: 8 }}>
             {assignableSubjects.map((s) => {
@@ -585,7 +587,7 @@ export default function ClassesPage() {
       <Modal
         open={!!addKind}
         onClose={() => { setAddKind(""); setEditingItem(null); }}
-        title={`${editingItem ? "Edit" : "Add"} ${addKind === "subject" ? "subject" : addKind === "level" ? "level" : "session"}`}
+        title={`${editingItem ? "Edit" : "Add"} ${addKind === "section" ? "section" : addKind === "subject" ? "subject" : addKind === "level" ? "level" : "session"}`}
       >
         {addKind === "level" && (
           <div style={{ marginBottom: 12 }}>
@@ -597,18 +599,18 @@ export default function ClassesPage() {
             <Alert tone="info">Sessions are school years, e.g. 2025/2026.</Alert>
           </div>
         )}
-        <Field label={addKind === "session" ? "Session name" : "Name"} required>
+        <Field label={addKind === "session" ? "Session name" : addKind === "section" ? "Section name" : "Name"} required>
           <Input
             value={addForm.name ?? ""}
             onChange={(e) => setAddForm({ ...addForm, name: e.target.value })}
-            placeholder={addKind === "session" ? "e.g. 2025/2026" : addKind === "level" ? "e.g. Basic 1" : "e.g. Mathematics"}
+            placeholder={addKind === "session" ? "e.g. 2025/2026" : addKind === "section" ? "e.g. Nursery, Junior School" : addKind === "level" ? "e.g. Basic 1" : "e.g. Mathematics"}
           />
         </Field>
-        {addKind !== "session" && (
+        {addKind !== "session" && addKind !== "section" && (
           <Field label="Section" required>
-            <Select value={addForm.section ?? "SECONDARY"} onChange={(e) => setAddForm({ ...addForm, section: e.target.value })}>
-              <option value="PRIMARY">Primary</option>
-              <option value="SECONDARY">Secondary</option>
+            <Select value={addForm.section ?? ""} onChange={(e) => setAddForm({ ...addForm, section: e.target.value })}>
+              <option value="">Select section…</option>
+              {sectionNames.map((section) => <option key={section} value={section}>{section}</option>)}
             </Select>
           </Field>
         )}

@@ -232,6 +232,7 @@ const rolePermissions: Record<Role, Permission[]> = {
     "games:manage",
     "games:play",
     "library:view",
+    "library:manage",
     "ai:use",
   ],
   PARENT: [

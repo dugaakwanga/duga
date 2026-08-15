@@ -6,16 +6,21 @@ export const ptaModule: Module = {
   async list(ctx) {
     can(ctx, "pta:view");
     const schoolId = ctx.session.user.schoolId;
-    const [executives, meetings, contributions] = await Promise.all([
+    const canViewContributions = ctx.session.user.role === "OWNER" || ctx.session.user.role === "ADMIN";
+    const [executives, meetings] = await Promise.all([
       prisma.ptaExecutive.findMany({ where: { schoolId }, orderBy: [{ order: "asc" }, { name: "asc" }] }),
       prisma.ptaMeeting.findMany({
         where: { schoolId },
         include: { recordedBy: { select: { firstName: true, lastName: true } } },
         orderBy: { date: "desc" },
       }),
-      prisma.ptaContribution.findMany({ where: { schoolId }, orderBy: { date: "desc" }, take: 200 }),
     ]);
-    const totalContribution = contributions.reduce((a, c) => a + Number(c.amount), 0);
+    const contributions = canViewContributions
+      ? await prisma.ptaContribution.findMany({ where: { schoolId }, orderBy: { date: "desc" }, take: 200 })
+      : [];
+    const totalContribution = canViewContributions
+      ? contributions.reduce((a, c) => a + Number(c.amount), 0)
+      : 0;
     return { role: ctx.session.user.role, executives, meetings, contributions, totalContribution };
   },
 

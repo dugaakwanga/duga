@@ -528,6 +528,37 @@ export const saModules: Record<string, SAModule> = {
     },
   },
 
+  sections: {
+    async get(ctx) {
+      const schoolId = String(ctx.id ?? "");
+      if (!schoolId) throw new Error("schoolId required");
+      const [school, setting, sections] = await Promise.all([
+        prisma.school.findUnique({ where: { id: schoolId }, select: { id: true, name: true } }),
+        prisma.schoolSetting.findUnique({ where: { schoolId_key: { schoolId, key: "maxSections" } } }),
+        prisma.schoolSection.findMany({ where: { schoolId }, orderBy: [{ order: "asc" }, { name: "asc" }] }),
+      ]);
+      if (!school) throw new Error("School not found");
+      return { school, maxSections: Math.max(1, Number(setting?.value ?? 2) || 2), sections };
+    },
+
+    actions: {
+      setLimit: async (ctx) => {
+        const schoolId = String(ctx.body.schoolId ?? "");
+        const maxSections = Math.max(1, Math.floor(Number(ctx.body.maxSections)) || 0);
+        if (!schoolId || !maxSections) throw new Error("schoolId and a positive maxSections value are required");
+        const school = await prisma.school.findUnique({ where: { id: schoolId }, select: { id: true } });
+        if (!school) throw new Error("School not found");
+        await prisma.schoolSetting.upsert({
+          where: { schoolId_key: { schoolId, key: "maxSections" } },
+          update: { value: maxSections },
+          create: { schoolId, key: "maxSections", value: maxSections },
+        });
+        await logActivity(ctx, "sections.limitUpdated", { schoolId, maxSections });
+        return { schoolId, maxSections };
+      },
+    },
+  },
+
   features: {
     async get(ctx) {
       const schoolId = String(ctx.id ?? "");

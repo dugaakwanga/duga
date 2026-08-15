@@ -78,10 +78,26 @@ export const teacherModule: Module = {
     roster: async (ctx) => {
       can(ctx, "classes:view");
       const schoolId = ctx.session.user.schoolId;
+      const role = ctx.session.user.role;
+      const teacher = ctx.session.user.teacher;
       const section = await resolveSection(ctx);
       const classGroupId = str(ctx.body.classGroupId) ?? ctx.query.get("classGroupId") ?? "";
       if (!classGroupId) throw new Error("classGroupId required");
-      const classGroup = await prisma.classGroup.findFirst({ where: { id: classGroupId, schoolId, ...(section ? { level: { section } } : {}) } });
+      const classGroup = await prisma.classGroup.findFirst({
+        where: {
+          id: classGroupId,
+          schoolId,
+          ...(section ? { level: { section } } : {}),
+          ...(role === "TEACHER"
+            ? {
+                OR: [
+                  { formTeacherId: teacher!.id },
+                  { classSubjects: { some: { teacherId: teacher!.id } } },
+                ],
+              }
+            : {}),
+        },
+      });
       if (!classGroup) throw new Error("Class not found");
 
       const students = await prisma.student.findMany({

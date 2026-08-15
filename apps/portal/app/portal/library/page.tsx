@@ -77,7 +77,8 @@ export default function LibraryPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const isStaff = data?.role === "ADMIN" || data?.role === "OWNER" || data?.role === "TEACHER";
+  const canManageCatalogue = data?.role === "ADMIN" || data?.role === "OWNER";
+  const canIssueBooks = canManageCatalogue || data?.role === "TEACHER";
 
   function openModal(kind: "book" | "loan") {
     setKind(kind);
@@ -184,10 +185,10 @@ export default function LibraryPage() {
         title="Library"
         subtitle="Book catalog, borrowing records and digital books."
         actions={
-          isStaff ? (
+          canIssueBooks ? (
             <div style={{ display: "flex", gap: 8 }}>
               <Button variant="outline" onClick={() => openModal("loan")}><Icon name="plus" size={16} /> Issue book</Button>
-              <Button onClick={() => openModal("book")}><Icon name="plus" size={16} /> Add book</Button>
+              {canManageCatalogue && <Button onClick={() => openModal("book")}><Icon name="plus" size={16} /> Add book</Button>}
             </div>
           ) : undefined
         }
@@ -217,7 +218,7 @@ export default function LibraryPage() {
                 {b.availableCopies} of {b.totalCopies} available
               </Badge>
             </div>
-            {isStaff && (
+            {canManageCatalogue && (
               <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
                 <Button variant="outline" size="sm" onClick={() => openEdit(b)}>Edit</Button>
                 <Button variant="ghost" size="sm" onClick={() => run(b.id, "deleteBook")}>Delete</Button>
@@ -231,7 +232,7 @@ export default function LibraryPage() {
         {(data.loans ?? []).length === 0 ? (
           <EmptyState title="No loans yet" hint="Issue a book to a student to start tracking loans." />
         ) : (
-          <Table headers={["Book", "Student", "Borrowed", "Due", "Status", isStaff ? "" : null].filter(Boolean) as React.ReactNode[]}>
+          <Table headers={["Book", "Student", "Borrowed", "Due", "Status", canIssueBooks ? "" : null].filter(Boolean) as React.ReactNode[]}>
             {(data.loans ?? []).map((l) => (
               <tr key={l.id}>
                 <td>{l.book.title}</td>
@@ -239,7 +240,7 @@ export default function LibraryPage() {
                 <td>{new Date(l.borrowedAt).toLocaleDateString()}</td>
                 <td>{l.dueDate ? new Date(l.dueDate).toLocaleDateString() : "—"}</td>
                 <td><Badge tone={tone(l.status)}>{l.status}</Badge></td>
-                {isStaff && (
+                {canIssueBooks && (
                   <td>
                     <div style={{ display: "flex", gap: 6 }}>
                       {l.status !== "RETURNED" && l.status !== "LOST" && (

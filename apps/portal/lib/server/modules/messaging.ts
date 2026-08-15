@@ -3,6 +3,22 @@ import { dispatchNotification, logAudit } from "@duga/core/server";
 import type { Module } from ".";
 import { can, str } from "../helpers";
 
+function mayDirectMessage(senderRole: string, recipientRole: string): boolean {
+  if (senderRole === "OWNER" || senderRole === "ADMIN") return true;
+  if (senderRole === "STUDENT") return recipientRole === "TEACHER" || recipientRole === "ADMIN";
+  if (senderRole === "TEACHER") return recipientRole === "ADMIN" || recipientRole === "STUDENT" || recipientRole === "PARENT";
+  if (senderRole === "PARENT") return recipientRole === "TEACHER" || recipientRole === "ADMIN";
+  return false;
+}
+
+function assertDirectMessageAllowed(senderRole: string, recipientRole: string) {
+  if (!mayDirectMessage(senderRole, recipientRole)) {
+    const err = new Error("This role is not available for direct messages") as Error & { status?: number };
+    err.status = 403;
+    throw err;
+  }
+}
+
 // Number of active users an announcement targets, given its audience.
 async function audienceSize(schoolId: string, a: { audience: string; targetSection?: string | null; targetClassGroupId?: string | null; targetLevelId?: string | null; targetRole?: string | null }): Promise<number> {
   const activeStudents = { status: "ACTIVE" as const };
@@ -72,7 +88,7 @@ export const messagingModule: Module = {
   async list(ctx) {
     can(ctx, "messaging:use");
     const conversations = await prisma.conversation.findMany({
-      where: { participants: { some: { userId: ctx.session.user.id } } },
+      where: { schoolId: ctx.session.user.schoolId, participants: { some: { userId: ctx.session.user.id } } },
       include: {
         participants: { include: { user: { select: { id: true, firstName: true, lastName: true, role: true, avatarUrl: true } } } },
         messages: { orderBy: { sentAt: "desc" }, take: 1 },
@@ -97,7 +113,7 @@ export const messagingModule: Module = {
   async get(ctx) {
     can(ctx, "messaging:use");
     const conversation = await prisma.conversation.findFirst({
-      where: { id: ctx.id, participants: { some: { userId: ctx.session.user.id } } },
+      where: { id: ctx.id, schoolId: ctx.session.user.schoolId, participants: { some: { userId: ctx.session.user.id } } },
       include: {
         participants: { include: { user: { select: { id: true, firstName: true, lastName: true, role: true } } } },
         messages: {
@@ -120,12 +136,15 @@ export const messagingModule: Module = {
     can(ctx, "messaging:use");
     const otherUserId = str(ctx.body.userId);
     if (!otherUserId) throw new Error("userId required");
-    const other = await prisma.user.findFirst({ where: { id: otherUserId, schoolId: ctx.session.user.schoolId } });
+    if (otherUserId === ctx.session.user.id) throw new Error("You cannot start a conversation with yourself");
+    const other = await prisma.user.findFirst({ where: { id: otherUserId, schoolId: ctx.session.user.schoolId, status: "ACTIVE" } });
     if (!other) throw new Error("User not found");
+    assertDirectMessageAllowed(ctx.session.user.role, other.role);
 
     // find existing direct conversation
     const existing = await prisma.conversation.findFirst({
       where: {
+        schoolId: ctx.session.user.schoolId,
         type: "DIRECT",
         AND: [
           { participants: { some: { userId: ctx.session.user.id } } },
@@ -158,6 +177,16 @@ export const messagingModule: Module = {
         where: { conversationId_userId: { conversationId, userId: ctx.session.user.id } },
       });
       if (!participant) throw new Error("Not part of this conversation");
+      const conversation = await prisma.conversation.findFirst({
+        where: { id: conversationId, schoolId: ctx.session.user.schoolId },
+        include: { participants: { include: { user: { select: { role: true, status: true } } } } },
+      });
+      if (!conversation) throw new Error("Conversation not found");
+      if (conversation.type === "DIRECT") {
+        const other = conversation.participants.find((entry) => entry.userId !== ctx.session.user.id)?.user;
+        if (!other || other.status !== "ACTIVE") throw new Error("Recipient is unavailable");
+        assertDirectMessageAllowed(ctx.session.user.role, other.role);
+      }
       const message = await prisma.message.create({
         data: {
           conversationId,
@@ -183,10 +212,23 @@ export const messagingModule: Module = {
       const where: Record<string, unknown> = { schoolId };
       if (role === "STUDENT") {
         const student = ctx.session.user.student;
-        where.OR = [{ audience: "EVERYONE" }, { audience: "SECTION", targetSection: student?.section }, { audience: "CLASS", targetClassGroupId: student?.currentClassGroupId }];
+        where.OR = [{ audience: "EVERYONE" }, { audience: "ROLE", targetRole: "STUDENT" }, { audience: "SECTION", targetSection: student?.section }, { audience: "CLASS", targetClassGroupId: student?.currentClassGroupId }];
       }
       if (role === "PARENT") {
-        where.audience = { in: ["EVERYONE", "SECTION", "CLASS", "LEVEL", "ROLE"] };
+        const links = await prisma.studentParent.findMany({
+          where: { parentId: ctx.session.user.parent!.id },
+          select: { student: { select: { section: true, currentClassGroupId: true, classGroup: { select: { levelId: true } } } } },
+        });
+        const sections = [...new Set(links.map((link) => link.student.section))];
+        const classIds = [...new Set(links.map((link) => link.student.currentClassGroupId).filter(Boolean))];
+        const levelIds = [...new Set(links.map((link) => link.student.classGroup?.levelId).filter(Boolean))];
+        where.OR = [
+          { audience: "EVERYONE" },
+          { audience: "ROLE", targetRole: "PARENT" },
+          ...(sections.length ? [{ audience: "SECTION", targetSection: { in: sections } }] : []),
+          ...(classIds.length ? [{ audience: "CLASS", targetClassGroupId: { in: classIds } }] : []),
+          ...(levelIds.length ? [{ audience: "LEVEL", targetLevelId: { in: levelIds } }] : []),
+        ];
       }
       const announcements = await prisma.announcement.findMany({
         where,

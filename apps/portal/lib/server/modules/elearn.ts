@@ -29,6 +29,52 @@ async function notifyAssigned(schoolId: string, ids: string[], title: string, bo
   );
 }
 
+async function notifyParents(schoolId: string, parentIds: string[], title: string, body: string, link: string): Promise<void> {
+  if (!parentIds.length) return;
+  const parents = await prisma.parent.findMany({ where: { schoolId, id: { in: parentIds } }, select: { userId: true } });
+  await Promise.all(
+    parents.map((parent) =>
+      dispatchNotification({ schoolId, userId: parent.userId, type: "content", title, body, link }).catch(() => undefined),
+    ),
+  );
+}
+
+async function consumerStudents(ctx: Ctx) {
+  const student = ctx.session.user.student;
+  if (student) return [{ id: student.id, classGroupId: student.currentClassGroupId }];
+  if (ctx.session.user.role !== "PARENT") return [];
+  const links = await prisma.studentParent.findMany({
+    where: { parentId: ctx.session.user.parent!.id },
+    select: { student: { select: { id: true, currentClassGroupId: true } } },
+  });
+  return links.map((link) => ({ id: link.student.id, classGroupId: link.student.currentClassGroupId }));
+}
+
+function assignedToConsumer(item: { targetClassGroupIds: unknown; targetStudentIds: unknown; targetParentIds?: unknown }, students: Array<{ id: string; classGroupId: string | null }>, parentId?: string) {
+  return !!parentId && idArray(item.targetParentIds).includes(parentId) || students.some((student) => isAssignedTo(item, student.id, student.classGroupId));
+}
+
+async function validateTargets(ctx: Ctx, classGroupIds: string[], studentIds: string[], parentIds: string[]) {
+  const schoolId = ctx.session.user.schoolId;
+  if (!classGroupIds.length && !studentIds.length && !parentIds.length) throw new Error("Assign content to at least one class, student, or parent");
+  const [groups, parents] = await Promise.all([
+    prisma.classGroup.findMany({ where: { schoolId, id: { in: classGroupIds } }, select: { id: true } }),
+    parentIds.length ? prisma.parent.findMany({ where: { schoolId, id: { in: parentIds } }, select: { id: true } }) : Promise.resolve([]),
+  ]);
+  if (groups.length !== new Set(classGroupIds).size) throw new Error("One or more selected classes were not found");
+  if (parents.length !== new Set(parentIds).size) throw new Error("One or more selected parents were not found");
+  const students = await prisma.student.findMany({ where: { schoolId, id: { in: studentIds }, status: "ACTIVE" }, select: { id: true, currentClassGroupId: true } });
+  if (students.length !== new Set(studentIds).size) throw new Error("One or more selected students were not found or inactive");
+  if (ctx.session.user.role === "TEACHER") {
+    if (parentIds.length) throw new Error("Only the owner or an admin can assign learning content directly to parents");
+    const taught = await prisma.classSubject.findMany({ where: { teacherId: ctx.session.user.teacher!.id }, select: { classGroupId: true } });
+    const allowed = new Set(taught.map((row) => row.classGroupId));
+    if (classGroupIds.some((id) => !allowed.has(id)) || students.some((student) => !student.currentClassGroupId || !allowed.has(student.currentClassGroupId))) {
+      throw new Error("Teachers can only assign content to students and classes they teach");
+    }
+  }
+}
+
 export const elearnModule: Module = {
   async list(ctx) {
     can(ctx, "elearn:view");
@@ -59,16 +105,15 @@ export const elearnModule: Module = {
     }
 
     // Students (and parents of linked children) only see what is assigned to them.
-    const student = ctx.session.user.student;
-    const myIds = student ? [student.id] : await childrenOfParent(ctx);
-    const classGroupId = student?.currentClassGroupId ?? null;
+    const consumers = await consumerStudents(ctx);
+    const myIds = consumers.map((student) => student.id);
 
     const all = await prisma.enrollmentContent.findMany({
       where: { schoolId, isPublished: true },
       orderBy: { publishedAt: "desc" },
       take: 300,
     });
-    const visible = all.filter((c) => myIds.some((sid) => isAssignedTo(c, sid, classGroupId)));
+    const visible = all.filter((c) => assignedToConsumer(c, consumers, ctx.session.user.parent?.id));
 
     const progress = await prisma.contentProgress.findMany({ where: { studentId: { in: myIds } } });
     const byContent = new Map<string, typeof progress>();
@@ -86,7 +131,10 @@ export const elearnModule: Module = {
         return {
           ...c,
           myProgress: mine.map((p) => ({ id: p.id, status: p.status, pointsEarned: p.pointsEarned, completedAt: p.completedAt })),
-          totalReward: mine.reduce((acc, p) => acc + p.pointsEarned, 0),
+          // Parents can learn alongside their children but do not earn or see
+          // rewards based on a child's progress.
+          rewardPoints: ctx.session.user.role === "PARENT" ? 0 : c.rewardPoints,
+          totalReward: ctx.session.user.role === "PARENT" ? 0 : mine.reduce((acc, p) => acc + p.pointsEarned, 0),
         };
       }),
     };
@@ -112,10 +160,9 @@ export const elearnModule: Module = {
     if (!item) throw new Error("Content not found");
     // Consumers must be a target of the content (self or linked child).
     if (role === "STUDENT" || role === "PARENT") {
-      const student = ctx.session.user.student;
-      const myIds = student ? [student.id] : await childrenOfParent(ctx);
-      const classGroupId = student?.currentClassGroupId ?? null;
-      if (!myIds.some((sid) => isAssignedTo(item, sid, classGroupId))) throw new Error("Content not found");
+      const consumers = await consumerStudents(ctx);
+      if (!assignedToConsumer(item, consumers, ctx.session.user.parent?.id)) throw new Error("Content not found");
+      if (role === "PARENT") return { ...item, rewardPoints: 0 };
     }
     return item;
   },
@@ -129,6 +176,8 @@ export const elearnModule: Module = {
     const isPublished = ctx.body.isPublished === true || ctx.body.isPublished === "true";
     const classGroupIds = idArray(ctx.body.targetClassGroupIds);
     const studentIds = idArray(ctx.body.targetStudentIds);
+    const parentIds = idArray(ctx.body.targetParentIds);
+    await validateTargets(ctx, classGroupIds, studentIds, parentIds);
 
     const item = await prisma.enrollmentContent.create({
       data: {
@@ -142,6 +191,7 @@ export const elearnModule: Module = {
         rewardPoints: num(ctx.body.rewardPoints) ?? 0,
         targetClassGroupIds: classGroupIds,
         targetStudentIds: studentIds,
+        targetParentIds: parentIds,
         isPublished,
         publishedAt: isPublished ? new Date() : undefined,
       },
@@ -150,6 +200,7 @@ export const elearnModule: Module = {
     if (isPublished) {
       await syncTargets(schoolId, item.id, classGroupIds, studentIds);
       await notifyAssigned(schoolId, await resolveTargetStudentIds(schoolId, classGroupIds, studentIds), "New learning content", `"${item.title}" has been assigned to you.`, "/portal/elearn");
+      await notifyParents(schoolId, parentIds, "New learning content", `"${item.title}" has been assigned to you.`, "/portal/elearn");
     }
     await logAudit({ schoolId, userId: ctx.session.user.id, action: "elearn.created", entityType: "EnrollmentContent", entityId: item.id });
     return item;
@@ -165,6 +216,8 @@ export const elearnModule: Module = {
     const isPublished = body.isPublished === true || body.isPublished === "true";
     const classGroupIds = body.targetClassGroupIds !== undefined ? idArray(body.targetClassGroupIds) : idArray(item.targetClassGroupIds);
     const studentIds = body.targetStudentIds !== undefined ? idArray(body.targetStudentIds) : idArray(item.targetStudentIds);
+    const parentIds = body.targetParentIds !== undefined ? idArray(body.targetParentIds) : idArray(item.targetParentIds);
+    await validateTargets(ctx, classGroupIds, studentIds, parentIds);
 
     const updated = await prisma.enrollmentContent.update({
       where: { id: ctx.id },
@@ -177,6 +230,7 @@ export const elearnModule: Module = {
         rewardPoints: num(body.rewardPoints) ?? item.rewardPoints,
         targetClassGroupIds: classGroupIds,
         targetStudentIds: studentIds,
+        targetParentIds: parentIds,
         ...(body.isPublished !== undefined ? { isPublished, publishedAt: isPublished ? new Date() : undefined } : {}),
       },
     });
@@ -207,9 +261,22 @@ export const elearnModule: Module = {
       await prisma.enrollmentContent.update({ where: { id: ctx.id }, data: { isPublished: true, publishedAt: new Date() } });
       const classGroupIds = idArray(item.targetClassGroupIds);
       const studentIds = idArray(item.targetStudentIds);
+      const parentIds = idArray(item.targetParentIds);
       await syncTargets(schoolId, item.id, classGroupIds, studentIds);
       await notifyAssigned(schoolId, await resolveTargetStudentIds(schoolId, classGroupIds, studentIds), "New learning content", `"${item.title}" has been assigned to you.`, "/portal/elearn");
+      await notifyParents(schoolId, parentIds, "New learning content", `"${item.title}" has been assigned to you.`, "/portal/elearn");
       return { ok: true };
+    },
+
+    parentOptions: async (ctx) => {
+      can(ctx, "elearn:manage");
+      if (ctx.session.user.role !== "OWNER" && ctx.session.user.role !== "ADMIN") throw new Error("Only the owner or an admin can assign learning content directly to parents");
+      return prisma.parent.findMany({
+        where: { schoolId: ctx.session.user.schoolId },
+        select: { id: true, user: { select: { firstName: true, lastName: true } } },
+        orderBy: { user: { firstName: "asc" } },
+        take: 500,
+      });
     },
 
     unpublish: async (ctx) => {

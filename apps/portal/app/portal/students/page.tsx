@@ -94,7 +94,9 @@ export default function StudentsPage() {
   // When a global section is active, auto-open that section's group.
   useEffect(() => {
     if (!section) return;
-    setView((v) => (v.name === "overview" ? { name: "category", section } : v));
+    // A section switch is a hard scope boundary: never leave the old section's
+    // class list visible while the new data is loading.
+    setView({ name: "category", section });
   }, [section]);
 
   useEffect(() => {

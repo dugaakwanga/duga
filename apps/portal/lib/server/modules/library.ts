@@ -9,6 +9,27 @@ const loanStatus = (loan: { borrowedAt: Date; dueDate: Date | null; returnedAt: 
   return loan.status;
 };
 
+function isLibraryAdmin(role: string) {
+  return role === "OWNER" || role === "ADMIN";
+}
+
+async function teacherStudentIds(teacherId: string, schoolId: string) {
+  const classes = await prisma.classSubject.findMany({ where: { teacherId }, select: { classGroupId: true } });
+  const ids = [...new Set(classes.map((row) => row.classGroupId))];
+  const students = await prisma.student.findMany({ where: { schoolId, currentClassGroupId: { in: ids }, status: "ACTIVE" }, select: { id: true } });
+  return students.map((student) => student.id);
+}
+
+async function assertTeacherStudentScope(ctx: Parameters<Module["list"]>[0], studentId: string) {
+  if (ctx.session.user.role !== "TEACHER") return;
+  const ids = await teacherStudentIds(ctx.session.user.teacher!.id, ctx.session.user.schoolId);
+  if (!ids.includes(studentId)) throw new Error("Teachers can only manage library loans for students they teach");
+}
+
+function assertLibraryAdmin(role: string) {
+  if (!isLibraryAdmin(role)) throw new Error("Only the owner or an admin can manage the library catalogue");
+}
+
 export const libraryModule: Module = {
   async list(ctx) {
     can(ctx, "library:view");
@@ -27,7 +48,9 @@ export const libraryModule: Module = {
         ? [ctx.session.user.student!.id]
         : role === "PARENT"
           ? (await prisma.studentParent.findMany({ where: { parentId: ctx.session.user.parent!.id }, select: { studentId: true } })).map((l) => l.studentId)
-          : undefined;
+          : role === "TEACHER"
+            ? await teacherStudentIds(ctx.session.user.teacher!.id, schoolId)
+            : undefined;
 
     const loans = await prisma.bookLoan.findMany({
       where: { schoolId, ...(myIds ? { studentId: { in: myIds } } : {}) },
@@ -41,7 +64,7 @@ export const libraryModule: Module = {
 
     const students = ["ADMIN", "OWNER", "TEACHER"].includes(role)
       ? await prisma.student.findMany({
-          where: { schoolId },
+          where: { schoolId, ...(role === "TEACHER" ? { id: { in: myIds ?? [] } } : {}) },
           select: { id: true, admissionNumber: true, user: { select: { firstName: true, lastName: true } }, classGroup: { include: { level: true } } },
           orderBy: { admissionNumber: "asc" },
         })
@@ -63,6 +86,7 @@ export const libraryModule: Module = {
     // ---- Catalog --------------------------------------------------------
     addBook: async (ctx) => {
       can(ctx, "library:manage");
+      assertLibraryAdmin(ctx.session.user.role);
       const title = str(ctx.body.title);
       if (!title) throw new Error("title is required");
       const totalCopies = Math.max(num(ctx.body.totalCopies) ?? 1, 1);
@@ -95,6 +119,7 @@ export const libraryModule: Module = {
 
     updateBook: async (ctx) => {
       can(ctx, "library:manage");
+      assertLibraryAdmin(ctx.session.user.role);
       const schoolId = ctx.session.user.schoolId;
       const existing = await prisma.libraryBook.findFirst({ where: { id: ctx.id, schoolId } });
       if (!existing) throw new Error("Book not found");
@@ -126,6 +151,7 @@ export const libraryModule: Module = {
 
     deleteBook: async (ctx) => {
       can(ctx, "library:manage");
+      assertLibraryAdmin(ctx.session.user.role);
       const schoolId = ctx.session.user.schoolId;
       const existing = await prisma.libraryBook.findFirst({ where: { id: ctx.id, schoolId } });
       if (!existing) throw new Error("Book not found");
@@ -145,6 +171,7 @@ export const libraryModule: Module = {
       const bookId = str(ctx.body.bookId);
       const studentId = str(ctx.body.studentId);
       if (!bookId || !studentId) throw new Error("bookId and studentId are required");
+      await assertTeacherStudentScope(ctx, studentId);
       const book = await prisma.libraryBook.findFirst({ where: { id: bookId, schoolId } });
       if (!book) throw new Error("Book not found");
       if (book.availableCopies <= 0) throw new Error("No copies available");
@@ -181,6 +208,7 @@ export const libraryModule: Module = {
       const schoolId = ctx.session.user.schoolId;
       const existing = await prisma.bookLoan.findFirst({ where: { id: ctx.id, schoolId } });
       if (!existing) throw new Error("Loan not found");
+      await assertTeacherStudentScope(ctx, existing.studentId);
       if (existing.returnedAt) return { ok: true, loan: existing };
 
       const loan = await prisma.bookLoan.update({ where: { id: ctx.id }, data: { returnedAt: new Date(), status: "RETURNED" } });
@@ -197,6 +225,7 @@ export const libraryModule: Module = {
       const schoolId = ctx.session.user.schoolId;
       const existing = await prisma.bookLoan.findFirst({ where: { id: ctx.id, schoolId } });
       if (!existing) throw new Error("Loan not found");
+      await assertTeacherStudentScope(ctx, existing.studentId);
       const loan = await prisma.bookLoan.update({ where: { id: ctx.id }, data: { status: "LOST", returnedAt: new Date() } });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "library.loanLost", entityType: "BookLoan", entityId: ctx.id });
       return { ok: true, loan };
@@ -207,6 +236,7 @@ export const libraryModule: Module = {
       const schoolId = ctx.session.user.schoolId;
       const existing = await prisma.bookLoan.findFirst({ where: { id: ctx.id, schoolId } });
       if (!existing) throw new Error("Loan not found");
+      await assertTeacherStudentScope(ctx, existing.studentId);
       if (!existing.returnedAt) {
         const book = await prisma.libraryBook.findUnique({ where: { id: existing.bookId } });
         if (book) {

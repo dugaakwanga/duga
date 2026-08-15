@@ -32,6 +32,37 @@ async function childrenOfParent(ctx: Ctx): Promise<string[]> {
   return links.map((l) => l.studentId);
 }
 
+async function consumerStudents(ctx: Ctx) {
+  const student = ctx.session.user.student;
+  if (student) return [{ id: student.id, classGroupId: student.currentClassGroupId }];
+  if (ctx.session.user.role !== "PARENT") return [];
+  const links = await prisma.studentParent.findMany({
+    where: { parentId: ctx.session.user.parent!.id },
+    select: { student: { select: { id: true, currentClassGroupId: true } } },
+  });
+  return links.map((link) => ({ id: link.student.id, classGroupId: link.student.currentClassGroupId }));
+}
+
+function assignedToConsumer(item: { targetClassGroupIds: unknown; targetStudentIds: unknown }, students: Array<{ id: string; classGroupId: string | null }>) {
+  return students.some((student) => isAssignedTo(item, student.id, student.classGroupId));
+}
+
+async function validateTargets(ctx: Ctx, classGroupIds: string[], studentIds: string[]) {
+  const schoolId = ctx.session.user.schoolId;
+  if (!classGroupIds.length && !studentIds.length) throw new Error("Assign a game to at least one class or student");
+  const groups = await prisma.classGroup.findMany({ where: { schoolId, id: { in: classGroupIds } }, select: { id: true } });
+  if (groups.length !== new Set(classGroupIds).size) throw new Error("One or more selected classes were not found");
+  const students = await prisma.student.findMany({ where: { schoolId, id: { in: studentIds }, status: "ACTIVE" }, select: { id: true, currentClassGroupId: true } });
+  if (students.length !== new Set(studentIds).size) throw new Error("One or more selected students were not found or inactive");
+  if (ctx.session.user.role === "TEACHER") {
+    const taught = await prisma.classSubject.findMany({ where: { teacherId: ctx.session.user.teacher!.id }, select: { classGroupId: true } });
+    const allowed = new Set(taught.map((row) => row.classGroupId));
+    if (classGroupIds.some((id) => !allowed.has(id)) || students.some((student) => !student.currentClassGroupId || !allowed.has(student.currentClassGroupId))) {
+      throw new Error("Teachers can only assign games to students and classes they teach");
+    }
+  }
+}
+
 export const gamesModule: Module = {
   async list(ctx) {
     const isManagerRole = ["OWNER", "ADMIN", "TEACHER"].includes(ctx.session.user.role);
@@ -62,12 +93,11 @@ export const gamesModule: Module = {
     }
 
     // Players (students, and parents of children) only see assigned games.
-    const student = ctx.session.user.student;
-    const myIds = student ? [student.id] : await childrenOfParent(ctx);
-    const classGroupId = student?.currentClassGroupId ?? null;
+    const consumers = await consumerStudents(ctx);
+    const myIds = consumers.map((student) => student.id);
 
     const all = await prisma.educationalGame.findMany({ where: { schoolId, isPublished: true }, orderBy: { publishedAt: "desc" }, take: 300 });
-    const visible = all.filter((g) => myIds.some((sid) => isAssignedTo(g, sid, classGroupId)));
+    const visible = all.filter((g) => assignedToConsumer(g, consumers));
     const progress = await prisma.gameProgress.findMany({ where: { studentId: { in: myIds } } });
     const byGame = new Map<string, typeof progress>();
     progress.forEach((p) => {
@@ -83,7 +113,8 @@ export const gamesModule: Module = {
         return {
           ...g,
           myProgress: mine.map((p) => ({ id: p.id, plays: p.plays, bestScore: p.bestScore, rewardPoints: p.rewardPoints, completed: p.completed, lastPlayedAt: p.lastPlayedAt })),
-          totalReward: mine.reduce((acc, p) => acc + p.rewardPoints, 0),
+          rewardPoints: ctx.session.user.role === "PARENT" ? 0 : g.rewardPoints,
+          totalReward: ctx.session.user.role === "PARENT" ? 0 : mine.reduce((acc, p) => acc + p.rewardPoints, 0),
         };
       }),
     };
@@ -108,6 +139,7 @@ export const gamesModule: Module = {
     const isPublished = ctx.body.isPublished === true || ctx.body.isPublished === "true";
     const classGroupIds = idArray(ctx.body.targetClassGroupIds);
     const studentIds = idArray(ctx.body.targetStudentIds);
+    await validateTargets(ctx, classGroupIds, studentIds);
 
     const game = await prisma.educationalGame.create({
       data: {
@@ -142,6 +174,7 @@ export const gamesModule: Module = {
     const isPublished = body.isPublished === true || body.isPublished === "true";
     const classGroupIds = body.targetClassGroupIds !== undefined ? idArray(body.targetClassGroupIds) : idArray(item.targetClassGroupIds);
     const studentIds = body.targetStudentIds !== undefined ? idArray(body.targetStudentIds) : idArray(item.targetStudentIds);
+    await validateTargets(ctx, classGroupIds, studentIds);
 
     const updated = await prisma.educationalGame.update({
       where: { id: ctx.id },

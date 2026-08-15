@@ -1,19 +1,49 @@
 import { prisma } from "@duga/core/server";
 import { logAudit } from "@duga/core/server";
 import type { Module } from ".";
+import type { Ctx } from "@/app/api/v1/[...path]/route";
 import { can, str, num, resolveSection, sectionsOfTeacher } from "../helpers";
+
+async function visibleClassIds(ctx: Ctx): Promise<string[] | undefined> {
+  const { role, teacher, student, parent } = ctx.session.user;
+  if (role === "OWNER" || role === "ADMIN") return undefined;
+  if (role === "TEACHER" && teacher) {
+    const [taught, formClasses] = await Promise.all([
+      prisma.classSubject.findMany({ where: { teacherId: teacher.id }, select: { classGroupId: true } }),
+      prisma.classGroup.findMany({ where: { schoolId: ctx.session.user.schoolId, formTeacherId: teacher.id }, select: { id: true } }),
+    ]);
+    return [...new Set([...taught.map((item) => item.classGroupId), ...formClasses.map((item) => item.id)])];
+  }
+  if (role === "STUDENT") return student?.currentClassGroupId ? [student.currentClassGroupId] : [];
+  if (role === "PARENT" && parent) {
+    const links = await prisma.studentParent.findMany({ where: { parentId: parent.id }, select: { student: { select: { currentClassGroupId: true } } } });
+    return [...new Set(links.map((link) => link.student.currentClassGroupId).filter((id): id is string => !!id))];
+  }
+  return [];
+}
+
+async function configuredSection(schoolId: string, value: unknown): Promise<string> {
+  const name = str(value)?.trim();
+  if (!name) throw new Error("A school section is required");
+  const section = await prisma.schoolSection.findFirst({
+    where: { schoolId, name: { equals: name, mode: "insensitive" } },
+    select: { name: true },
+  });
+  if (!section) throw new Error("Choose a section configured for this school");
+  return section.name;
+}
 
 export const classesModule: Module = {
   async list(ctx) {
     can(ctx, "classes:view");
     const schoolId = ctx.session.user.schoolId;
     const section = await resolveSection(ctx);
+    const visibleIds = await visibleClassIds(ctx);
     const sectionWhere = section ? { section } : {};
-    const [sessions, levels, classGroups, subjects, teachers] = await Promise.all([
+    const [sessions, classGroups, teachers, schoolSections] = await Promise.all([
       prisma.academicSession.findMany({ where: { schoolId }, orderBy: { createdAt: "desc" } }),
-      prisma.classLevel.findMany({ where: { schoolId, ...sectionWhere }, orderBy: { order: "asc" } }),
       prisma.classGroup.findMany({
-        where: { schoolId, ...(section ? { level: { section } } : {}) },
+        where: { schoolId, ...(visibleIds ? { id: { in: visibleIds } } : {}), ...(section ? { level: { section } } : {}) },
         include: {
           level: true,
           session: true,
@@ -23,14 +53,22 @@ export const classesModule: Module = {
         },
         orderBy: { createdAt: "asc" },
       }),
-      prisma.subject.findMany({ where: { schoolId, ...sectionWhere }, orderBy: { name: "asc" } }),
-      prisma.user.findMany({
-        where: { schoolId, role: "TEACHER" },
-        include: { teacher: true },
-        orderBy: { firstName: "asc" },
-        take: 300,
-      }),
+      ctx.session.user.role === "OWNER" || ctx.session.user.role === "ADMIN"
+        ? prisma.user.findMany({
+            where: { schoolId, role: "TEACHER" },
+            include: { teacher: true },
+            orderBy: { firstName: "asc" },
+            take: 300,
+          })
+        : Promise.resolve([]),
+      prisma.schoolSection.findMany({ where: { schoolId }, orderBy: [{ order: "asc" }, { name: "asc" }] }),
     ]);
+    const levels = visibleIds
+      ? [...new Map(classGroups.map((group) => [group.level.id, group.level])).values()].sort((a, b) => a.order - b.order)
+      : await prisma.classLevel.findMany({ where: { schoolId, ...sectionWhere }, orderBy: { order: "asc" } });
+    const subjects = visibleIds
+      ? [...new Map(classGroups.flatMap((group) => group.classSubjects.map((item) => [item.subject.id, item.subject] as const))).values()].sort((a, b) => a.name.localeCompare(b.name))
+      : await prisma.subject.findMany({ where: { schoolId, ...sectionWhere }, orderBy: { name: "asc" } });
     // ClassGroup.formTeacherId and ClassSubject.teacherId reference Teacher IDs,
     // not User IDs. Return the matching IDs to prevent failed assignments.
     const teacherOptions = await Promise.all(teachers
@@ -42,14 +80,15 @@ export const classesModule: Module = {
         subjectIds: (user.teacher!.subjectIds as string[] | null) ?? [],
         sections: await sectionsOfTeacher(user.teacher!.id),
       })));
-    return { items: classGroups, levels, sessions, subjects, teachers: teacherOptions, role: ctx.session.user.role };
+    return { items: classGroups, levels, sessions, subjects, sections: schoolSections, teachers: teacherOptions, role: ctx.session.user.role };
   },
 
   async get(ctx) {
     can(ctx, "classes:view");
     const schoolId = ctx.session.user.schoolId;
+    const visibleIds = await visibleClassIds(ctx);
     const cls = await prisma.classGroup.findFirst({
-      where: { id: ctx.id, schoolId },
+      where: { schoolId, AND: [{ id: ctx.id ?? "none" }, ...(visibleIds ? [{ id: { in: visibleIds } }] : [])] },
       include: {
         level: true,
         session: true,
@@ -118,6 +157,22 @@ export const classesModule: Module = {
   },
 
   actions: {
+    addSection: async (ctx) => {
+      if (ctx.session.user.role !== "OWNER") throw new Error("Only the school owner can create sections");
+      const schoolId = ctx.session.user.schoolId;
+      const name = str(ctx.body.name)?.trim();
+      if (!name) throw new Error("Section name is required");
+      const limitRow = await prisma.schoolSetting.findUnique({ where: { schoolId_key: { schoolId, key: "maxSections" } } });
+      const maxSections = Math.max(1, Number(limitRow?.value ?? 2) || 2);
+      const current = await prisma.schoolSection.count({ where: { schoolId } });
+      if (current >= maxSections) throw new Error(`Your school is limited to ${maxSections} section(s). Ask the Superadmin to increase this limit.`);
+      const exists = await prisma.schoolSection.findFirst({ where: { schoolId, name: { equals: name, mode: "insensitive" } } });
+      if (exists) throw new Error("A section with this name already exists");
+      const section = await prisma.schoolSection.create({ data: { schoolId, name, order: current + 1 } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "section.created", entityType: "SchoolSection", entityId: section.id, meta: { name } });
+      return section;
+    },
+
     // Assign one or more subjects (each optionally with a teacher) to a class
     assignSubject: async (ctx) => {
       can(ctx, "classes:manage");
@@ -165,8 +220,8 @@ export const classesModule: Module = {
       can(ctx, "subjects:manage");
       const schoolId = ctx.session.user.schoolId;
       const name = str(ctx.body.name);
-      const section = str(ctx.body.section) as "PRIMARY" | "SECONDARY" | undefined;
-      if (!name || !section) throw new Error("name and section required");
+      if (!name) throw new Error("name and section required");
+      const section = await configuredSection(schoolId, ctx.body.section);
       const dup = await prisma.subject.findUnique({
         where: { schoolId_name_section: { schoolId, name, section } },
       });
@@ -181,8 +236,8 @@ export const classesModule: Module = {
       can(ctx, "classes:manage");
       const schoolId = ctx.session.user.schoolId;
       const name = str(ctx.body.name);
-      const section = str(ctx.body.section) as "PRIMARY" | "SECONDARY" | undefined;
-      if (!name || !section) throw new Error("name and section required");
+      if (!name) throw new Error("name and section required");
+      const section = await configuredSection(schoolId, ctx.body.section);
       const dup = await prisma.classLevel.findUnique({
         where: { schoolId_section_name: { schoolId, section, name } },
       });
@@ -213,10 +268,10 @@ export const classesModule: Module = {
       if (!existing) throw new Error("Subject not found");
       const data: Record<string, unknown> = {};
       if (str(ctx.body.name)) data.name = str(ctx.body.name);
-      if (ctx.body.section !== undefined) data.section = str(ctx.body.section) as "PRIMARY" | "SECONDARY";
+      if (ctx.body.section !== undefined) data.section = await configuredSection(schoolId, ctx.body.section);
       if (ctx.body.code !== undefined) data.code = str(ctx.body.code) ?? null;
       const dup = await prisma.subject.findFirst({
-        where: { schoolId, name: String(data.name ?? existing.name), section: (String(data.section ?? existing.section) as "PRIMARY" | "SECONDARY"), NOT: { id: ctx.id } },
+        where: { schoolId, name: String(data.name ?? existing.name), section: String(data.section ?? existing.section), NOT: { id: ctx.id } },
       });
       if (dup) throw new Error(`Subject "${data.name}" already exists for that section`);
       const subject = await prisma.subject.update({ where: { id: ctx.id }, data });
@@ -244,10 +299,10 @@ export const classesModule: Module = {
       if (!existing) throw new Error("Level not found");
       const data: Record<string, unknown> = {};
       if (str(ctx.body.name)) data.name = str(ctx.body.name);
-      if (ctx.body.section !== undefined) data.section = str(ctx.body.section) as "PRIMARY" | "SECONDARY";
+      if (ctx.body.section !== undefined) data.section = await configuredSection(schoolId, ctx.body.section);
       if (ctx.body.order !== undefined && ctx.body.order !== "") data.order = num(ctx.body.order);
       const dup = await prisma.classLevel.findFirst({
-        where: { schoolId, name: String(data.name ?? existing.name), section: (String(data.section ?? existing.section) as "PRIMARY" | "SECONDARY"), NOT: { id: ctx.id } },
+        where: { schoolId, name: String(data.name ?? existing.name), section: String(data.section ?? existing.section), NOT: { id: ctx.id } },
       });
       if (dup) throw new Error(`Level "${data.name}" already exists for that section`);
       const level = await prisma.classLevel.update({ where: { id: ctx.id }, data });

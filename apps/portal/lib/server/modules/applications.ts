@@ -35,7 +35,7 @@ export const applicationsModule: Module = {
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "application.updated", entityType: "Application", entityId: ctx.id, meta: { status } });
 
       // notify the applicant
-      const user = await prisma.user.findFirst({ where: { email: app.email }, select: { id: true } });
+      const user = await prisma.user.findFirst({ where: { schoolId, email: app.email }, select: { id: true } });
       if (user) {
         await dispatchNotification({ schoolId, userId: user.id, type: "application", title: `Application ${status.toLowerCase()}`, body: `Your application status is now: ${status}.`, link: "/portal/applications" });
       }

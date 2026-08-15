@@ -29,11 +29,6 @@ enum Role {
   STUDENT
 }
 
-enum Section {
-  PRIMARY
-  SECONDARY
-}
-
 enum Gender {
   MALE
   FEMALE
@@ -214,6 +209,7 @@ model School {
 
   subscription Subscription?
   settings     SchoolSetting[]
+  sections     SchoolSection[]
   auditLogs    AuditLog[]
   systemLogs   SystemLog[]
   liveClasses  LiveClass[]
@@ -251,6 +247,19 @@ model SchoolSetting {
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   @@unique([schoolId, key])
+  @@index([schoolId])
+}
+
+model SchoolSection {
+  id        String   @id @default(cuid())
+  schoolId  String
+  name      String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, name])
   @@index([schoolId])
 }
 
@@ -303,7 +312,7 @@ model Student {
   userId            String        @unique
   schoolId          String
   admissionNumber   String
-  section           Section
+  section           String
   dateOfBirth       DateTime?
   gender            Gender?
   photoUrl          String?
@@ -416,6 +425,9 @@ model Admin {
   id          String  @id @default(cuid())
   userId      String  @unique
   schoolId    String
+  // Empty means school-wide access. When present, an admin/bursar can only
+  // access the listed school sections.
+  sections    Json?
   designation String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -534,7 +546,7 @@ model Term {
 model ClassLevel {
   id        String  @id @default(cuid())
   schoolId  String
-  section   Section
+  section   String
   name      String
   order     Int
   createdAt DateTime @default(now())
@@ -581,7 +593,7 @@ model Subject {
   schoolId  String
   name      String
   code      String?
-  section   Section
+  section   String
   levelId   String?
   createdAt DateTime @default(now())
 
@@ -1126,7 +1138,7 @@ model Announcement {
   audience      AnnouncementAudience @default(EVERYONE)
   targetClassGroupId String?
   targetLevelId     String?
-  targetSection     Section?
+  targetSection     String?
   targetRole        Role?
   attachments   Json?
   isPinned      Boolean   @default(false)
@@ -1199,7 +1211,7 @@ model FeeStructure {
   schoolId    String
   feeTypeId   String
   termId      String?
-  section     Section?
+  section     String?
   levelId     String?
   classGroupId String?
   amount      Decimal 
@@ -1587,6 +1599,7 @@ model EnrollmentContent {
   rewardPoints Int      @default(0)
   targetClassGroupIds Json
   targetStudentIds Json
+  targetParentIds Json @default("[]")
   isPublished  Boolean  @default(false)
   publishedAt  DateTime?
   createdAt    DateTime @default(now())
@@ -1782,7 +1795,7 @@ model Application {
   applicantType String            @default("STUDENT")
   email        String
   phone        String
-  section      Section
+  section      String
   levelApplied String?
   previousSchool String?
   guardianName String?

@@ -4,13 +4,13 @@ import { prisma } from "@duga/core/server";
 import type { Section } from "@/lib/sections";
 
 export function sectionOf(v: unknown): Section | undefined {
-  const s = str(v);
-  return s === "PRIMARY" || s === "SECONDARY" ? s : undefined;
+  const s = str(v)?.trim();
+  return s || undefined;
 }
 
 export function sectionArray(v: unknown): Section[] {
   if (!Array.isArray(v)) return [];
-  return [...new Set(v.filter((item): item is Section => item === "PRIMARY" || item === "SECONDARY"))];
+  return [...new Set(v.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim()))];
 }
 
 export function isStaff(role: string): boolean {
@@ -33,13 +33,20 @@ export async function sectionsOfTeacher(teacherId: string): Promise<Section[]> {
   return [...new Set([...sectionArray(teacher?.sections), ...rows.map((r) => r.classGroup.level.section)])];
 }
 
+// Admin and bursar section assignments. A missing profile or empty assignment
+// preserves the legacy full-school scope; an explicit assignment is restrictive.
+export async function sectionsOfAdmin(adminId: string, schoolId: string): Promise<Section[]> {
+  const admin = await prisma.admin.findFirst({ where: { id: adminId, schoolId }, select: { sections: true } });
+  const assigned = sectionArray(admin?.sections);
+  return assigned.length ? assigned : schoolSections(schoolId);
+}
+
 // Sections that actually have data in the school — used for the admin switcher.
 export async function schoolSections(schoolId: string): Promise<Section[]> {
+  const saved = await prisma.schoolSection.findMany({ where: { schoolId }, select: { name: true }, orderBy: [{ order: "asc" }, { name: "asc" }] });
+  if (saved.length) return saved.map((section) => section.name);
   const rows = await prisma.classLevel.findMany({ where: { schoolId }, select: { section: true }, distinct: ["section"] });
-  const present = new Set<Section>(rows.map((r) => r.section));
-  const ordered: Section[] = [];
-  for (const s of ["SECONDARY", "PRIMARY"] as Section[]) if (present.has(s)) ordered.push(s);
-  return ordered.length ? ordered : ["SECONDARY", "PRIMARY"];
+  return rows.length ? rows.map((row) => row.section) : ["PRIMARY", "SECONDARY"];
 }
 
 // The effective section scope for a request:
@@ -50,7 +57,17 @@ export async function resolveSection(ctx: Ctx): Promise<Section | undefined> {
   const role = ctx.session.user.role;
   if (role === "STUDENT") return sectionOf(ctx.session.user.student?.section);
   const asked = sectionOf(ctx.query.get("section") ?? ctx.body.section);
-  if (role === "OWNER" || role === "ADMIN" || role === "BURSAR") return asked;
+  if (role === "OWNER") return asked;
+  if (role === "ADMIN" || role === "BURSAR") {
+    const admin = ctx.session.user.admin;
+    const secs = admin ? await sectionsOfAdmin(admin.id, ctx.session.user.schoolId) : await schoolSections(ctx.session.user.schoolId);
+    if (asked && !secs.includes(asked)) {
+      const err = new Error("This section is not assigned to your account") as Error & { status?: number };
+      err.status = 403;
+      throw err;
+    }
+    return asked ?? (secs.length === 1 ? secs[0] : undefined);
+  }
   if (role === "TEACHER") {
     const teacher = ctx.session.user.teacher;
     if (!teacher) return undefined;

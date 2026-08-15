@@ -108,7 +108,10 @@ export const hostelModule: Module = {
 
     updateRoom: async (ctx) => {
       can(ctx, "hostel:manage");
-      const room = await prisma.hostelRoom.findUnique({ where: { id: ctx.id }, include: { hostel: true } });
+      const room = await prisma.hostelRoom.findFirst({
+        where: { id: ctx.id, hostel: { schoolId: ctx.session.user.schoolId } },
+        include: { hostel: true },
+      });
       if (!room) throw new Error("Room not found");
       const roomId = room.id;
       const data: Record<string, unknown> = {};
@@ -129,7 +132,9 @@ export const hostelModule: Module = {
 
     deleteRoom: async (ctx) => {
       can(ctx, "hostel:manage");
-      const room = await prisma.hostelRoom.findUnique({ where: { id: ctx.id } });
+      const room = await prisma.hostelRoom.findFirst({
+        where: { id: ctx.id, hostel: { schoolId: ctx.session.user.schoolId } },
+      });
       if (!room) throw new Error("Room not found");
       const occupied = await prisma.hostelBed.count({ where: { roomId: ctx.id, isOccupied: true } });
       if (occupied > 0) throw new Error("This room still has occupied beds — release them first");
@@ -219,6 +224,8 @@ export const hostelModule: Module = {
 
     resolveIncident: async (ctx) => {
       can(ctx, "hostel:manage");
+      const incident = await prisma.hostelIncident.findFirst({ where: { id: ctx.id, schoolId: ctx.session.user.schoolId } });
+      if (!incident) throw new Error("Incident not found");
       return prisma.hostelIncident.update({
         where: { id: ctx.id },
         data: { status: "RESOLVED", actionTaken: str(ctx.body.actionTaken), resolvedAt: new Date() },

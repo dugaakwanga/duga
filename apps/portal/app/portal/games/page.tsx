@@ -51,6 +51,54 @@ interface RosterStudent {
   admissionNumber: string;
 }
 
+interface Challenge {
+  prompt: string;
+  options: string[];
+  answer: string;
+}
+
+const ACTIVITY_CHALLENGES: Record<string, Challenge[]> = {
+  MATH: [
+    { prompt: "What is 7 + 8?", options: ["13", "14", "15", "16"], answer: "15" },
+    { prompt: "What is 6 × 4?", options: ["20", "22", "24", "26"], answer: "24" },
+    { prompt: "Which fraction is equal to one half?", options: ["1/3", "2/4", "3/4", "4/5"], answer: "2/4" },
+    { prompt: "What comes next: 5, 10, 15, …?", options: ["18", "20", "25", "30"], answer: "20" },
+    { prompt: "A triangle has how many sides?", options: ["2", "3", "4", "5"], answer: "3" },
+  ],
+  WORD: [
+    { prompt: "Choose the correctly spelled word.", options: ["Becouse", "Because", "Becaus", "Beacause"], answer: "Because" },
+    { prompt: "Which word is a noun?", options: ["Quickly", "Happy", "School", "Run"], answer: "School" },
+    { prompt: "Choose the opposite of ‘ancient’.", options: ["Old", "Modern", "Historic", "Past"], answer: "Modern" },
+    { prompt: "Which word completes: ‘The pupils ___ quietly.’", options: ["reads", "read", "reading", "reader"], answer: "read" },
+    { prompt: "Which word rhymes with ‘light’?", options: ["Late", "Lift", "Night", "Lid"], answer: "Night" },
+  ],
+  QUIZ: [
+    { prompt: "Which organ pumps blood around the body?", options: ["Lungs", "Heart", "Brain", "Stomach"], answer: "Heart" },
+    { prompt: "Which planet is known as the Red Planet?", options: ["Earth", "Mars", "Jupiter", "Venus"], answer: "Mars" },
+    { prompt: "Water changes to vapour through which process?", options: ["Freezing", "Melting", "Evaporation", "Condensation"], answer: "Evaporation" },
+    { prompt: "Nigeria’s capital city is…", options: ["Lagos", "Kano", "Abuja", "Jos"], answer: "Abuja" },
+    { prompt: "A strong password should include…", options: ["Only your name", "Letters, numbers and symbols", "Only 123456", "Your date of birth"], answer: "Letters, numbers and symbols" },
+  ],
+  PUZZLE: [
+    { prompt: "Which shape has four equal sides?", options: ["Triangle", "Rectangle", "Square", "Circle"], answer: "Square" },
+    { prompt: "Find the odd one out.", options: ["Map", "Globe", "Atlas", "Banana"], answer: "Banana" },
+    { prompt: "Complete the pattern: ▲ ● ▲ ● …", options: ["▲", "■", "●", "★"], answer: "▲" },
+    { prompt: "Which direction is opposite to east?", options: ["North", "South", "West", "Up"], answer: "West" },
+    { prompt: "Which comes first in a timeline?", options: ["Tomorrow", "Next year", "Yesterday", "Later"], answer: "Yesterday" },
+  ],
+  MEMORY: [
+    { prompt: "Remember: apple, book, sun. Which word was in the list?", options: ["Moon", "Book", "River", "Chair"], answer: "Book" },
+    { prompt: "Remember: 3, 7, 2. What was the middle number?", options: ["2", "3", "7", "9"], answer: "7" },
+    { prompt: "Remember: red, blue, green. Which colour was last?", options: ["Red", "Blue", "Green", "Yellow"], answer: "Green" },
+    { prompt: "Remember: cat, drum, tree. Which item makes music?", options: ["Cat", "Drum", "Tree", "None"], answer: "Drum" },
+    { prompt: "Remember: 9, 4, 6. Which number was first?", options: ["4", "6", "8", "9"], answer: "9" },
+  ],
+};
+
+function challengesFor(item: GameItem): Challenge[] {
+  return ACTIVITY_CHALLENGES[item.category] ?? ACTIVITY_CHALLENGES.QUIZ;
+}
+
 export default function GamesPage() {
   const [list, setList] = useState<ApiList | null>(null);
   const [classes, setClasses] = useState<ClassOption[]>([]);
@@ -64,8 +112,11 @@ export default function GamesPage() {
   const [selStudentIds, setSelStudentIds] = useState<string[]>([]);
   const [scores, setScores] = useState<Record<string, string>>({});
   const [btn, setBtn] = useState<Record<string, boolean>>({});
+  const [playing, setPlaying] = useState<GameItem | null>(null);
+  const [answers, setAnswers] = useState<Record<number, string>>({});
 
   const isManager = list?.role === "manage";
+  const isParent = list?.role === "PARENT";
   const studentsOfSelected = Object.values(rosters).flat();
 
   const load = useCallback(async () => {
@@ -221,11 +272,30 @@ export default function GamesPage() {
     }
   }
 
+  async function completeBuiltInGame() {
+    if (!playing) return;
+    const challenges = challengesFor(playing);
+    if (Object.keys(answers).length !== challenges.length) return alert("Answer every question before finishing.");
+    const score = Math.round((challenges.filter((challenge, index) => answers[index] === challenge.answer).length / challenges.length) * 100);
+    setBtn((b) => ({ ...b, [`play-${playing.id}`]: true }));
+    try {
+      await api(`games/${playing.id}/play`, { method: "POST", body: { score } });
+      setPlaying(null);
+      setAnswers({});
+      load();
+      alert(`Great work! Your score is ${score}%.`);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setBtn((b) => ({ ...b, [`play-${playing.id}`]: false }));
+    }
+  }
+
   return (
     <div>
       <PageHeader
         title="Educational Games"
-        subtitle={isManager ? "Create and assign fun educational games, then track scores and reward points." : "Play the games your teachers assign and earn reward points."}
+        subtitle={isManager ? "Create and assign fun educational games, then track scores and reward points." : isParent ? "Games assigned to your children. Parents can review them but do not play or earn rewards." : "Play the games your teachers assign and earn reward points."}
         actions={isManager ? <div style={{ display: "flex", gap: 8 }}><Button variant="outline" onClick={addLibrary}>Add 20 game templates</Button><Button onClick={() => { setForm({}); setOpen(true); }}><Icon name="plus" size={16} /> New game</Button></div> : undefined}
       />
       {error && <Alert tone="danger">{error}</Alert>}
@@ -242,13 +312,13 @@ export default function GamesPage() {
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
                   <Badge tone="info">{item.category}</Badge>
                   <Badge tone="neutral">{item.difficulty}</Badge>
-                  <Badge tone="accent">⭐ {item.rewardPoints} pts</Badge>
+                  {!isParent && <Badge tone="accent">⭐ {item.rewardPoints} pts</Badge>}
                   {isManager ? (
                     <>
                       <Badge tone={item.isPublished ? "success" : "neutral"}>{item.isPublished ? "Published" : "Draft"}</Badge>
                       <Badge tone="neutral">{item.assignedCount ?? 0} assigned · {item.playedCount ?? 0} played · avg {item.avgScore ?? 0}</Badge>
                     </>
-                  ) : prog ? (
+                  ) : prog && !isParent ? (
                     <Badge tone={prog.completed ? "success" : "warning"}>
                       {prog.plays} play(s) · best {prog.bestScore} · {prog.rewardPoints} pts
                     </Badge>
@@ -266,10 +336,13 @@ export default function GamesPage() {
                     <Button size="sm" variant="outline" onClick={() => openEdit(item)}>Edit</Button>
                     <Button size="sm" variant="danger" loading={btn[`delete-${item.id}`]} onClick={() => action(item, "delete")}>Delete</Button>
                   </div>
+                ) : isParent ? (
+                  <Badge tone="neutral">Assigned to your child</Badge>
                 ) : (
                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <Button size="sm" variant="accent" onClick={() => { setPlaying(item); setAnswers({}); }}>▶ Play activity</Button>
                     {item.gameUrl && (
-                      <a href={item.gameUrl} target="_blank" rel="noreferrer" className="duga-btn duga-btn--accent duga-btn--sm">▶ Play</a>
+                      <a href={item.gameUrl} target="_blank" rel="noreferrer" className="duga-btn duga-btn--outline duga-btn--sm">Open linked game</a>
                     )}
                     <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                       <Input type="number" placeholder="My score" style={{ width: 110 }} value={scores[item.id] ?? ""} onChange={(e) => setScores((s) => ({ ...s, [item.id]: e.target.value }))} />
@@ -359,6 +432,28 @@ export default function GamesPage() {
           </div>
         </Modal>
       )}
+
+      <Modal open={!!playing} onClose={() => { setPlaying(null); setAnswers({}); }} title={playing ? playing.title : "Play activity"} wide>
+        {playing && (
+          <div style={{ display: "grid", gap: 16 }}>
+            <p style={{ margin: 0, color: "var(--duga-muted)" }}>Answer all five questions. Your completed score will be recorded automatically.</p>
+            {challengesFor(playing).map((challenge, index) => (
+              <div key={challenge.prompt} style={{ border: "1px solid var(--duga-border)", borderRadius: 10, padding: 14 }}>
+                <div style={{ fontWeight: 700, marginBottom: 10 }}>{index + 1}. {challenge.prompt}</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 8 }}>
+                  {challenge.options.map((option) => (
+                    <Button key={option} size="sm" variant={answers[index] === option ? "accent" : "outline"} onClick={() => setAnswers((current) => ({ ...current, [index]: option }))}>{option}</Button>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <Button variant="ghost" onClick={() => { setPlaying(null); setAnswers({}); }}>Cancel</Button>
+              <Button loading={btn[`play-${playing.id}`]} onClick={completeBuiltInGame}>Finish activity</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

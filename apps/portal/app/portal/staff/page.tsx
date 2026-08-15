@@ -14,7 +14,7 @@ interface StaffUser {
   firstName: string;
   lastName: string;
   teacher?: { staffNumber: string; specialty: string | null; subjectIds?: string[] | null; sections?: string[] | null; designation: string | null } | null;
-  admin?: { designation: string | null } | null;
+  admin?: { designation: string | null; sections?: string[] | null } | null;
 }
 interface Subject { id: string; name: string; section: string }
 
@@ -96,7 +96,7 @@ export default function StaffPage() {
       designation: u.teacher?.designation ?? u.admin?.designation ?? "",
     });
     setSelectedSubjectIds(u.teacher?.subjectIds ?? []);
-    setSelectedSections(u.teacher?.sections ?? []);
+    setSelectedSections(u.teacher?.sections ?? u.admin?.sections ?? []);
     setError(null);
     setOpen(true);
   }
@@ -262,11 +262,11 @@ export default function StaffPage() {
           <Field label="Specialty">
             <Input value={form.specialty ?? ""} onChange={(e) => setForm({ ...form, specialty: e.target.value })} />
           </Field>
-          {(form.role === "TEACHER" || editing?.role === "TEACHER") && (
+          {((form.role === "TEACHER" || editing?.role === "TEACHER") || (currentRole === "OWNER" && [form.role, editing?.role].some((role) => role === "ADMIN" || role === "BURSAR"))) && (
             <div className="staff-subject-picker">
               <div className="staff-subject-picker__heading">
                 <span>School sections</span>
-                <small>Choose where this teacher is allowed to teach.</small>
+                <small>{form.role === "TEACHER" || editing?.role === "TEACHER" ? "Choose where this teacher is allowed to teach." : "Choose the sections this staff account can access. Leave both unassigned for full-school access."}</small>
               </div>
               <div className="staff-subject-picker__grid staff-section-picker">
                 {(["PRIMARY", "SECONDARY"] as const).map((schoolSection) => {
@@ -275,7 +275,7 @@ export default function StaffPage() {
                     <button key={schoolSection} type="button" className={`staff-subject-picker__option${selected ? " is-selected" : ""}`}
                       onClick={() => {
                         setSelectedSections((sections) => selected ? sections.filter((item) => item !== schoolSection) : [...sections, schoolSection]);
-                        if (selected) setSelectedSubjectIds((ids) => ids.filter((id) => subjects.find((subject) => subject.id === id)?.section !== schoolSection));
+                        if (selected && (form.role === "TEACHER" || editing?.role === "TEACHER")) setSelectedSubjectIds((ids) => ids.filter((id) => subjects.find((subject) => subject.id === id)?.section !== schoolSection));
                       }} aria-pressed={selected}>
                       <span>{schoolSection === "PRIMARY" ? "Primary" : "Secondary"}</span>
                       <Badge tone={schoolSection === "PRIMARY" ? "info" : "accent"}>{selected ? "Assigned" : "Not assigned"}</Badge>

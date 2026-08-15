@@ -50,6 +50,33 @@ async function visibleClassSubjectIds(ctx: Ctx): Promise<string[]> {
   return [];
 }
 
+async function viewerStudents(ctx: Ctx) {
+  const student = ctx.session.user.student;
+  if (student) return [{ id: student.id, classGroupId: student.currentClassGroupId }];
+  if (ctx.session.user.role !== "PARENT") return [];
+  return prisma.studentParent.findMany({
+    where: { parentId: ctx.session.user.parent!.id },
+    select: { student: { select: { id: true, currentClassGroupId: true } } },
+  }).then((links) => links.map((link) => ({ id: link.student.id, classGroupId: link.student.currentClassGroupId })));
+}
+
+function isVisibleToViewer(item: { targetClassGroupIds?: unknown; targetStudentIds?: unknown }, students: Array<{ id: string; classGroupId: string | null }>) {
+  return students.some((student) => isAssignedTo(item, student.id, student.classGroupId));
+}
+
+async function targetStudentsForClass(schoolId: string, classGroupId: string, targetStudentIds: string[]) {
+  const students = await prisma.student.findMany({
+    where: targetStudentIds.length
+      ? { schoolId, id: { in: targetStudentIds }, currentClassGroupId: classGroupId, status: "ACTIVE" }
+      : { schoolId, currentClassGroupId: classGroupId, status: "ACTIVE" },
+    select: { id: true, userId: true },
+  });
+  if (targetStudentIds.length && students.length !== new Set(targetStudentIds).size) {
+    throw new Error("Every selected student must be active and belong to the selected class");
+  }
+  return students;
+}
+
 const includeBase = {
   classSubject: { include: { subject: true, classGroup: { include: { level: true } }, teacher: { include: { user: { select: { firstName: true, lastName: true } } } } } },
 };
@@ -68,9 +95,9 @@ export const learningModule: Module = {
     }
     if (kind === "assignments") {
       const teacher = ctx.session.user.teacher;
-      const student = ctx.session.user.student;
+      const consumers = await viewerStudents(ctx);
       const assignmentsRes = await prisma.assignment.findMany({
-        where,
+        where: { ...where, ...(consumers.length || ctx.session.user.role === "PARENT" ? { isPublished: true } : {}) },
         include: {
           ...includeBase,
           submissions: teacher ? { include: { student: { include: { user: { select: { firstName: true, lastName: true } } } } } } : { select: { id: true, studentId: true, submittedAt: true, score: true } },
@@ -80,14 +107,15 @@ export const learningModule: Module = {
         take: 300,
       });
       const filtered =
-        student || ctx.session.user.role === "PARENT"
-          ? assignmentsRes.filter((a) => isAssignedTo(a, student?.id ?? "", student?.currentClassGroupId ?? null))
+        consumers.length || ctx.session.user.role === "PARENT"
+          ? assignmentsRes.filter((a) => isVisibleToViewer(a, consumers))
           : assignmentsRes;
       return { kind, items: filtered };
     }
     if (kind === "tests") {
+      const consumers = await viewerStudents(ctx);
       const testsRes = await prisma.test.findMany({
-        where,
+        where: { ...where, ...(consumers.length || ctx.session.user.role === "PARENT" ? { status: "PUBLISHED" } : {}) },
         include: {
           ...includeBase,
           _count: { select: { questions: true, attempts: true } },
@@ -95,12 +123,12 @@ export const learningModule: Module = {
         orderBy: { createdAt: "desc" },
         take: 300,
       });
-      const student = ctx.session.user.student;
-      const items = student ? testsRes.filter((t) => isAssignedTo(t, student.id, student.currentClassGroupId)) : testsRes;
+      const items = consumers.length || ctx.session.user.role === "PARENT" ? testsRes.filter((t) => isVisibleToViewer(t, consumers)) : testsRes;
       return { kind, items };
     }
+    const consumer = ctx.session.user.role === "STUDENT" || ctx.session.user.role === "PARENT";
     const live = await prisma.liveClass.findMany({
-      where: { schoolId: ctx.session.user.schoolId, ...(ctx.session.user.teacher ? {} : {}) },
+      where: { schoolId: ctx.session.user.schoolId, ...(consumer || ctx.session.user.teacher ? { classSubjectId: { in: ids } } : {}) },
       include: { teacher: { include: { user: { select: { firstName: true, lastName: true } } } }, classSubject: { include: { subject: true } } },
       orderBy: { scheduledAt: "desc" },
       take: 100,
@@ -112,11 +140,31 @@ export const learningModule: Module = {
     const kind = (ctx.query.get("kind") ?? "notes") as Kind;
     can(ctx, "learning:view");
     await assertKindSubfeature(ctx, kind);
-    if (kind === "notes") return prisma.lessonNote.findUnique({ where: { id: ctx.id }, include: includeBase });
-    if (kind === "assignments") return prisma.assignment.findUnique({ where: { id: ctx.id }, include: { ...includeBase, submissions: { include: { student: { include: { user: { select: { firstName: true, lastName: true } } } } } } } });
+    const schoolId = ctx.session.user.schoolId;
+    const ids = await visibleClassSubjectIds(ctx);
+    const consumers = await viewerStudents(ctx);
+    const consumer = consumers.length > 0 || ctx.session.user.role === "PARENT";
+    if (kind === "notes") {
+      const note = await prisma.lessonNote.findFirst({ where: { id: ctx.id, schoolId, classSubjectId: { in: ids } }, include: includeBase });
+      if (!note) throw new Error("Lesson note not found");
+      return note;
+    }
+    if (kind === "assignments") {
+      const assignment = await prisma.assignment.findFirst({
+        where: { id: ctx.id, schoolId, classSubjectId: { in: ids } },
+        include: {
+          ...includeBase,
+          submissions: consumer
+            ? { where: { studentId: { in: consumers.map((student) => student.id) } }, include: { student: { include: { user: { select: { firstName: true, lastName: true } } } } } }
+            : { include: { student: { include: { user: { select: { firstName: true, lastName: true } } } } } },
+        },
+      });
+      if (!assignment || (consumer && (!assignment.isPublished || !isVisibleToViewer(assignment, consumers)))) throw new Error("Assignment not found");
+      return assignment;
+    }
     if (kind === "tests") {
-      const test = await prisma.test.findUnique({ where: { id: ctx.id }, include: { ...includeBase, questions: { orderBy: { order: "asc" } } } });
-      if (!test) throw new Error("Test not found");
+      const test = await prisma.test.findFirst({ where: { id: ctx.id, schoolId, classSubjectId: { in: ids } }, include: { ...includeBase, questions: { orderBy: { order: "asc" } } } });
+      if (!test || (consumer && (test.status !== "PUBLISHED" || !isVisibleToViewer(test, consumers)))) throw new Error("Test not found");
       // Students/parents must never see the correct answers.
       const role = ctx.session.user.role;
       if (role === "STUDENT" || role === "PARENT") {
@@ -125,7 +173,9 @@ export const learningModule: Module = {
       }
       return test;
     }
-    return prisma.liveClass.findUnique({ where: { id: ctx.id }, include: { teacher: true } });
+    const live = await prisma.liveClass.findFirst({ where: { id: ctx.id, schoolId, ...(consumer || ctx.session.user.teacher ? { classSubjectId: { in: ids } } : {}) }, include: { teacher: true } });
+    if (!live) throw new Error("Live class not found");
+    return live;
   },
 
   async create(ctx) {
@@ -161,6 +211,8 @@ export const learningModule: Module = {
     }
 
     if (kind === "assignment") {
+      const targetStudentIds = idArray(ctx.body.targetStudentIds);
+      const students = await targetStudentsForClass(schoolId, classSubject.classGroupId, targetStudentIds);
       const assignment = await prisma.assignment.create({
         data: {
           ...common,
@@ -169,19 +221,14 @@ export const learningModule: Module = {
           dueAt: str(ctx.body.dueAt) ? new Date(String(ctx.body.dueAt)) : undefined,
           maxScore: num(ctx.body.maxScore) ?? 100,
           isPublished: ctx.body.isPublished === true || ctx.body.isPublished === "true",
-          targetStudentIds: idArray(ctx.body.targetStudentIds),
+          targetStudentIds,
         },
       });
-      const targetedStudentIds = idArray(ctx.body.targetStudentIds);
-      const students = targetedStudentIds.length
-        ? await prisma.student.findMany({ where: { id: { in: targetedStudentIds } }, select: { id: true } })
-        : await prisma.student.findMany({ where: { currentClassGroupId: classSubject.classGroupId }, select: { id: true } });
-      const parentUserIds =
-        (await prisma.studentParent
-          .findMany({ where: { studentId: { in: students.map((s) => s.id) } }, select: { parentId: true } })
-          .then((rows) => prisma.parent.findMany({ where: { id: { in: rows.map((r) => r.parentId) } }, select: { userId: true } }).then((ps) => ps.map((p) => p.userId)))) ?? [];
-      const scopeLabel = targetedStudentIds.length ? `${students.length} student(s)` : `the ${classSubject.classGroup?.level.name ?? ""} ${classSubject.classGroup?.name ?? "class"}`;
-      await dispatchToMany(parentUserIds, { schoolId, type: "assignment", title: `New assignment: ${assignment.title}`, body: `A new assignment has been posted for ${scopeLabel}. Submit before the due date.`, link: "/portal/learning?kind=assignments" });
+      if (assignment.isPublished) {
+        const parentLinks = await prisma.studentParent.findMany({ where: { studentId: { in: students.map((s) => s.id) } }, select: { parent: { select: { userId: true } } } });
+        const scopeLabel = targetStudentIds.length ? `${students.length} student(s)` : `the ${classSubject.classGroup.level.name} ${classSubject.classGroup.name}`;
+        await dispatchToMany([...students.map((s) => s.userId), ...parentLinks.map((link) => link.parent.userId)], { schoolId, type: "assignment", title: `New assignment: ${assignment.title}`, body: `A new assignment has been posted for ${scopeLabel}. Submit before the due date.`, link: "/portal/learning?kind=assignments" });
+      }
       return assignment;
     }
 
@@ -189,9 +236,10 @@ export const learningModule: Module = {
       const questions = Array.isArray(ctx.body.questions) ? (ctx.body.questions as Array<Record<string, unknown>>) : [];
       if (questions.length === 0) throw new Error("At least one question is required");
       const isExam = ctx.body.isExam === true || ctx.body.isExam === "true";
-      // Exams are created by teachers but published only by the owner/admin.
-      const role = ctx.session.user.role;
-      const canPublish = role === "OWNER" || role === "ADMIN" || !isExam;
+      const targetStudentIds = idArray(ctx.body.targetStudentIds);
+      await targetStudentsForClass(schoolId, classSubject.classGroupId, targetStudentIds);
+      // Teacher-created CBTs are submitted as drafts for owner/admin approval.
+      const canPublish = role === "OWNER" || role === "ADMIN";
       const test = await prisma.test.create({
         data: {
           ...common,
@@ -199,7 +247,7 @@ export const learningModule: Module = {
           description: str(ctx.body.description),
           instruction: str(ctx.body.instruction),
           passMark: num(ctx.body.passMark),
-          targetStudentIds: idArray(ctx.body.targetStudentIds),
+          targetStudentIds,
           startsAt: str(ctx.body.startsAt) ? new Date(String(ctx.body.startsAt)) : undefined,
           endsAt: str(ctx.body.endsAt) ? new Date(String(ctx.body.endsAt)) : undefined,
           durationMinutes: num(ctx.body.durationMinutes) ?? 30,
@@ -219,6 +267,10 @@ export const learningModule: Module = {
           },
         },
       });
+      if (role === "TEACHER") {
+        const approvers = await prisma.user.findMany({ where: { schoolId, role: { in: ["OWNER", "ADMIN"] }, status: "ACTIVE" }, select: { id: true } });
+        await dispatchToMany(approvers.map((user) => user.id), { schoolId, type: "test", title: "CBT awaiting publication", body: `${ctx.session.user.firstName} ${ctx.session.user.lastName} created “${test.title}” for review.`, link: "/portal/learning?kind=tests" });
+      }
       return test;
     }
 
@@ -298,33 +350,24 @@ export const learningModule: Module = {
       return { ok: true };
     },
 
-    // Publish a test/CBT to its targets. Regular tests can be published by the
-    // owning teacher; official exams (isExam) only by the owner/admin.
+    // Owner/admin publishes a teacher-submitted CBT to the target class/students.
     publishTest: async (ctx) => {
       const schoolId = ctx.session.user.schoolId;
       const role = ctx.session.user.role;
       await assertSubfeature(ctx, "learning:cbt");
-      const teacher = ctx.session.user.teacher;
-      if (role !== "OWNER" && role !== "ADMIN") {
-        can(ctx, "learning:manage");
-        if (!teacher) throw new Error("Test not found");
-      }
+      if (role !== "OWNER" && role !== "ADMIN") throw new Error("Only the school owner or admin can publish CBT exams");
       const test = await prisma.test.findFirst({
-        where: { id: ctx.id, schoolId, ...(role === "OWNER" || role === "ADMIN" ? {} : { teacherId: teacher!.id }) },
+        where: { id: ctx.id, schoolId },
       });
       if (!test) throw new Error("Test not found");
-      if (test.isExam && role !== "OWNER" && role !== "ADMIN") {
-        const err = new Error("Only the school owner or admin can publish exams") as Error & { status?: number };
-        err.status = 403;
-        throw err;
-      }
       await prisma.test.update({ where: { id: ctx.id }, data: { status: "PUBLISHED" } });
       const targeted = idArray(test.targetStudentIds);
       const classSubject = await prisma.classSubject.findUnique({ where: { id: test.classSubjectId }, include: { classGroup: true } });
       const students = targeted.length
-        ? await prisma.student.findMany({ where: { id: { in: targeted }, status: "ACTIVE" }, select: { userId: true } })
-        : await prisma.student.findMany({ where: { currentClassGroupId: classSubject?.classGroupId, status: "ACTIVE" }, select: { userId: true } });
-      await dispatchToMany(students.map((s) => s.userId), { schoolId, type: "test", title: `CBT available: ${test.title}`, body: "A CBT exam has been assigned to you. Complete it before it closes.", link: "/portal/learning?kind=tests" });
+        ? await prisma.student.findMany({ where: { schoolId, id: { in: targeted }, status: "ACTIVE" }, select: { id: true, userId: true } })
+        : await prisma.student.findMany({ where: { schoolId, currentClassGroupId: classSubject?.classGroupId, status: "ACTIVE" }, select: { id: true, userId: true } });
+      const parentLinks = await prisma.studentParent.findMany({ where: { studentId: { in: students.map((student) => student.id) } }, select: { parent: { select: { userId: true } } } });
+      await dispatchToMany([...students.map((student) => student.userId), ...parentLinks.map((link) => link.parent.userId)], { schoolId, type: "test", title: `CBT available: ${test.title}`, body: "A CBT exam has been assigned. Complete it before it closes.", link: "/portal/learning?kind=tests" });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "test.published", entityType: "Test", entityId: ctx.id });
       return { ok: true };
     },
@@ -386,6 +429,8 @@ export const learningModule: Module = {
       const student = ctx.session.user.student;
       if (!student) throw new Error("Only students can submit assignments");
       assertFeeAccess(student);
+      const assignment = await prisma.assignment.findFirst({ where: { id: ctx.id, schoolId: ctx.session.user.schoolId, isPublished: true }, include: { classSubject: true } });
+      if (!assignment || !isAssignedTo(assignment, student.id, student.currentClassGroupId)) throw new Error("Assignment not found");
       const submission = await prisma.assignmentSubmission.upsert({
         where: { assignmentId_studentId: { assignmentId: ctx.id!, studentId: student.id } },
         update: { content: str(ctx.body.content), attachments: ctx.body.attachments ? ctx.body.attachments : undefined, submittedAt: new Date() },
@@ -407,9 +452,14 @@ export const learningModule: Module = {
       await assertSubfeature(ctx, "learning:assignments");
       const score = num(ctx.body.score);
       if (score === undefined) throw new Error("score required");
+      const teacher = ctx.session.user.teacher;
+      if (!teacher) throw new Error("Only teachers can grade assignments");
+      const existing = await prisma.assignmentSubmission.findFirst({ where: { id: ctx.id, schoolId: ctx.session.user.schoolId, assignment: { teacherId: teacher.id } }, include: { assignment: true } });
+      if (!existing) throw new Error("Submission not found");
+      if (score < 0 || score > existing.assignment.maxScore) throw new Error(`Score must be between 0 and ${existing.assignment.maxScore}`);
       const submission = await prisma.assignmentSubmission.update({
         where: { id: ctx.id },
-        data: { score, feedback: str(ctx.body.feedback), gradedAt: new Date(), gradedByTeacherId: ctx.session.user.teacher!.id },
+        data: { score, feedback: str(ctx.body.feedback), gradedAt: new Date(), gradedByTeacherId: teacher.id },
       });
       await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "assignment.graded", entityType: "AssignmentSubmission", entityId: ctx.id, meta: { score } });
       const student = await prisma.student.findUnique({ where: { id: submission.studentId }, include: { user: true } });
@@ -426,8 +476,8 @@ export const learningModule: Module = {
       const student = ctx.session.user.student;
       if (!student) throw new Error("Only students can take tests");
       assertFeeAccess(student);
-      const test = await prisma.test.findUnique({ where: { id: ctx.id }, include: { questions: true } });
-      if (!test) throw new Error("Test not found");
+      const test = await prisma.test.findFirst({ where: { id: ctx.id, schoolId: ctx.session.user.schoolId, status: "PUBLISHED" }, include: { questions: true } });
+      if (!test || !isAssignedTo(test, student.id, student.currentClassGroupId)) throw new Error("Test not found");
       if (test.startsAt && new Date() < test.startsAt) throw new Error("This test has not started yet");
       if (test.endsAt && new Date() > test.endsAt) throw new Error("This test has closed");
 
@@ -506,7 +556,13 @@ export const learningModule: Module = {
       await assertSubfeature(ctx, "learning:live");
       const student = ctx.session.user.student;
       if (student) assertFeeAccess(student);
-      const live = await prisma.liveClass.findUnique({ where: { id: ctx.id } });
+      const live = await prisma.liveClass.findFirst({
+        where: {
+          id: ctx.id,
+          schoolId: ctx.session.user.schoolId,
+          ...(student ? { classSubject: { classGroupId: student.currentClassGroupId ?? "none" } } : {}),
+        },
+      });
       if (!live) throw new Error("Live class not found");
       if (student) {
         await prisma.liveClassAttendance.upsert({

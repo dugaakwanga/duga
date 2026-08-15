@@ -2,7 +2,7 @@ import { prisma } from "@duga/core/server";
 import { collateReportCards, resolveResultsAccess, logAudit, dispatchToMany, getDefaultGradingScale } from "@duga/core/server";
 import { getResultConfig, computeScoreTotals, type ResultComponent } from "@duga/core/server";
 import type { Module } from ".";
-import { can, str, num, studentScope, assertFeeAccess } from "../helpers";
+import { can, str, num, studentScope, assertFeeAccess, resolveSection } from "../helpers";
 
 // Grade-point average for a card, derived from the school's grading scale.
 async function gpaCalculator(schoolId: string) {
@@ -45,14 +45,15 @@ export const resultsModule: Module = {
     can(ctx, "results:view");
     const schoolId = ctx.session.user.schoolId;
     const role = ctx.session.user.role;
-const config = await getResultConfig(schoolId);
+    const config = await getResultConfig(schoolId);
     const gpaOf = await gpaCalculator(schoolId);
 
     // Entry grid for teachers: return class subjects with class students
     if (role === "TEACHER") {
       const teacher = ctx.session.user.teacher!;
+      const section = await resolveSection(ctx);
       const classSubjects = await prisma.classSubject.findMany({
-        where: { teacherId: teacher.id },
+        where: { teacherId: teacher.id, ...(section ? { classGroup: { level: { section } } } : {}) },
         include: { subject: true, classGroup: { include: { level: true, students: { include: { user: { select: { firstName: true, lastName: true, id: true } } } } } } },
       });
       const terms = await prisma.term.findMany({ where: { schoolId }, include: { session: true }, orderBy: [{ session: { createdAt: "desc" } }, { termNumber: "asc" }] });
@@ -92,16 +93,17 @@ const config = await getResultConfig(schoolId);
       return { role, reportCards: gated };
     }
 
-    // Admin / owner
+    // Admin / owner: only return the active section when one is selected.
+    const section = await resolveSection(ctx);
     const [reportCards, classSubjects] = await Promise.all([
       prisma.reportCard.findMany({
-        where: { schoolId },
-        include: { term: true, student: { include: { user: { select: { firstName: true, lastName: true } } }, select: { photoUrl: true } }, classGroup: { include: { level: true } }, items: { include: { subject: true }, orderBy: { position: "asc" } } },
+        where: { schoolId, ...(section ? { classGroup: { level: { section } } } : {}) },
+        include: { term: true, student: { select: { id: true, photoUrl: true, user: { select: { firstName: true, lastName: true } } } }, classGroup: { include: { level: true } }, items: { include: { subject: true }, orderBy: { position: "asc" } } },
         orderBy: { createdAt: "desc" },
         take: 500,
       }),
       prisma.classSubject.findMany({
-        where: { schoolId },
+        where: { schoolId, ...(section ? { classGroup: { level: { section } } } : {}) },
         include: { subject: true, classGroup: { include: { level: true, students: { select: { id: true } } } } },
       }),
     ]);
@@ -122,6 +124,7 @@ const config = await getResultConfig(schoolId);
       include: {
         term: true,
         student: { include: { user: { select: { firstName: true, lastName: true } } } },
+        classGroup: { select: { formTeacherId: true } },
         items: { include: { subject: true }, orderBy: { position: "asc" } },
       },
     });
@@ -136,6 +139,27 @@ const config = await getResultConfig(schoolId);
         throw err;
       }
     }
+    if (role === "TEACHER") {
+      const teacherId = ctx.session.user.teacher?.id;
+      if (!teacherId) throw new Error("Teacher profile not found");
+      const isClassTeacher = rc.classGroup?.formTeacherId === teacherId;
+      // A subject teacher may inspect only the item for their own class-subject;
+      // the class teacher may inspect the complete card for their class.
+      if (!isClassTeacher) {
+        const ownItems = await prisma.reportCardItem.findMany({
+          where: { reportCardId: rc.id, classSubject: { teacherId } },
+          include: { subject: true },
+          orderBy: { position: "asc" },
+        });
+        if (!ownItems.length) {
+          const err = new Error("You can only view results for subjects you teach") as Error & { status?: number };
+          err.status = 403;
+          throw err;
+        }
+        return { ...rc, items: ownItems, gpa: (await gpaCalculator(ctx.session.user.schoolId))(ownItems) };
+      }
+      return { ...rc, gpa: (await gpaCalculator(ctx.session.user.schoolId))(rc.items) };
+    }
     return { ...rc, gpa: (await gpaCalculator(ctx.session.user.schoolId))(rc.items) };
   },
 
@@ -148,9 +172,9 @@ const config = await getResultConfig(schoolId);
       const role = ctx.session.user.role;
       if (role === "TEACHER") {
         const teacherId = ctx.session.user.teacher?.id;
-        const teachesClass = teacherId && card.classGroupId && await prisma.classSubject.findFirst({ where: { teacherId, classGroupId: card.classGroupId } });
-        if (!teachesClass) {
-          const err = new Error("You can only rate students in classes you teach") as Error & { status?: number };
+        const classGroup = card.classGroupId && await prisma.classGroup.findFirst({ where: { id: card.classGroupId, formTeacherId: teacherId }, select: { id: true } });
+        if (!classGroup) {
+          const err = new Error("Only the class teacher can add overall report-card comments") as Error & { status?: number };
           err.status = 403;
           throw err;
         }
@@ -178,10 +202,17 @@ const config = await getResultConfig(schoolId);
       const rows = Array.isArray(ctx.body.rows) ? (ctx.body.rows as Array<{ studentId: string; scores?: Record<string, unknown> }>) : [];
       if (!classSubjectId || rows.length === 0 || !termId) throw new Error("classSubjectId, termId and rows required");
 
-      if (teacher) {
-        const own = await prisma.classSubject.findFirst({ where: { id: classSubjectId, teacherId: teacher.id } });
-        if (!own) throw new Error("You can only enter scores for your own subjects");
-      }
+      const classSubject = await prisma.classSubject.findFirst({
+        where: { id: classSubjectId, schoolId, ...(teacher ? { teacherId: teacher.id } : {}) },
+        select: { id: true, classGroupId: true },
+      });
+      if (!classSubject) throw new Error(teacher ? "You can only enter scores for your own subjects" : "Class subject not found");
+      const roster = await prisma.student.findMany({
+        where: { schoolId, currentClassGroupId: classSubject.classGroupId, status: "ACTIVE" },
+        select: { id: true },
+      });
+      const rosterIds = new Set(roster.map((student) => student.id));
+      if (rows.some((row) => !rosterIds.has(row.studentId))) throw new Error("Scores can only be entered for active students in this class");
 
       // Locked once submitted (until an admin reopens).
       if (teacher) {

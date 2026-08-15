@@ -130,6 +130,32 @@ async function scoreSeries(schoolId: string, studentIds?: string[]) {
   }));
 }
 
+async function subjectScoreSeries(schoolId: string, classSubjectIds: string[]) {
+  if (classSubjectIds.length === 0) return [];
+  const items = await prisma.reportCardItem.findMany({
+    where: {
+      classSubjectId: { in: classSubjectIds },
+      reportCard: { schoolId, isPublished: true },
+    },
+    select: { total: true, reportCard: { select: { term: { select: { name: true } } } } },
+  });
+  const byTerm = new Map<string, { total: number; count: number; pass: number }>();
+  for (const item of items) {
+    if (item.total === null) continue;
+    const key = item.reportCard.term?.name ?? "Unknown";
+    const entry = byTerm.get(key) ?? { total: 0, count: 0, pass: 0 };
+    entry.total += item.total;
+    entry.count += 1;
+    if (item.total >= 50) entry.pass += 1;
+    byTerm.set(key, entry);
+  }
+  return [...byTerm.entries()].map(([label, entry]) => ({
+    label,
+    value: entry.count === 0 ? 0 : Math.round(entry.total / entry.count),
+    passRate: entry.count === 0 ? 0 : Math.round((entry.pass / entry.count) * 100),
+  }));
+}
+
 async function feeSummary(schoolId: string, studentIds?: string[]) {
   const where = { schoolId, ...(studentIds ? { studentId: { in: studentIds } } : {}) } as never;
   const agg = await prisma.invoice.aggregate({ where, _sum: { totalAmount: true, paidAmount: true, balance: true } });
@@ -185,12 +211,19 @@ export const progressModule: Module = {
 
     const financeOn = await subfeatureEnabled(schoolId, role, "finance");
     const showFees = sections.fees && financeOn;
+    const teacherClassSubjectIds = role === "TEACHER" && teacher
+      ? (await prisma.classSubject.findMany({ where: { teacherId: teacher.id }, select: { id: true } })).map((item) => item.id)
+      : [];
 
     const [fees, attendance, enrollment, scores, feeSum, scopeStats] = await Promise.all([
       showFees ? feesSeries(schoolId, ids) : Promise.resolve([] as Array<{ label: string; value: number }>),
       sections.attendance ? attendanceSeries(schoolId, ids) : Promise.resolve([] as Array<{ label: string; value: number }>),
       sections.enrollment ? enrollmentSeries(schoolId, ids) : Promise.resolve([] as Array<{ label: string; value: number }>),
-      sections.scores ? scoreSeries(schoolId, ids) : Promise.resolve([] as Array<{ label: string; value: number; passRate: number }>),
+      sections.scores
+        ? role === "TEACHER"
+          ? subjectScoreSeries(schoolId, teacherClassSubjectIds)
+          : scoreSeries(schoolId, ids)
+        : Promise.resolve([] as Array<{ label: string; value: number; passRate: number }>),
       showFees ? feeSummary(schoolId, ids) : Promise.resolve({ total: 0, paid: 0, balance: 0 }),
       classStats(schoolId, ids),
     ]);
@@ -240,7 +273,7 @@ export const progressModule: Module = {
               ? "own"
               : "children",
       sections,
-      classes: scopeStats,
+      classes: role === "TEACHER" ? { ...scopeStats, classCount: myClasses.length } : scopeStats,
       myClasses,
       subjects,
       fees: showFees ? { series: fees, summary: feeSum } : null,

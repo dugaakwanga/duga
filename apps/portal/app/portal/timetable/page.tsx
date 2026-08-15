@@ -32,7 +32,7 @@ interface TimetableData {
   refs?: {
     classes: Array<{ id: string; level: { name: string }; name: string }>;
     subjects: Array<{ id: string; name: string }>;
-    teachers: Array<{ id: string; firstName: string; lastName: string }>;
+    teachers: Array<{ id: string; user: { firstName: string; lastName: string } }>;
     terms: Array<{ id: string; name: string }>;
   };
 }
@@ -47,6 +47,8 @@ export default function TimetablePage() {
   const [modal, setModal] = useState<"" | "entry" | "exam">("");
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<Record<string, string>>(emptyForm());
+  const [publishing, setPublishing] = useState(false);
+  const [generating, setGenerating] = useState(false);
 
   const isAdmin = !!data?.refs;
 
@@ -100,6 +102,33 @@ export default function TimetablePage() {
     }
   }
 
+  async function publish() {
+    if (!confirm("Publish this timetable and notify affected students and teachers?")) return;
+    setPublishing(true);
+    try {
+      const result = await api<{ recipients: number }>("timetable/publish", { method: "POST", body: {} });
+      alert(`Timetable published. ${result.recipients} recipient(s) were notified.`);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  async function generate() {
+    if (!confirm("Generate missing timetable periods for all assigned class subjects? Existing periods will be kept.")) return;
+    setGenerating(true);
+    try {
+      const result = await api<{ created: number; skipped: number }>("timetable/generate", { method: "POST", body: {} });
+      alert(`Generated ${result.created} period(s) without clashes.${result.skipped ? ` ${result.skipped} period(s) could not fit.` : ""}`);
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setGenerating(false);
+    }
+  }
+
   if (error) return <Alert tone="danger">{error}</Alert>;
   if (loading || !data) return <Spinner size={28} />;
 
@@ -111,6 +140,8 @@ export default function TimetablePage() {
         actions={
           isAdmin ? (
             <>
+              <Button variant="outline" loading={generating} onClick={generate} style={{ marginRight: 10 }}>Generate timetable</Button>
+              <Button variant="accent" loading={publishing} onClick={publish} style={{ marginRight: 10 }}>Publish & notify</Button>
               <Button variant="outline" onClick={() => openModal("exam")} style={{ marginRight: 10 }}><span style={{ marginRight: 4 }}>＋</span> Exam entry</Button>
               <Button onClick={() => openModal("entry")}>Add period</Button>
             </>
@@ -248,7 +279,7 @@ export default function TimetablePage() {
                 <Select value={form.teacherId ?? ""} onChange={(e) => setForm({ ...form, teacherId: e.target.value })}>
                   <option value="">Select teacher…</option>
                   {data.refs?.teachers.map((t) => (
-                    <option key={t.id} value={t.id}>{t.firstName} {t.lastName}</option>
+                    <option key={t.id} value={t.id}>{t.user.firstName} {t.user.lastName}</option>
                   ))}
                 </Select>
               </Field>
@@ -279,9 +310,9 @@ export default function TimetablePage() {
                   ))}
                 </Select>
               </Field>
-              <Field label="Class group">
+              <Field label="Class group" required>
                 <Select value={form.classGroupId ?? ""} onChange={(e) => setForm({ ...form, classGroupId: e.target.value })}>
-                  <option value="">All classes</option>
+                  <option value="">Select class…</option>
                   {data.refs?.classes.map((c) => (
                     <option key={c.id} value={c.id}>{c.level.name} {c.name}</option>
                   ))}

@@ -3,7 +3,7 @@ import { getSession } from "@duga/core/server";
 import { PortalShell } from "@/components/PortalShell";
 import { prisma } from "@duga/core/server";
 import { featuresForRole, subfeaturesForRole } from "@/lib/server/features";
-import { schoolSections, sectionsOfTeacher } from "@/lib/server/helpers";
+import { schoolSections, sectionsOfAdmin, sectionsOfTeacher } from "@/lib/server/helpers";
 import type { Section } from "@/lib/sections";
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
@@ -31,9 +31,12 @@ export default async function PortalLayout({ children }: { children: React.React
   // Primary; teachers are auto-scoped to the sections of the classes assigned to them.
   let sections: Section[] = [];
   let canSwitchSection = false;
-  if (user.role === "OWNER" || user.role === "ADMIN" || user.role === "BURSAR") {
+  if (user.role === "OWNER") {
     sections = await schoolSections(user.schoolId);
     canSwitchSection = true;
+  } else if (user.role === "ADMIN" || user.role === "BURSAR") {
+    sections = user.admin ? await sectionsOfAdmin(user.admin.id, user.schoolId) : await schoolSections(user.schoolId);
+    canSwitchSection = sections.length > 1;
   } else if (user.role === "TEACHER") {
     sections = user.teacher ? await sectionsOfTeacher(user.teacher.id) : [];
     canSwitchSection = sections.length > 1;

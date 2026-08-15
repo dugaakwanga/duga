@@ -10,16 +10,40 @@ import { can, todayUTC, isoDay, str, num, resolveSection } from "../helpers";
 async function resolveClockTarget(
   schoolId: string,
   actingUserId: string,
+  actingRole: string,
   raw: unknown,
 ): Promise<{ userId: string; proxyByUserId?: string }> {
   const targetUserId = str(raw);
   if (!targetUserId || targetUserId === actingUserId) return { userId: actingUserId };
+  if (actingRole !== "OWNER" && actingRole !== "ADMIN") {
+    const err = new Error("Only an owner or admin can clock in or out for another staff member") as Error & { status?: number };
+    err.status = 403;
+    throw err;
+  }
   const target = await prisma.user.findFirst({
     where: { id: targetUserId, schoolId, role: { in: ["TEACHER", "ADMIN", "BURSAR", "OWNER"] } },
     select: { id: true },
   });
   if (!target) throw new Error("Selected staff member not found in this school");
   return { userId: target.id, proxyByUserId: actingUserId };
+}
+
+function parseAttendanceDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error("Use a valid attendance date");
+  const date = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) throw new Error("Use a valid attendance date");
+  return date;
+}
+
+async function assertClassTeacher(schoolId: string, classGroupId: string, teacherId?: string) {
+  if (!teacherId) throw new Error("Only class teachers can take attendance");
+  const classGroup = await prisma.classGroup.findFirst({ where: { id: classGroupId, schoolId }, include: { level: true } });
+  if (!classGroup || classGroup.formTeacherId !== teacherId) {
+    const err = new Error("You can only take attendance for a class where you are the class teacher") as Error & { status?: number };
+    err.status = 403;
+    throw err;
+  }
+  return classGroup;
 }
 
 export const attendanceModule: Module = {
@@ -42,12 +66,8 @@ export const attendanceModule: Module = {
     }
     if (role === "TEACHER") {
       const teacher = ctx.session.user.teacher!;
-      // A class teacher (form teacher) can see attendance for the class(es) they
-      // are the class teacher of, plus classes they teach.
-      const classes = await prisma.classSubject.findMany({ where: { teacherId: teacher.id }, select: { classGroupId: true } });
       const formClasses = await prisma.classGroup.findMany({ where: { formTeacherId: teacher.id }, select: { id: true } });
-      const groups = [...new Set([...classes.map((c) => c.classGroupId), ...formClasses.map((c) => c.id)])];
-      where.classGroupId = { in: groups };
+      where.classGroupId = { in: formClasses.map((c) => c.id) };
     }
 
     // Scope to the active school section (Primary/Secondary) when set.
@@ -80,19 +100,18 @@ export const attendanceModule: Module = {
     const entries = Array.isArray(ctx.body.entries) ? (ctx.body.entries as Array<{ studentId: string; status: string; remark?: string }>) : [];
     if (entries.length === 0) throw new Error("No attendance entries provided");
 
-    // Only the class teacher (form teacher) of this class may take attendance
-    // for it. Admins/owner may take for any class.
+    // Attendance is taken only by the class teacher. Admins and owners can
+    // monitor records but cannot mark attendance on a class teacher's behalf.
     const role = ctx.session.user.role;
-    if (role === "TEACHER") {
-      const cls = await prisma.classGroup.findFirst({ where: { id: classGroupId, schoolId } });
-      if (!cls || cls.formTeacherId !== teacher?.id) {
-        const err = new Error("You can only take attendance for the class you are the class teacher of") as Error & { status?: number };
-        err.status = 403;
-        throw err;
-      }
-    }
+    if (role !== "TEACHER") throw new Error("Only class teachers can take student attendance");
+    const classGroup = await assertClassTeacher(schoolId, classGroupId, teacher?.id);
+    const section = await resolveSection(ctx);
+    if (section && classGroup.level.section !== section) throw new Error("You can only take attendance in your active section");
 
-    const dateObj = new Date(`${date}T00:00:00Z`);
+    const dateObj = parseAttendanceDate(date);
+    const roster = await prisma.student.findMany({ where: { schoolId, currentClassGroupId: classGroupId, status: "ACTIVE" }, select: { id: true } });
+    const rosterIds = new Set(roster.map((student) => student.id));
+    if (entries.some((entry) => !rosterIds.has(entry.studentId))) throw new Error("Attendance can only be recorded for active students in this class");
     const results = [];
     for (const e of entries) {
       if (!["PRESENT", "ABSENT", "LATE", "EXCUSED"].includes(e.status)) continue;
@@ -125,26 +144,21 @@ export const attendanceModule: Module = {
       const classGroupId = String(ctx.query.get("classGroupId") ?? "");
       if (!classGroupId) throw new Error("classGroupId required");
       const date = ctx.query.get("date") ?? isoDay(new Date());
-      const dateObj = new Date(`${date}T00:00:00Z`);
+      const dateObj = parseAttendanceDate(date);
 
-      // Only the class teacher (form teacher) of this class may load its roster
-      // to take attendance. Admins/owner may for any class.
+      // Only the class teacher may load an attendance-taking roster.
       const role = ctx.session.user.role;
-      if (role === "TEACHER") {
-        const cls = await prisma.classGroup.findFirst({ where: { id: classGroupId, schoolId } });
-        if (!cls || cls.formTeacherId !== ctx.session.user.teacher?.id) {
-          const err = new Error("You can only take attendance for the class you are the class teacher of") as Error & { status?: number };
-          err.status = 403;
-          throw err;
-        }
-      }
+      if (role !== "TEACHER") throw new Error("Only class teachers can take student attendance");
+      const classGroup = await assertClassTeacher(schoolId, classGroupId, ctx.session.user.teacher?.id);
+      const section = await resolveSection(ctx);
+      if (section && classGroup.level.section !== section) throw new Error("You can only take attendance in your active section");
 
       const students = await prisma.student.findMany({
         where: { schoolId, currentClassGroupId: classGroupId, status: "ACTIVE" },
         include: { user: { select: { firstName: true, lastName: true } } },
         orderBy: { admissionNumber: "asc" },
       });
-      const existing = await prisma.studentAttendance.findMany({ where: { classGroupId, date: dateObj } });
+      const existing = await prisma.studentAttendance.findMany({ where: { schoolId, classGroupId, date: dateObj } });
       const byStudent = new Map(existing.map((r) => [r.studentId, r]));
 
       const roster = students.map((s) => {
@@ -162,9 +176,22 @@ export const attendanceModule: Module = {
 
     report: async (ctx) => {
       can(ctx, "attendance:view");
-      const studentId = ctx.query.get("studentId") ?? ctx.session.user.student?.id;
+      const schoolId = ctx.session.user.schoolId;
+      const role = ctx.session.user.role;
+      let studentId = ctx.query.get("studentId") ?? ctx.session.user.student?.id;
       if (!studentId) throw new Error("studentId required");
-      const records = await prisma.studentAttendance.findMany({ where: { studentId, schoolId: ctx.session.user.schoolId } });
+      if (role === "STUDENT") studentId = ctx.session.user.student!.id;
+      const student = await prisma.student.findFirst({ where: { id: studentId, schoolId }, select: { id: true, currentClassGroupId: true } });
+      if (!student) throw new Error("Student not found");
+      if (role === "PARENT") {
+        const linked = await prisma.studentParent.findFirst({ where: { parentId: ctx.session.user.parent!.id, studentId } });
+        if (!linked) throw new Error("You can only view attendance for your own children");
+      }
+      if (role === "TEACHER") {
+        const classGroup = student.currentClassGroupId ? await prisma.classGroup.findFirst({ where: { id: student.currentClassGroupId, formTeacherId: ctx.session.user.teacher!.id } }) : null;
+        if (!classGroup) throw new Error("You can only view attendance for students in your class-teacher class");
+      }
+      const records = await prisma.studentAttendance.findMany({ where: { studentId, schoolId } });
       const present = records.filter((r) => r.status === "PRESENT" || r.status === "LATE").length;
       return {
         studentId,
@@ -189,7 +216,7 @@ export const attendanceModule: Module = {
       const lng = num(ctx.body.lng);
       if (lat === undefined || lng === undefined) throw new Error("Location is required to clock in");
 
-      const target = await resolveClockTarget(schoolId, ctx.session.user.id, ctx.body.targetUserId);
+      const target = await resolveClockTarget(schoolId, ctx.session.user.id, ctx.session.user.role, ctx.body.targetUserId);
 
       const school = await prisma.school.findUnique({ where: { id: schoolId } });
       const schoolLat = school?.gpsLat ?? schoolConfig.lat;
@@ -233,7 +260,7 @@ export const attendanceModule: Module = {
       const lng = num(ctx.body.lng);
       if (lat === undefined || lng === undefined) throw new Error("Location is required to clock out");
 
-      const target = await resolveClockTarget(schoolId, ctx.session.user.id, ctx.body.targetUserId);
+      const target = await resolveClockTarget(schoolId, ctx.session.user.id, ctx.session.user.role, ctx.body.targetUserId);
 
       const school = await prisma.school.findUnique({ where: { id: schoolId } });
       const check = withinRadiusMeters(lat, lng, school?.gpsLat ?? schoolConfig.lat, school?.gpsLng ?? schoolConfig.lng, schoolConfig.attendanceRadiusMeters);
@@ -250,7 +277,11 @@ export const attendanceModule: Module = {
     staffClockTargets: async (ctx) => {
       can(ctx, "staff:clock");
       const items = await prisma.user.findMany({
-        where: { schoolId: ctx.session.user.schoolId, role: { in: ["TEACHER", "ADMIN", "BURSAR", "OWNER"] }, status: "ACTIVE" },
+        where: {
+          schoolId: ctx.session.user.schoolId,
+          status: "ACTIVE",
+          ...(ctx.session.user.role === "OWNER" || ctx.session.user.role === "ADMIN" ? { role: { in: ["TEACHER", "ADMIN", "BURSAR", "OWNER"] } } : { id: ctx.session.user.id }),
+        },
         select: { id: true, firstName: true, lastName: true, role: true, teacher: { select: { staffNumber: true } }, admin: { select: { designation: true } } },
         orderBy: { firstName: "asc" },
       });
@@ -259,7 +290,7 @@ export const attendanceModule: Module = {
 
     staffStatus: async (ctx) => {
       can(ctx, "staff:clock");
-      const target = await resolveClockTarget(ctx.session.user.schoolId, ctx.session.user.id, ctx.body.targetUserId);
+      const target = await resolveClockTarget(ctx.session.user.schoolId, ctx.session.user.id, ctx.session.user.role, ctx.body.targetUserId);
       const record = await prisma.staffAttendance.findUnique({
         where: { userId_date: { userId: target.userId, date: todayUTC() } },
       });

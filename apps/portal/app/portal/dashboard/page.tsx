@@ -18,6 +18,7 @@ interface DashboardData {
   role: string;
   counts?: { studentCount: number; staffCount: number; classCount: number; applications: number; unpaid: number; today: number };
   feeSummary?: { total: number; paid: number; balance: number };
+  schoolProgress?: { attendanceRate: number; subjectAverage: number; assessedStudents: number };
   recentAnnouncements?: Array<{ id: string; title: string; audience: string; author: { firstName: string; lastName: string }; createdAt: string }>;
   classSubjects?: Array<{ id: string; subject: { name: string }; classGroup?: { level: { name: string }; name: string }; teacher?: { user: { firstName: string; lastName: string } } }>;
   upcomingLive?: Array<{ id: string; title: string; scheduledAt: string }>;
@@ -76,7 +77,7 @@ export default function DashboardPage() {
         <>
           <div className="portal-metrics" style={{ marginBottom: 20 }}>
             <Stat label="Students" value={data.counts?.studentCount} />
-            <Stat label="Staff" value={data.counts?.staffCount} />
+            <Stat label="Teaching staff" value={data.counts?.staffCount} />
             <Stat label="Classes" value={data.counts?.classCount} />
             {data.feeSummary && <Stat label="Fees collected" value={naira(data.feeSummary.paid)} tone="success" />}
             {data.feeSummary && <Stat label="Outstanding" value={naira(data.feeSummary.balance)} tone="danger" />}
@@ -88,8 +89,10 @@ export default function DashboardPage() {
           <Card title="School monitoring" className="portal-monitor-card">
             <div className="portal-monitor-row"><div><strong>Fee collection</strong><small>{naira(data.feeSummary?.paid)} received</small></div><b>{data.feeSummary ? Math.round((Number(data.feeSummary.paid) / Math.max(1, Number(data.feeSummary.total))) * 100) : 0}%</b></div>
             <ProgressBar tone="green" value={data.feeSummary ? (Number(data.feeSummary.paid) / Math.max(1, Number(data.feeSummary.total))) * 100 : 0} />
-            <div className="portal-monitor-row"><div><strong>Attendance captured</strong><small>{data.counts?.today ?? 0} records today</small></div><b>{data.counts?.studentCount ? Math.round(((data.counts?.today ?? 0) / data.counts.studentCount) * 100) : 0}%</b></div>
-            <ProgressBar tone="gold" value={data.counts?.studentCount ? ((data.counts?.today ?? 0) / data.counts.studentCount) * 100 : 0} />
+            <div className="portal-monitor-row"><div><strong>Average attendance</strong><small>{data.counts?.today ?? 0} records captured today</small></div><b>{data.schoolProgress?.attendanceRate ?? 0}%</b></div>
+            <ProgressBar tone="gold" value={data.schoolProgress?.attendanceRate ?? 0} />
+            <div className="portal-monitor-row"><div><strong>Average subject progress</strong><small>{data.schoolProgress?.assessedStudents ?? 0} published student results</small></div><b>{data.schoolProgress?.subjectAverage ?? 0}%</b></div>
+            <ProgressBar value={data.schoolProgress?.subjectAverage ?? 0} />
             <div className="portal-monitor-row"><div><strong>Admissions pipeline</strong><small>{data.counts?.applications ?? 0} new applications</small></div><Badge tone="info">Live</Badge></div>
           </Card>
           <Card title="Recent announcements">
