@@ -23,9 +23,10 @@ export const staffModule: Module = {
   async list(ctx) {
     can(ctx, "staff:view");
     const section = await resolveSection(ctx);
+    const schoolId = ctx.session.user.schoolId;
     const [users, subjects] = await Promise.all([prisma.user.findMany({
       where: {
-        schoolId: ctx.session.user.schoolId,
+        schoolId,
         role: { in: ["TEACHER", "ADMIN", "BURSAR", "OWNER"] },
       },
       select: {
@@ -42,13 +43,13 @@ export const staffModule: Module = {
       },
       orderBy: { createdAt: "desc" },
       take: 300,
-    }), prisma.subject.findMany({ where: { schoolId: ctx.session.user.schoolId, ...(section ? { section } : {}) }, select: { id: true, name: true, section: true }, orderBy: [{ section: "asc" }, { name: "asc" }] })]);
+    }), prisma.subject.findMany({ where: { schoolId, ...(section ? { section } : {}) }, select: { id: true, name: true, section: true }, orderBy: [{ section: "asc" }, { name: "asc" }] })]);
     const scopedUsers = section
       ? await Promise.all(users.map(async (user) => {
           const sections = user.teacher
             ? await sectionsOfTeacher(user.teacher.id)
             : user.admin
-              ? await sectionsOfAdmin(user.admin.id, user.schoolId)
+              ? await sectionsOfAdmin(user.admin.id, schoolId)
               : [];
           return sections.includes(section) ? user : null;
         })).then((rows) => rows.filter((row): row is typeof users[number] => !!row))
