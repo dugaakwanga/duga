@@ -12,8 +12,13 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Migrations need a direct (non-pooled) connection — pgbouncer's
+  // transaction-pooling mode (used by DATABASE_URL at runtime) doesn't
+  // support the session-level advisory locks `prisma migrate deploy`
+  // requires, which is what caused the Vercel build to hang/timeout.
+  directUrl = env("DIRECT_URL")
 }
 
 // ----------------------------------------------------------------------------
