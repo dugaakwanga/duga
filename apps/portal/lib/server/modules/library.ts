@@ -1,5 +1,6 @@
 import { prisma, logAudit, dispatchNotification } from "@duga/core/server";
 import type { Module } from ".";
+import type { Ctx } from "@/app/api/v1/[...path]/route";
 import { can, str, num } from "../helpers";
 import { removeFile } from "../storage";
 
@@ -20,7 +21,7 @@ async function teacherStudentIds(teacherId: string, schoolId: string) {
   return students.map((student) => student.id);
 }
 
-async function assertTeacherStudentScope(ctx: Parameters<Module["list"]>[0], studentId: string) {
+async function assertTeacherStudentScope(ctx: Ctx, studentId: string) {
   if (ctx.session.user.role !== "TEACHER") return;
   const ids = await teacherStudentIds(ctx.session.user.teacher!.id, ctx.session.user.schoolId);
   if (!ids.includes(studentId)) throw new Error("Teachers can only manage library loans for students they teach");
