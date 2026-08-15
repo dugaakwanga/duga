@@ -60,4 +60,9 @@
   --duga-shadow-md: 0 10px 24px -6px rgba(15, 27, 46, 0.18);
   --duga-shadow-lg: 0 28px 54px -14px rgba(15, 27, 46, 0.28);
   --duga-shadow-xl: 0 48px 90px -28px rgba(15, 27, 46, 0.36);
+
+  /* Gradients */
+  --duga-gradient-primary: linear-gradient(135deg, var(--duga-primary) 0%, var(--duga-primary-dark) 100%);
+  --duga-gradient-primary-light: linear-gradient(135deg, var(--duga-primary-light) 0%, var(--duga-primary) 100%);
+  --duga-gradient-gold: linear-gradient(135deg, var(--duga-gold) 0%, var(--duga-gold-dark) 100%);
 }
