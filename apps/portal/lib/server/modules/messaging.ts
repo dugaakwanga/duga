@@ -225,9 +225,9 @@ export const messagingModule: Module = {
         where.OR = [
           { audience: "EVERYONE" },
           { audience: "ROLE", targetRole: "PARENT" },
-          ...(sections.length ? [{ audience: "SECTION", targetSection: { in: sections } }] : []),
-          ...(classIds.length ? [{ audience: "CLASS", targetClassGroupId: { in: classIds } }] : []),
-          ...(levelIds.length ? [{ audience: "LEVEL", targetLevelId: { in: levelIds } }] : []),
+          ...(sections.length ? [{ audience: "SECTION" as const, targetSection: { in: sections } }] : []),
+          ...(classIds.length ? [{ audience: "CLASS" as const, targetClassGroupId: { in: classIds } }] : []),
+          ...(levelIds.length ? [{ audience: "LEVEL" as const, targetLevelId: { in: levelIds } }] : []),
         ];
       }
       const announcements = await prisma.announcement.findMany({

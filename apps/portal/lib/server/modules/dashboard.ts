@@ -142,9 +142,9 @@ export const dashboardModule: Module = {
           OR: [
             { audience: "EVERYONE" },
             { audience: "ROLE", targetRole: "PARENT" },
-            ...(childSections.length ? [{ audience: "SECTION", targetSection: { in: childSections } }] : []),
-            ...(childClassIds.length ? [{ audience: "CLASS", targetClassGroupId: { in: childClassIds } }] : []),
-            ...(childLevelIds.length ? [{ audience: "LEVEL", targetLevelId: { in: childLevelIds } }] : []),
+            ...(childSections.length ? [{ audience: "SECTION" as const, targetSection: { in: childSections } }] : []),
+            ...(childClassIds.length ? [{ audience: "CLASS" as const, targetClassGroupId: { in: childClassIds } }] : []),
+            ...(childLevelIds.length ? [{ audience: "LEVEL" as const, targetLevelId: { in: childLevelIds } }] : []),
           ],
         },
         orderBy: { createdAt: "desc" },
