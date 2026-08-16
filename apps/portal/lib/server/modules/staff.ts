@@ -121,11 +121,88 @@ export const staffModule: Module = {
 
     const existing = await prisma.user.findFirst({
       where: { schoolId, OR: [...(email ? [{ email }] : []), ...(phone ? [{ phone }] : [])] },
+      include: { teacher: true, admin: true },
     });
-    if (existing) throw new Error("A user with this email, phone or staff ID already exists");
+    if (existing && existing.status !== "DEACTIVATED") {
+      throw new Error("A user with this email, phone or staff ID already exists");
+    }
     if (staffNumber && role === "TEACHER") {
-      const takenNo = await prisma.teacher.findUnique({ where: { schoolId_staffNumber: { schoolId, staffNumber } } });
+      // On reactivation the existing user's own teacher record must not count
+      // as a conflict when they keep their staff number.
+      const takenNo = await prisma.teacher.findFirst({
+        where: { schoolId, staffNumber, ...(existing ? { userId: { not: existing.id } } : {}) },
+      });
       if (takenNo) throw new Error("A teacher with this staff number already exists");
+    }
+
+    // A removed account (soft delete) still holds its email/phone, so re-adding
+    // the same staff member reactivates that row instead of creating a
+    // duplicate (which would violate the school/email uniqueness constraint).
+    if (existing) {
+      const user = await prisma.user.update({
+        where: { id: existing.id },
+        data: {
+          status: "ACTIVE",
+          role: role as "TEACHER" | "ADMIN" | "BURSAR",
+          firstName,
+          lastName,
+          email: email ?? null,
+          phone,
+          passwordHash: await bcrypt.hash(tempPassword ?? "password123", 10),
+          mustChangePassword: true,
+        },
+      });
+      if (role === "TEACHER") {
+        await prisma.admin.deleteMany({ where: { userId: existing.id, schoolId } });
+        if (existing.teacher) {
+          await prisma.teacher.update({
+            where: { userId: existing.id },
+            data: {
+              staffNumber: staffNumber ?? existing.teacher.staffNumber,
+              specialty: str(b.specialty),
+              subjectIds: assignedSubjectIds,
+              sections: assignedSections,
+              designation: str(b.designation) ?? "Teacher",
+            },
+          });
+        } else {
+          await prisma.teacher.create({
+            data: {
+              userId: existing.id,
+              schoolId,
+              staffNumber: staffNumber ?? (await nextStaffNumber(schoolId, "STF", "teacher")),
+              specialty: str(b.specialty),
+              subjectIds: assignedSubjectIds,
+              sections: assignedSections,
+              designation: str(b.designation) ?? "Teacher",
+            },
+          });
+        }
+      } else {
+        await prisma.teacher.deleteMany({ where: { userId: existing.id, schoolId } });
+        if (existing.admin) {
+          await prisma.admin.update({
+            where: { userId: existing.id },
+            data: {
+              designation: str(b.designation) ?? "Staff",
+              sections: assignedSections.length ? assignedSections : undefined,
+              staffNumber: staffNumber ?? existing.admin.staffNumber,
+            },
+          });
+        } else {
+          await prisma.admin.create({
+            data: {
+              userId: existing.id,
+              schoolId,
+              designation: str(b.designation) ?? "Staff",
+              sections: assignedSections.length ? assignedSections : undefined,
+              staffNumber: staffNumber ?? (await nextStaffNumber(schoolId, "ADM", "admin")),
+            },
+          });
+        }
+      }
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "staff.reactivated", entityType: "User", entityId: existing.id, meta: { role } });
+      return { id: existing.id, email: user.email, reactivated: true };
     }
 
     const user = await prisma.user.create({

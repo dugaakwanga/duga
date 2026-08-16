@@ -128,8 +128,10 @@ export function pick(body: Record<string, unknown>, keys: string[]): Record<stri
   return out;
 }
 
-// Verify a proposed email/phone does not already belong to another user in the
-// school. Empty/null values are ignored so accounts may stay email-free.
+// Verify a proposed email/phone does not already belong to another active user
+// in the school. Deactivated (removed) accounts do not block reuse — their
+// contacts can be taken again, e.g. when a former staff member is re-hired.
+// Empty/null values are ignored so accounts may stay email-free.
 export async function assertContactFree(
   schoolId: string,
   exceptUserId: string,
@@ -141,7 +143,7 @@ export async function assertContactFree(
   if (phone) or.push({ phone });
   if (or.length === 0) return;
   const clash = await prisma.user.findFirst({
-    where: { schoolId, id: { not: exceptUserId }, OR: or },
+    where: { schoolId, id: { not: exceptUserId }, status: { not: "DEACTIVATED" }, OR: or },
     select: { id: true },
   });
   if (clash) throw new Error("A user with this email or phone number already exists");
