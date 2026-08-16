@@ -170,6 +170,14 @@ export default function SuperAdminDashboard() {
   const [statusBusy, setStatusBusy] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
 
+  // Section limit modal
+  const [secOpen, setSecOpen] = useState(false);
+  const [secSchool, setSecSchool] = useState<SchoolRow | null>(null);
+  const [secData, setSecData] = useState<{ maxSections: number; sections: { id: string; name: string }[] } | null>(null);
+  const [secMax, setSecMax] = useState("");
+  const [secBusy, setSecBusy] = useState(false);
+  const [secError, setSecError] = useState<string | null>(null);
+
   // Add school modal
   const [schoolOpen, setSchoolOpen] = useState(false);
   const [schoolForm, setSchoolForm] = useState<Record<string, string>>({});
@@ -281,6 +289,40 @@ export default function SuperAdminDashboard() {
     setSchoolForm({ name: "", shortName: "", domain: "", address: "", phone: "", email: "" });
     setSchoolError(null);
     setSchoolOpen(true);
+  }
+
+  // ---- Schools — section limit
+  async function openSections(school: SchoolRow) {
+    setSecSchool(school);
+    setSecError(null);
+    try {
+      const d = await saApi<{ maxSections: number; sections: { id: string; name: string }[] }>(`sections/${school.id}`);
+      setSecData(d);
+      setSecMax(String(d.maxSections));
+    } catch (e) {
+      setSecError((e as Error).message);
+    }
+    setSecOpen(true);
+  }
+
+  async function saveSections() {
+    if (!secSchool) return;
+    const max = Math.floor(Number(secMax));
+    if (!max || max < 1) {
+      setSecError("Enter a positive max section count.");
+      return;
+    }
+    setSecBusy(true);
+    setSecError(null);
+    try {
+      await saApi("sections/setLimit", { method: "POST", body: { schoolId: secSchool.id, maxSections: max } });
+      setSecOpen(false);
+      await load();
+    } catch (e) {
+      setSecError((e as Error).message);
+    } finally {
+      setSecBusy(false);
+    }
   }
 
   async function saveSchool() {
@@ -494,6 +536,7 @@ export default function SuperAdminDashboard() {
                         <td>{naira(s.stats.paid)}</td>
                         <td>
                           <div style={{ display: "flex", gap: 6 }}>
+                            <Button variant="outline" size="sm" onClick={() => openSections(s)}>Sections</Button>
                             <Button variant="outline" size="sm" onClick={() => openSub(s)}>Manage</Button>
                             {s.platformStatus === "ACTIVE" ? (
                               <Button variant="danger" size="sm" onClick={() => openStatus(s, "SUSPENDED")}>Suspend</Button>
@@ -729,6 +772,31 @@ export default function SuperAdminDashboard() {
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
           <Button onClick={saveSub}>Save</Button>
+        </div>
+      </Modal>
+
+      {/* Section limit modal */}
+      <Modal open={secOpen} onClose={() => setSecOpen(false)} title={`Sections — ${secSchool?.name ?? ""}`}>
+        <Alert tone="info">
+          The school owner can create up to this many school sections (e.g. Primary, Secondary, Junior, Senior). Increase it here to let them add more.
+        </Alert>
+        {secData && secData.sections.length > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--duga-muted)", marginBottom: 8 }}>Current sections ({secData.sections.length})</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {secData.sections.map((sec) => (
+                <Badge key={sec.id} tone="neutral">{sec.name}</Badge>
+              ))}
+            </div>
+          </div>
+        )}
+        <Field label="Max sections the owner can create" required>
+          <Input type="number" min={1} value={secMax} onChange={(e) => setSecMax(e.target.value)} placeholder="e.g. 2" />
+        </Field>
+        {secError && <Alert tone="danger">{secError}</Alert>}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+          <Button variant="ghost" onClick={() => setSecOpen(false)}>Cancel</Button>
+          <Button onClick={saveSections} disabled={secBusy}>{secBusy ? "Saving…" : "Save limit"}</Button>
         </div>
       </Modal>
 
