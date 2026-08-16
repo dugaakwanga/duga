@@ -306,7 +306,7 @@ export default function GamesPage() {
       ) : !list || list.items.length === 0 ? (
         <EmptyState title="No games yet" hint={isManager ? "Create one using the New game button." : "Your teachers haven" + "t assigned you any games yet."} />
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(100%,280px),1fr))", gap: 16 }}>
           {list.items.map((item) => {
             const prog = (item.myProgress ?? [])[0];
             return (
@@ -329,7 +329,7 @@ export default function GamesPage() {
                 <p style={{ fontSize: 13.5, color: "var(--duga-ink-2)", margin: "0 0 8px" }}>{item.description ?? ""}</p>
 
                 {isManager ? (
-                  <div style={{ display: "flex", gap: 8 }}>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <Button size="sm" variant="outline" onClick={() => { setPreview(true); setPlaying(item); }}>Preview play</Button>
                     <Button size="sm" variant="outline" onClick={() => openLeaderboard(item.id)}><Icon name="trophy" size={14} /> Board</Button>
                     {item.isPublished ? (

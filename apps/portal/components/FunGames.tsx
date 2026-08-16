@@ -57,7 +57,7 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 // ---------------------------------------------------------------------------
-// Shared game chrome (score, title, back).
+// Shared game chrome (score, title, level, back).
 // ---------------------------------------------------------------------------
 function GameFrame({
   title,
@@ -70,11 +70,50 @@ function GameFrame({
 }) {
   return (
     <div style={{ display: "grid", gap: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
         <div style={{ fontWeight: 800, fontSize: 15 }}>{title}</div>
-        {right}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>{right}</div>
       </div>
       {children}
+    </div>
+  );
+}
+
+function LevelBadge({ level }: { level: number }) {
+  return (
+    <span
+      style={{
+        fontSize: 12,
+        fontWeight: 800,
+        color: "#fff",
+        background: "linear-gradient(135deg, #f59e0b, #ef4444)",
+        padding: "3px 10px",
+        borderRadius: 999,
+        boxShadow: "0 2px 6px rgba(245,158,11,.35)",
+        whiteSpace: "nowrap",
+      }}
+    >
+      Level {level}
+    </span>
+  );
+}
+
+function LevelUpFlash({ show, note }: { show: boolean; note?: string }) {
+  if (!show) return null;
+  return (
+    <div
+      style={{
+        textAlign: "center",
+        fontSize: 15,
+        fontWeight: 800,
+        color: "#b45309",
+        background: "#fef3c7",
+        border: "1px solid #fcd34d",
+        borderRadius: 10,
+        padding: "8px 12px",
+      }}
+    >
+      ⭐ Level up! {note ?? "It gets harder — keep going!"}
     </div>
   );
 }
@@ -82,26 +121,65 @@ function GameFrame({
 // ---------------------------------------------------------------------------
 // Memory Match
 // ---------------------------------------------------------------------------
-const MEMORY_EMOJIS = ["🍎", "🍌", "🍇", "🍓", "🍉", "🍍"];
+const MEMORY_POOL = ["🍎", "🍌", "🍇", "🍓", "🍉", "🍍", "🥕", "🌽"];
+const MEMORY_MAX_LEVEL = 3;
 
 interface MemoryCard {
   id: number;
   emoji: string;
 }
 
+function pairsForLevel(level: number): number {
+  return level + 2; // 3, 4, 5 pairs
+}
+
+function makeMemoryCards(level: number): MemoryCard[] {
+  const emojis = MEMORY_POOL.slice(0, pairsForLevel(level));
+  return shuffle([...emojis, ...emojis].map((emoji, id) => ({ id, emoji })));
+}
+
+function memoryTotalPairs(): number {
+  let total = 0;
+  for (let l = 1; l <= MEMORY_MAX_LEVEL; l++) total += pairsForLevel(l);
+  return total;
+}
+
 function MemoryGame({ onFinish }: { onFinish: (score: number) => void }) {
-  const [cards] = useState<MemoryCard[]>(() => shuffle([...MEMORY_EMOJIS, ...MEMORY_EMOJIS].map((emoji, id) => ({ id, emoji }))));
+  const [level, setLevel] = useState(1);
+  const [pairs, setPairs] = useState(() => pairsForLevel(1));
+  const [cards, setCards] = useState<MemoryCard[]>(() => makeMemoryCards(1));
   const [flipped, setFlipped] = useState<number[]>([]);
   const [matched, setMatched] = useState<number[]>([]);
   const [moves, setMoves] = useState(0);
+  const [levelUp, setLevelUp] = useState(false);
+  const levelRef = useRef(1);
+  const matchesRef = useRef(0);
   const doneRef = useRef(false);
+  const onFinishRef = useRef(onFinish);
+  onFinishRef.current = onFinish;
 
   useEffect(() => {
-    if (matched.length === MEMORY_EMOJIS.length && !doneRef.current) {
-      doneRef.current = true;
-      onFinish(clampScore(100 - (moves - MEMORY_EMOJIS.length) * 8));
+    if (matched.length === 0) return;
+    if (matched.length === pairs * 2 && !doneRef.current) {
+      matchesRef.current += pairs;
+      if (levelRef.current >= MEMORY_MAX_LEVEL) {
+        doneRef.current = true;
+        onFinishRef.current(clampScore((matchesRef.current / memoryTotalPairs()) * 100));
+      } else {
+        const nextLevel = levelRef.current + 1;
+        levelRef.current = nextLevel;
+        setLevel(nextLevel);
+        setPairs(pairsForLevel(nextLevel));
+        setCards(makeMemoryCards(nextLevel));
+        setMatched([]);
+        setFlipped([]);
+        setMoves(0);
+        setLevelUp(true);
+        window.setTimeout(() => setLevelUp(false), 1100);
+      }
     }
-  }, [matched, moves, onFinish]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matched]);
 
   function flip(id: number) {
     if (flipped.includes(id) || matched.includes(id) || flipped.length === 2) return;
@@ -117,9 +195,9 @@ function MemoryGame({ onFinish }: { onFinish: (score: number) => void }) {
         window.setTimeout(() => {
           setMatched((m) => [...m, a, b]);
           setFlipped([]);
-        }, 350);
+        }, 300);
       } else {
-        window.setTimeout(() => setFlipped([]), 700);
+        window.setTimeout(() => setFlipped([]), 650);
       }
     }
   }
@@ -127,10 +205,16 @@ function MemoryGame({ onFinish }: { onFinish: (score: number) => void }) {
   return (
     <GameFrame
       title="Memory Match"
-      right={<span style={{ fontSize: 13, fontWeight: 700 }}>Moves: {moves}</span>}
+      right={
+        <>
+          <LevelBadge level={level} />
+          <span style={{ fontSize: 13, fontWeight: 700 }}>Moves: {moves}</span>
+        </>
+      }
     >
+      <LevelUpFlash show={levelUp} note="More pairs to find!" />
       <p style={{ margin: 0, fontSize: 13, color: "var(--duga-muted)" }}>Flip two cards to find each matching pair.</p>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, maxWidth: 340, margin: "0 auto" }}>
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${level >= 3 ? 5 : 4}, minmax(44px, 1fr))`, gap: 8, maxWidth: 360, margin: "0 auto" }}>
         {cards.map((card, index) => {
           const isUp = flipped.includes(index) || matched.includes(index);
           return (
@@ -141,7 +225,7 @@ function MemoryGame({ onFinish }: { onFinish: (score: number) => void }) {
               aria-label={isUp ? card.emoji : "Hidden card"}
               style={{
                 aspectRatio: "1",
-                fontSize: 26,
+                fontSize: 24,
                 borderRadius: 10,
                 border: `1px solid ${matched.includes(index) ? "var(--duga-gold)" : "var(--duga-border)"}`,
                 background: isUp ? "#ffffff" : "linear-gradient(135deg, var(--duga-primary), var(--duga-gold))",
@@ -164,32 +248,35 @@ function MemoryGame({ onFinish }: { onFinish: (score: number) => void }) {
 // ---------------------------------------------------------------------------
 const GRID = 20;
 const CELL = 16;
+const SNAKE_LEVEL_EATEN = 5;
 
 interface SnakeState {
   snake: Array<[number, number]>;
   dir: [number, number];
   food: [number, number];
   eaten: number;
+  level: number;
   running: boolean;
   finished: boolean;
 }
 
 function SnakeGame({ onFinish }: { onFinish: (score: number) => void }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const stateRef = useRef<SnakeState>({ snake: [[10, 10]], dir: [1, 0], food: [15, 10], eaten: 0, running: true, finished: false });
+  const stateRef = useRef<SnakeState>({ snake: [[10, 10]], dir: [1, 0], food: [15, 10], eaten: 0, level: 1, running: true, finished: false });
   const [eaten, setEaten] = useState(0);
+  const [level, setLevel] = useState(1);
   const [status, setStatus] = useState("Use the arrow keys to move");
+  const [levelUp, setLevelUp] = useState(false);
+  const onFinishRef = useRef(onFinish);
+  onFinishRef.current = onFinish;
 
-  const finish = useCallback(
-    (score: number) => {
-      const s = stateRef.current;
-      if (s.finished) return;
-      s.finished = true;
-      s.running = false;
-      onFinish(clampScore(score));
-    },
-    [onFinish],
-  );
+  const finish = useCallback((score: number) => {
+    const s = stateRef.current;
+    if (s.finished) return;
+    s.finished = true;
+    s.running = false;
+    onFinishRef.current(clampScore(score));
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -225,7 +312,7 @@ function SnakeGame({ onFinish }: { onFinish: (score: number) => void }) {
       const hitWall = next[0] < 0 || next[0] >= GRID || next[1] < 0 || next[1] >= GRID;
       const hitSelf = s.snake.some(([x, y]) => x === next[0] && y === next[1]);
       if (hitWall || hitSelf) {
-        finish(s.eaten * 12);
+        finish(s.eaten * 12 + (s.level - 1) * 15);
         return;
       }
       const ate = next[0] === s.food[0] && next[1] === s.food[1];
@@ -234,6 +321,12 @@ function SnakeGame({ onFinish }: { onFinish: (score: number) => void }) {
         s.eaten += 1;
         setEaten(s.eaten);
         s.food = randomFood(s.snake);
+        if (s.eaten % SNAKE_LEVEL_EATEN === 0) {
+          s.level += 1;
+          setLevel(s.level);
+          setLevelUp(true);
+          window.setTimeout(() => setLevelUp(false), 1000);
+        }
       } else {
         s.snake.pop();
       }
@@ -261,13 +354,13 @@ function SnakeGame({ onFinish }: { onFinish: (score: number) => void }) {
       setStatus("Good luck!");
     };
     window.addEventListener("keydown", onKey);
-    const iv = window.setInterval(tick, 130);
+    const iv = window.setInterval(tick, Math.max(60, 140 - (stateRef.current.level - 1) * 20));
     draw();
     return () => {
       window.clearInterval(iv);
       window.removeEventListener("keydown", onKey);
     };
-  }, [finish]);
+  }, [finish, level]);
 
   function setDir(next: [number, number]) {
     const s = stateRef.current;
@@ -279,15 +372,21 @@ function SnakeGame({ onFinish }: { onFinish: (score: number) => void }) {
   return (
     <GameFrame
       title="Snake"
-      right={<span style={{ fontSize: 13, fontWeight: 700 }}>🍎 {eaten}</span>}
+      right={
+        <>
+          <LevelBadge level={level} />
+          <span style={{ fontSize: 13, fontWeight: 700 }}>🍎 {eaten}</span>
+        </>
+      }
     >
+      <LevelUpFlash show={levelUp} note="Speed increases!" />
       <p style={{ margin: 0, fontSize: 13, color: "var(--duga-muted)" }}>{status}</p>
       <div style={{ display: "grid", placeItems: "center" }}>
         <canvas
           ref={canvasRef}
           width={GRID * CELL}
           height={GRID * CELL}
-          style={{ border: "1px solid var(--duga-border)", borderRadius: 12, background: "#f8fafc", touchAction: "none" }}
+          style={{ border: "1px solid var(--duga-border)", borderRadius: 12, background: "#f8fafc", touchAction: "none", maxWidth: "100%" }}
         />
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 48px)", gap: 6, justifyContent: "center" }}>
@@ -317,24 +416,33 @@ interface Balloon {
 }
 
 const BALLOON_COLORS = ["#ef4444", "#3b82f6", "#22c55e", "#eab308", "#a855f7", "#ec4899"];
+const BALLOON_LEVEL_POP = 10;
 
 function BalloonPop({ onFinish }: { onFinish: (score: number) => void }) {
   const [balloons, setBalloons] = useState<Balloon[]>([]);
   const [popped, setPopped] = useState(0);
+  const [level, setLevel] = useState(1);
   const [timeLeft, setTimeLeft] = useState(30);
+  const [levelUp, setLevelUp] = useState(false);
   const doneRef = useRef(false);
   const idRef = useRef(0);
   const poppedRef = useRef(0);
+  const levelRef = useRef(1);
+  const onFinishRef = useRef(onFinish);
+  onFinishRef.current = onFinish;
 
   useEffect(() => {
     poppedRef.current = popped;
   }, [popped]);
 
   useEffect(() => {
+    const spawnEvery = Math.max(60, 125 - levelRef.current * 12);
+    const maxBalloons = 9 + levelRef.current * 2;
+    const speed = 2 + (levelRef.current - 1);
     const iv = window.setInterval(() => {
       setBalloons((prev) => {
-        let next = prev.map((b) => ({ ...b, y: b.y - 2 }));
-        if (Math.random() < 0.5 && prev.length < 14) {
+        let next = prev.map((b) => ({ ...b, y: b.y - speed }));
+        if (Math.random() < 0.55 && prev.length < maxBalloons) {
           idRef.current += 1;
           next = [
             ...next,
@@ -355,28 +463,40 @@ function BalloonPop({ onFinish }: { onFinish: (score: number) => void }) {
         if (next <= 0 && !doneRef.current) {
           doneRef.current = true;
           window.clearInterval(iv);
-          window.setTimeout(() => onFinish(clampScore(poppedRef.current * 5)), 200);
+          window.setTimeout(() => onFinishRef.current(clampScore(poppedRef.current * 5 + (levelRef.current - 1) * 12)), 200);
         }
         return next <= 0 ? 0 : next;
       });
-    }, 80);
+    }, spawnEvery);
     return () => window.clearInterval(iv);
-  }, [onFinish]);
+  }, [level]);
 
   function pop(id: number) {
     setBalloons((prev) => prev.filter((b) => b.id !== id));
-    setPopped((p) => p + 1);
+    setPopped((p) => {
+      const next = p + 1;
+      poppedRef.current = next;
+      if (next % BALLOON_LEVEL_POP === 0) {
+        levelRef.current += 1;
+        setLevel(levelRef.current);
+        setLevelUp(true);
+        window.setTimeout(() => setLevelUp(false), 1000);
+      }
+      return next;
+    });
   }
 
   return (
     <GameFrame
       title="Balloon Pop"
       right={
-        <span style={{ fontSize: 13, fontWeight: 700 }}>
-          🎈 {popped} · ⏱ {timeLeft.toFixed(1)}s
-        </span>
+        <>
+          <LevelBadge level={level} />
+          <span style={{ fontSize: 13, fontWeight: 700 }}>🎈 {popped} · ⏱ {timeLeft.toFixed(1)}s</span>
+        </>
       }
     >
+      <LevelUpFlash show={levelUp} note="Balloons come faster!" />
       <p style={{ margin: 0, fontSize: 13, color: "var(--duga-muted)" }}>Click the balloons to pop them before they float away!</p>
       <div
         style={{
@@ -415,15 +535,25 @@ function BalloonPop({ onFinish }: { onFinish: (score: number) => void }) {
 }
 
 // ---------------------------------------------------------------------------
-// Tic-Tac-Toe (vs computer)
+// Tic-Tac-Toe (vs computer, best of 5 with escalating difficulty)
 // ---------------------------------------------------------------------------
 type TCell = "X" | "O" | null;
+const TTT_WINS_TO_FINISH = 3;
+const TTT_MAX_ROUNDS = 5;
 
 function TicTacToe({ onFinish }: { onFinish: (score: number) => void }) {
   const [board, setBoard] = useState<TCell[]>(Array(9).fill(null));
   const [turn, setTurn] = useState<"X" | "O">("X");
   const [status, setStatus] = useState("You are X — tap a square to start");
+  const [wins, setWins] = useState(0);
+  const [level, setLevel] = useState(1);
+  const [levelUp, setLevelUp] = useState(false);
   const doneRef = useRef(false);
+  const winsRef = useRef(0);
+  const roundsRef = useRef(0);
+  const levelRef = useRef(1);
+  const onFinishRef = useRef(onFinish);
+  onFinishRef.current = onFinish;
 
   function winner(b: TCell[]): TCell {
     const lines: Array<[number, number, number]> = [
@@ -438,36 +568,70 @@ function TicTacToe({ onFinish }: { onFinish: (score: number) => void }) {
     return null;
   }
 
-  const end = useCallback(
-    (result: TCell) => {
-      if (doneRef.current) return;
+  function endRound(result: TCell) {
+    if (doneRef.current) return;
+    roundsRef.current += 1;
+    if (result === "X") {
+      winsRef.current += 1;
+      setWins(winsRef.current);
+      if (winsRef.current >= TTT_WINS_TO_FINISH || roundsRef.current >= TTT_MAX_ROUNDS) {
+        doneRef.current = true;
+        onFinishRef.current(clampScore(winsRef.current * 30 + 10));
+        return;
+      }
+      levelRef.current += 1;
+      setLevel(levelRef.current);
+      setLevelUp(true);
+      window.setTimeout(() => setLevelUp(false), 1000);
+      setStatus(`You win! Level ${levelRef.current} — the computer plays smarter now.`);
+    } else if (result === "O") {
+      setStatus("The computer wins this round — try again!");
+    } else {
+      setStatus("It's a draw! Next round.");
+    }
+    if (roundsRef.current >= TTT_MAX_ROUNDS) {
       doneRef.current = true;
-      if (result === "X") onFinish(100);
-      else if (result === "O") onFinish(25);
-      else onFinish(55);
-    },
-    [onFinish],
-  );
+      onFinishRef.current(clampScore(winsRef.current * 30 + 10));
+      return;
+    }
+    window.setTimeout(() => {
+      setBoard(Array(9).fill(null));
+      setTurn("X");
+    }, 800);
+  }
 
   function computerMove(b: TCell[]) {
     const empty = b.map((c, i) => (c ? -1 : i)).filter((i): i is number => i >= 0);
     if (empty.length === 0) return;
-    // Win if possible, else block, else random.
-    const tryCell = (mark: TCell): number | null => {
+    const lvl = levelRef.current;
+    let pick: number | null = null;
+    if (lvl >= 2) {
+      // Win if possible.
       for (const i of empty) {
         const copy = [...b];
-        copy[i] = mark;
-        if (winner(copy) === mark) return i;
+        copy[i] = "O";
+        if (winner(copy) === "O") { pick = i; break; }
       }
-      return null;
-    };
-    const pick = tryCell("O") ?? tryCell("X") ?? empty[Math.floor(Math.random() * empty.length)] ?? empty[0]!;
+    }
+    if (pick === null && lvl >= 3) {
+      // Block the player's winning move.
+      for (const i of empty) {
+        const copy = [...b];
+        copy[i] = "X";
+        if (winner(copy) === "X") { pick = i; break; }
+      }
+    }
+    if (pick === null && lvl >= 4) {
+      const center = empty.includes(4) ? 4 : null;
+      if (center !== null) pick = center;
+    }
+    if (pick === null) pick = empty[Math.floor(Math.random() * empty.length)] ?? empty[0]!;
     const next = [...b];
     next[pick] = "O";
     setBoard(next);
     const w = winner(next);
-    if (w) end(w);
-    else if (next.every((c) => c)) end(null);
+    if (w) endRound(w);
+    else if (next.every((c) => c)) endRound(null);
     else setTurn("X");
   }
 
@@ -478,13 +642,11 @@ function TicTacToe({ onFinish }: { onFinish: (score: number) => void }) {
     setBoard(next);
     const w = winner(next);
     if (w) {
-      end(w);
-      setStatus("You win!");
+      endRound(w);
       return;
     }
     if (next.every((c) => c)) {
-      end(null);
-      setStatus("It's a draw!");
+      endRound(null);
       return;
     }
     setTurn("O");
@@ -493,8 +655,21 @@ function TicTacToe({ onFinish }: { onFinish: (score: number) => void }) {
   }
 
   return (
-    <GameFrame title="Tic-Tac-Toe" right={<span style={{ fontSize: 13, fontWeight: 700 }}>{turn === "X" ? "Your turn" : "Computer"}</span>}>
+    <GameFrame
+      title="Tic-Tac-Toe"
+      right={
+        <>
+          <LevelBadge level={level} />
+          <span style={{ fontSize: 13, fontWeight: 700 }}>{turn === "X" ? "Your turn" : "Computer"}</span>
+        </>
+      }
+    >
+      <LevelUpFlash show={levelUp} note="The computer plays smarter now." />
       <p style={{ margin: 0, fontSize: 13, color: "var(--duga-muted)" }}>{status}</p>
+      <div style={{ display: "flex", gap: 10, justifyContent: "center", alignItems: "center" }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "var(--duga-primary)" }}>You: {wins}</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "var(--duga-muted)" }}>Best of 5</span>
+      </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 72px)", gap: 6, justifyContent: "center" }}>
         {board.map((cell, index) => (
           <button
@@ -525,52 +700,72 @@ function TicTacToe({ onFinish }: { onFinish: (score: number) => void }) {
 // ---------------------------------------------------------------------------
 // Word Scramble
 // ---------------------------------------------------------------------------
-const SCRAMBLE_WORDS = ["SCHOOL", "GARDEN", "PLAYER", "MUSIC", "TIGER", "BANANA", "ROCKET", "WINDOW"];
+const SCRAMBLE_WORDS = ["SCHOOL", "GARDEN", "PLAYER", "MUSIC", "TIGER", "BANANA", "ROCKET", "WINDOW", "ELEPHANT"];
+const SCRAMBLE_WORDS_PER_LEVEL = 3;
+const SCRAMBLE_LEVELS = Math.ceil(SCRAMBLE_WORDS.length / SCRAMBLE_WORDS_PER_LEVEL);
 
 function ScrambleGame({ onFinish }: { onFinish: (score: number) => void }) {
+  const [level, setLevel] = useState(1);
   const [round, setRound] = useState(0);
   const [tiles, setTiles] = useState<string[]>([]);
   const [picked, setPicked] = useState<number[]>([]);
   const [correct, setCorrect] = useState(0);
   const [status, setStatus] = useState("Tap the letters in order to build the word.");
+  const [levelUp, setLevelUp] = useState(false);
   const doneRef = useRef(false);
-  const word = SCRAMBLE_WORDS[round % SCRAMBLE_WORDS.length]!;
+  const onFinishRef = useRef(onFinish);
+  onFinishRef.current = onFinish;
+  const word = SCRAMBLE_WORDS[(level - 1) * SCRAMBLE_WORDS_PER_LEVEL + round] ?? SCRAMBLE_WORDS[0]!;
 
   useEffect(() => {
     setTiles(shuffle(word.split("")));
     setPicked([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [round]);
+  }, [round, level]);
 
   function tryWord() {
     const answer = picked.map((i) => tiles[i]).join("");
-    if (answer === word) {
-      const next = correct + 1;
-      setCorrect(next);
-      if (round + 1 >= 3) {
-        doneRef.current = true;
-        onFinish(clampScore((next / 3) * 100));
-      } else {
-        setRound((r) => r + 1);
-        setStatus("Correct! Next word.");
-      }
-    } else {
+    if (answer !== word) {
       setStatus("Not quite — try again.");
       setPicked([]);
+      return;
+    }
+    const nextCorrect = correct + 1;
+    setCorrect(nextCorrect);
+    const lastOfLevel = round + 1 >= SCRAMBLE_WORDS_PER_LEVEL;
+    const lastLevel = level >= SCRAMBLE_LEVELS;
+    if (lastOfLevel && lastLevel) {
+      doneRef.current = true;
+      onFinishRef.current(clampScore((nextCorrect / SCRAMBLE_WORDS.length) * 100));
+    } else if (lastOfLevel) {
+      setLevel((l) => l + 1);
+      setRound(0);
+      setLevelUp(true);
+      window.setTimeout(() => setLevelUp(false), 1100);
+      setStatus(`Level ${level + 1}! Longer words now.`);
+    } else {
+      setRound((r) => r + 1);
+      setStatus("Correct! Next word.");
     }
   }
 
   function giveUp() {
     if (doneRef.current) return;
     doneRef.current = true;
-    onFinish(clampScore((correct / 3) * 100));
+    onFinishRef.current(clampScore((correct / SCRAMBLE_WORDS.length) * 100));
   }
 
   return (
     <GameFrame
       title="Word Scramble"
-      right={<span style={{ fontSize: 13, fontWeight: 700 }}>Round {round + 1}/3 · {correct} ✓</span>}
+      right={
+        <>
+          <LevelBadge level={level} />
+          <span style={{ fontSize: 13, fontWeight: 700 }}>Round {round + 1}/3 · {correct} ✓</span>
+        </>
+      }
     >
+      <LevelUpFlash show={levelUp} note="The words are getting longer." />
       <p style={{ margin: 0, fontSize: 13, color: "var(--duga-muted)" }}>{status}</p>
       <div style={{ minHeight: 40, border: "1px dashed var(--duga-border)", borderRadius: 10, padding: 8, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", justifyContent: "center", background: "#f8fafc" }}>
         {picked.map((i) => (
@@ -589,7 +784,7 @@ function ScrambleGame({ onFinish }: { onFinish: (score: number) => void }) {
           );
         })}
       </div>
-      <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
+      <div style={{ display: "flex", justifyContent: "center", gap: 10, flexWrap: "wrap" }}>
         <ButtonDuga onClick={tryWord} disabled={picked.length !== word.length}>
           Check word
         </ButtonDuga>
@@ -695,7 +890,7 @@ export function FunGameLauncher({
   return (
     <div style={{ display: "grid", gap: 10 }}>
       <p style={{ margin: 0, fontSize: 13.5, color: "var(--duga-muted)" }}>
-        Pick a real game to play. When it ends you&apos;ll get a score out of 100.
+        Pick a real game to play. Games have levels — finish each level to push your score higher.
       </p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
         {GAME_CHOICES.map((g) => (

@@ -2,7 +2,7 @@ import { prisma } from "@duga/core/server";
 import { logAudit } from "@duga/core/server";
 import type { Module } from ".";
 import type { Ctx } from "@/app/api/v1/[...path]/route";
-import { can, str, num, resolveSection, sectionsOfTeacher } from "../helpers";
+import { can, str, num, resolveSection, sectionsOfTeacher, sectionArray } from "../helpers";
 
 async function visibleClassIds(ctx: Ctx): Promise<string[] | undefined> {
   const { role, teacher, student, parent } = ctx.session.user;
@@ -175,6 +175,72 @@ export const classesModule: Module = {
       const section = await prisma.schoolSection.create({ data: { schoolId, name, order: current + 1 } });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "section.created", entityType: "SchoolSection", entityId: section.id, meta: { name } });
       return section;
+    },
+
+    // Rename a school section and cascade it to every related record
+    // (levels, subjects, students and staff section assignments).
+    updateSection: async (ctx) => {
+      if (ctx.session.user.role !== "OWNER") throw new Error("Only the school owner can edit sections");
+      const schoolId = ctx.session.user.schoolId;
+      const oldName = str(ctx.body.section)?.trim();
+      const newName = str(ctx.body.name)?.trim();
+      if (!oldName || !newName) throw new Error("Section name is required");
+      if (oldName === newName) return { ok: true };
+      const exists = await prisma.schoolSection.findFirst({ where: { schoolId, name: { equals: newName, mode: "insensitive" }, NOT: { name: { equals: oldName, mode: "insensitive" } } } });
+      if (exists) throw new Error("A section with this name already exists");
+
+      await prisma.$transaction([
+        prisma.schoolSection.updateMany({ where: { schoolId, name: oldName }, data: { name: newName } }),
+        prisma.classLevel.updateMany({ where: { schoolId, section: oldName }, data: { section: newName } }),
+        prisma.subject.updateMany({ where: { schoolId, section: oldName }, data: { section: newName } }),
+        prisma.student.updateMany({ where: { schoolId, section: oldName }, data: { section: newName } }),
+      ]);
+
+      const teachers = await prisma.teacher.findMany({ where: { schoolId }, select: { id: true, sections: true } });
+      for (const teacher of teachers) {
+        const arr = sectionArray(teacher.sections);
+        if (arr.includes(oldName)) {
+          await prisma.teacher.update({ where: { id: teacher.id }, data: { sections: arr.map((s) => (s === oldName ? newName : s)) } });
+        }
+      }
+      const admins = await prisma.admin.findMany({ where: { schoolId }, select: { id: true, sections: true } });
+      for (const admin of admins) {
+        const arr = sectionArray(admin.sections);
+        if (arr.includes(oldName)) {
+          await prisma.admin.update({ where: { id: admin.id }, data: { sections: arr.map((s) => (s === oldName ? newName : s)) } });
+        }
+      }
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "section.updated", entityType: "SchoolSection", meta: { from: oldName, to: newName } });
+      return { ok: true };
+    },
+
+    // Delete a section, but only once it has no classes, subjects or students.
+    removeSection: async (ctx) => {
+      if (ctx.session.user.role !== "OWNER") throw new Error("Only the school owner can delete sections");
+      const schoolId = ctx.session.user.schoolId;
+      const name = str(ctx.body.section)?.trim();
+      if (!name) throw new Error("Section name is required");
+      const [levels, subjects, students] = await Promise.all([
+        prisma.classLevel.count({ where: { schoolId, section: name } }),
+        prisma.subject.count({ where: { schoolId, section: name } }),
+        prisma.student.count({ where: { schoolId, section: name } }),
+      ]);
+      if (levels + subjects + students > 0) {
+        throw new Error(`This section still has ${levels} level(s), ${subjects} subject(s) and ${students} student(s). Remove them first.`);
+      }
+      await prisma.schoolSection.deleteMany({ where: { schoolId, name } });
+      const teachers = await prisma.teacher.findMany({ where: { schoolId }, select: { id: true, sections: true } });
+      for (const teacher of teachers) {
+        const arr = sectionArray(teacher.sections).filter((s) => s !== name);
+        await prisma.teacher.update({ where: { id: teacher.id }, data: { sections: arr } });
+      }
+      const admins = await prisma.admin.findMany({ where: { schoolId }, select: { id: true, sections: true } });
+      for (const admin of admins) {
+        const arr = sectionArray(admin.sections).filter((s) => s !== name);
+        await prisma.admin.update({ where: { id: admin.id }, data: { sections: arr } });
+      }
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "section.deleted", entityType: "SchoolSection", meta: { name } });
+      return { ok: true };
     },
 
     // Assign one or more subjects (each optionally with a teacher) to a class

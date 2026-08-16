@@ -54,9 +54,11 @@ function DrillCard({
 function CategoryPicker({
   sections,
   onPick,
+  manage,
 }: {
   sections: Array<{ section: string; label: string; count: number; items: string[] }>;
   onPick: (s: string) => void;
+  manage?: (s: string) => React.ReactNode;
 }) {
   return (
     <div className="classes-drill">
@@ -68,7 +70,10 @@ function CategoryPicker({
             {s.count} item{s.count === 1 ? "" : "s"} · {s.items.slice(0, 5).join(", ") || "Nothing added yet"}
             {s.items.length > 5 ? "…" : ""}
           </div>
-          <div className="classes-drill-card__foot"><span className="classes-drill-card__manage">Open {s.label} →</span></div>
+          <div className="classes-drill-card__foot">
+            <span className="classes-drill-card__manage">Open {s.label} →</span>
+            {manage && <span onClick={(e) => e.stopPropagation()}>{manage(s.section)}</span>}
+          </div>
         </button>
       ))}
     </div>
@@ -284,6 +289,27 @@ export default function ClassesPage() {
     }
   }
 
+  async function renameSection(section: string) {
+    const name = window.prompt(`Rename the "${section}" section to:`, section);
+    if (!name || name.trim() === section) return;
+    try {
+      await api("classes/updateSection", { method: "POST", body: { section, name: name.trim() } });
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
+  async function removeSection(section: string) {
+    if (!confirm(`Delete the "${section}" section? This cannot be undone.`)) return;
+    try {
+      await api("classes/removeSection", { method: "POST", body: { section } });
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -349,6 +375,12 @@ export default function ClassesPage() {
           {view.name === "classes" && (
             <CategoryPicker
               onPick={(s) => setView({ name: "classes-list", section: s })}
+              manage={role === "OWNER" ? (s) => (
+                <span style={{ display: "inline-flex", gap: 4, marginLeft: 8 }}>
+                  <Button size="sm" variant="ghost" onClick={() => renameSection(s)}>Rename</Button>
+                  <Button size="sm" variant="danger" onClick={() => removeSection(s)}>Delete</Button>
+                </span>
+              ) : undefined}
               sections={sectionNames.map((section) => {
                 const items = classes.filter((item) => item.level.section === section).sort((a, b) => (a.level.order ?? 0) - (b.level.order ?? 0));
                 return { section, label: section, count: items.length, items: items.map((item) => `${item.level.name} ${item.name}`) };
