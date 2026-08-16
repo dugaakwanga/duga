@@ -323,7 +323,10 @@ export default function ClassesPage() {
             view.name === "overview" && role === "OWNER" ? (
               <Button variant="outline" onClick={() => openAdd("section")}><Icon name="plus" size={16} /> Add section</Button>
             ) : view.name === "classes-list" ? (
-              <Button onClick={() => setOpen(true)}><Icon name="plus" size={16} /> New class</Button>
+              <div style={{ display: "inline-flex", gap: 8 }}>
+                <Button onClick={() => setOpen(true)}><Icon name="plus" size={16} /> New class</Button>
+                <Button variant="outline" onClick={() => openAdd("level")}><Icon name="plus" size={16} /> Add level</Button>
+              </div>
             ) : view.name === "subjects-list" ? (
               <Button variant="outline" onClick={() => openAdd("subject")}><Icon name="plus" size={16} /> Add subject</Button>
             ) : view.name === "sessions" ? (
