@@ -28,6 +28,19 @@ export function recommendedGame(category: string): GameKind {
   }
 }
 
+// Deterministic game suggestion seeded by the game record (id/title) so each
+// educational game consistently launches a DIFFERENT mini-game instead of every
+// game in a category always replaying the same one. ~60% prefer the category
+// match, the rest rotate through the other games.
+export function recommendedGameFor(category: string, seed: string): GameKind {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  const preferred = recommendedGame(category);
+  if (h % 10 < 6) return preferred;
+  const others = GAME_CHOICES.map((g) => g.kind).filter((k) => k !== preferred);
+  return others[h % others.length] ?? preferred;
+}
+
 function clampScore(score: number): number {
   return Math.max(10, Math.min(100, Math.round(score)));
 }

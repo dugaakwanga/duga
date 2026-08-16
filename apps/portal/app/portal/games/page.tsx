@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { PageHeader, Card, Badge, Button, Field, Input, Textarea, Select, Modal, Alert, Spinner, EmptyState, Icon } from "@duga/ui";
 import { api } from "@/lib/client/api";
-import { FunGameLauncher, recommendedGame } from "@/components/FunGames";
+import { FunGameLauncher, recommendedGameFor } from "@/components/FunGames";
 
 interface GameProgressRow {
   id: string;
@@ -52,6 +52,21 @@ interface RosterStudent {
   admissionNumber: string;
 }
 
+interface LeaderboardRow {
+  rank: number;
+  studentId: string;
+  name: string;
+  className: string | null;
+  section: string;
+  games: number;
+  totalScore: number;
+  rewardPoints: number;
+  plays: number;
+  best: number;
+}
+
+const RANK_MEDALS = ["🥇", "🥈", "🥉"];
+
 export default function GamesPage() {
   const [list, setList] = useState<ApiList | null>(null);
   const [classes, setClasses] = useState<ClassOption[]>([]);
@@ -67,6 +82,11 @@ export default function GamesPage() {
   const [btn, setBtn] = useState<Record<string, boolean>>({});
   const [playing, setPlaying] = useState<GameItem | null>(null);
   const [preview, setPreview] = useState(false);
+  // Leaderboard modal
+  const [boardOpen, setBoardOpen] = useState(false);
+  const [boardLoading, setBoardLoading] = useState(false);
+  const [boardGame, setBoardGame] = useState("");
+  const [board, setBoard] = useState<LeaderboardRow[] | null>(null);
 
   const isManager = list?.role === "manage";
   const isParent = list?.role === "PARENT";
@@ -245,12 +265,40 @@ export default function GamesPage() {
     }
   }
 
+  async function openLeaderboard(gameId = "") {
+    setBoardGame(gameId);
+    setBoard(null);
+    setBoardOpen(true);
+    setBoardLoading(true);
+    try {
+      const res = await api<{ items: LeaderboardRow[] }>("games/leaderboard", { method: "POST", body: { gameId: gameId || undefined } });
+      setBoard(res.items);
+    } catch (e) {
+      alert((e as Error).message);
+      setBoardOpen(false);
+    } finally {
+      setBoardLoading(false);
+    }
+  }
+
+  const leaderboardActions = (
+    <div style={{ display: "flex", gap: 8 }}>
+      <Button variant="outline" onClick={() => openLeaderboard()}><Icon name="trophy" size={16} /> Leaderboard</Button>
+      {isManager && (
+        <>
+          <Button variant="outline" onClick={addLibrary}>Add 20 game templates</Button>
+          <Button onClick={() => { setForm({}); setOpen(true); }}><Icon name="plus" size={16} /> New game</Button>
+        </>
+      )}
+    </div>
+  );
+
   return (
     <div>
       <PageHeader
         title="Educational Games"
         subtitle={isManager ? "Create and assign fun educational games, then track scores and reward points." : isParent ? "Games assigned to your children. Parents can review them but do not play or earn rewards." : "Play the games your teachers assign and earn reward points."}
-        actions={isManager ? <div style={{ display: "flex", gap: 8 }}><Button variant="outline" onClick={addLibrary}>Add 20 game templates</Button><Button onClick={() => { setForm({}); setOpen(true); }}><Icon name="plus" size={16} /> New game</Button></div> : undefined}
+        actions={isManager ? leaderboardActions : <div style={{ display: "flex", gap: 8 }}><Button variant="outline" onClick={() => openLeaderboard()}><Icon name="trophy" size={16} /> Leaderboard</Button></div>}
       />
       {error && <Alert tone="danger">{error}</Alert>}
       {loading ? (
@@ -283,6 +331,7 @@ export default function GamesPage() {
                 {isManager ? (
                   <div style={{ display: "flex", gap: 8 }}>
                     <Button size="sm" variant="outline" onClick={() => { setPreview(true); setPlaying(item); }}>Preview play</Button>
+                    <Button size="sm" variant="outline" onClick={() => openLeaderboard(item.id)}><Icon name="trophy" size={14} /> Board</Button>
                     {item.isPublished ? (
                       <Button size="sm" variant="ghost" loading={btn[`unpublish-${item.id}`]} onClick={() => action(item, "unpublish")}>Unpublish</Button>
                     ) : (
@@ -388,11 +437,56 @@ export default function GamesPage() {
         </Modal>
       )}
 
+      <Modal open={boardOpen} onClose={() => setBoardOpen(false)} title="🏆 Leaderboard" wide>
+        <div style={{ display: "grid", gap: 12 }}>
+          {isManager && (
+            <Field label="Game" hint="Filter the board to a single game.">
+              <Select value={boardGame} onChange={(e) => openLeaderboard(e.target.value)}>
+                <option value="">All games (overall)</option>
+                {list?.items.map((g) => (
+                  <option key={g.id} value={g.id}>{g.title}</option>
+                ))}
+              </Select>
+            </Field>
+          )}
+          {boardLoading ? (
+            <Spinner size={24} />
+          ) : !board || board.length === 0 ? (
+            <EmptyState title="No scores yet" hint="Scores appear here once students play an assigned game." />
+          ) : (
+            <table className="duga-table">
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Student</th>
+                  <th>Class</th>
+                  <th>Games</th>
+                  <th>Best</th>
+                  <th>Total points</th>
+                </tr>
+              </thead>
+              <tbody>
+                {board.map((row) => (
+                  <tr key={row.studentId}>
+                    <td><strong>{RANK_MEDALS[row.rank - 1] ?? row.rank}</strong></td>
+                    <td>{row.name}<div style={{ fontSize: 12, color: "var(--duga-muted)" }}>{row.section.toLowerCase()}</div></td>
+                    <td>{row.className ?? "—"}</td>
+                    <td>{row.games}</td>
+                    <td>{row.best}</td>
+                    <td>{row.rewardPoints}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </Modal>
+
       <Modal open={!!playing} onClose={() => { setPlaying(null); setPreview(false); }} title={playing ? `${playing.title}${preview ? " — preview" : ""}` : "Play a game"} wide>
         {playing && (
           <FunGameLauncher
             key={`${playing.id}-${preview ? "preview" : "play"}`}
-            initialKind={recommendedGame(playing.category)}
+            initialKind={recommendedGameFor(playing.category, playing.id)}
             preview={preview}
             onFinish={completeBuiltInGame}
           />

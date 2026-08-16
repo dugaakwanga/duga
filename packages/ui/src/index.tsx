@@ -250,7 +250,7 @@ export type IconName =
   | "dashboard" | "students" | "staff" | "classes" | "notes" | "assignment" | "quiz"
   | "live" | "attendance" | "results" | "messages" | "announcements" | "fees"
   | "hostel" | "timetable" | "bus" | "reports" | "settings" | "audit" | "applications"
-  | "notifications" | "logout" | "back" | "plus" | "more" | "check" | "clock" | "home" | "menu";
+  | "notifications" | "logout" | "back" | "plus" | "more" | "check" | "clock" | "home" | "menu" | "trophy";
 
 const paths: Record<IconName, ReactNode> = {
   dashboard: <path d="M3 3h8v8H3zM13 3h8v5h-8zM13 10h8v11h-8zM3 13h8v8H3z" />,
@@ -282,6 +282,7 @@ const paths: Record<IconName, ReactNode> = {
   clock: <path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Zm0-14v5l3 3" />,
   home: <path d="M3 10l9-7 9 7v10a1 1 0 0 1-1 1h-5v-7h-6v7H4a1 1 0 0 1-1-1V10Z" />,
   menu: <path d="M3 6h18M3 12h18M3 18h18" />,
+  trophy: <path d="M8 21h8M12 17v4M7 4h10v6a5 5 0 0 1-10 0V4ZM7 6H4a1 1 0 0 0-1 1 4 4 0 0 0 4 4M17 6h3a1 1 0 0 1 1 1 4 4 0 0 1-4 4" />,
 };
 
 export function Icon({ name, size = 18, className }: { name: IconName; size?: number; className?: string }) {

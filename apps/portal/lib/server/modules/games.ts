@@ -208,6 +208,61 @@ export const gamesModule: Module = {
   },
 
   actions: {
+    // School leaderboard: top players by total best-score across the games
+    // they have been assigned (or, when gameId is given, for one game only).
+    leaderboard: async (ctx) => {
+      can(ctx, ctx.session.user.role === "STUDENT" || ctx.session.user.role === "PARENT" ? "games:play" : "games:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const gameId = str(ctx.body.gameId);
+      const rows = await prisma.gameProgress.findMany({
+        where: { schoolId, ...(gameId ? { gameId } : {}) },
+        select: {
+          gameId: true,
+          plays: true,
+          bestScore: true,
+          rewardPoints: true,
+          student: {
+            select: {
+              id: true,
+              section: true,
+              admissionNumber: true,
+              classGroup: { select: { name: true, level: { select: { name: true } } } },
+              user: { select: { firstName: true, lastName: true } },
+            },
+          },
+        },
+      });
+      const byStudent = new Map<
+        string,
+        { studentId: string; name: string; className: string | null; section: string; games: number; totalScore: number; rewardPoints: number; plays: number; best: number }
+      >();
+      for (const r of rows) {
+        const key = r.student.id;
+        const current = byStudent.get(key) ?? {
+          studentId: key,
+          name: `${r.student.user.firstName} ${r.student.user.lastName}`,
+          className: r.student.classGroup ? `${r.student.classGroup.level.name} ${r.student.classGroup.name}` : null,
+          section: r.student.section,
+          games: 0,
+          totalScore: 0,
+          rewardPoints: 0,
+          plays: 0,
+          best: 0,
+        };
+        current.games += 1;
+        current.totalScore += r.bestScore;
+        current.rewardPoints += r.rewardPoints;
+        current.plays += r.plays;
+        current.best = Math.max(current.best, r.bestScore);
+        byStudent.set(key, current);
+      }
+      const items = [...byStudent.values()]
+        .sort((a, b) => b.totalScore - a.totalScore || b.best - a.best || b.rewardPoints - a.rewardPoints)
+        .slice(0, 20)
+        .map((item, index) => ({ rank: index + 1, ...item }));
+      return { items, gameId: gameId ?? null };
+    },
+
     seedLibrary: async (ctx) => {
       can(ctx, "games:manage");
       const teacher = await ensureTeacher(ctx);

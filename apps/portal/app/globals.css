@@ -1122,6 +1122,11 @@ body {
   border: 1px solid var(--duga-border);
   cursor: pointer;
 }
+.duga-section-switcher__add {
+  padding: 4px;
+  border-radius: 8px;
+  line-height: 1;
+}
 
 /* Print: strip portal chrome so in-page content (invoices, timetables,
    report cards) prints cleanly without the sidebar, topbar or AI assistant. */

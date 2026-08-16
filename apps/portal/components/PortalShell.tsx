@@ -348,9 +348,24 @@ function sectionLabel(s: Section): string {
 
 // Section navigator for the topbar. Admins/bursars get a dropdown to switch
 // between the school sections; teachers see an auto-scoped locked pill.
-function SectionSwitcher() {
+// Owners also get a quick "+" to add another school section.
+function SectionSwitcher({ role }: { role?: string }) {
+  const router = useRouter();
   const { section, available, canSwitch, setSection } = useSection();
   if (available.length === 0) return null;
+  const canAdd = role === "OWNER";
+
+  async function addSection() {
+    const name = window.prompt("New section name (e.g. Secondary):", "");
+    if (!name) return;
+    try {
+      await api("classes/addSection", { method: "POST", body: { name } });
+      router.refresh();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
   if (canSwitch) {
     return (
       <div className="duga-section-switcher" aria-label="School section">
@@ -367,6 +382,11 @@ function SectionSwitcher() {
             </option>
           ))}
         </select>
+        {canAdd && (
+          <button className="duga-btn duga-btn--ghost duga-btn--sm duga-section-switcher__add" onClick={addSection} title="Add another school section" aria-label="Add school section">
+            <Icon name="plus" size={16} />
+          </button>
+        )}
       </div>
     );
   }
@@ -527,7 +547,7 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
           </div>
 
           <div className="portal-topbar__actions">
-            <SectionSwitcher />
+            <SectionSwitcher role={user.role} />
             <div className="portal-topbar__user">
               <Avatar name={user.name} src={user.photoUrl} size={38} />
               <div className="portal-topbar__user-details">
