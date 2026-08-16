@@ -115,9 +115,12 @@ export default function ClassesPage() {
   const isAdmin = role === "OWNER" || role === "ADMIN";
   // Non-admins (students, parents, teachers) only see the sections that
   // actually contain their classes/subjects — never an empty sibling section.
-  const sectionNames = isAdmin
+  const allSectionNames = isAdmin
     ? [...new Set([...schoolSections.map((item) => item.name), ...classes.map((item) => item.level.section), ...subjects.map((item) => item.section)])]
     : [...new Set([...classes.map((item) => item.level.section), ...subjects.map((item) => item.section)])];
+  // When a section is active (switcher), only that section is shown — admins
+  // should never see sibling sections while scoped to one.
+  const sectionNames = section ? [section] : allSectionNames;
   const assignableSubjects = assignTarget
     ? subjects.filter((s) => s.section === assignTarget.level.section)
     : subjects;
@@ -365,8 +368,8 @@ export default function ClassesPage() {
           {/* Overview */}
           {view.name === "overview" && (
             <div className="classes-drill">
-              <DrillCard icon="classes" title="Classes" subtitle="Class groups organised by school section" count={classes.length} label="classes" onClick={() => setView({ name: "classes" })} />
-              <DrillCard icon="notes" title="Subjects" subtitle="Subjects taught across your school sections" count={subjects.length} label="subjects" onClick={() => setView({ name: "subjects" })} />
+              <DrillCard icon="classes" title="Classes" subtitle="Class groups organised by school section" count={classes.length} label="classes" onClick={() => setView(section ? { name: "classes-list", section } : { name: "classes" })} />
+              <DrillCard icon="notes" title="Subjects" subtitle="Subjects taught across your school sections" count={subjects.length} label="subjects" onClick={() => setView(section ? { name: "subjects-list", section } : { name: "subjects" })} />
               <DrillCard icon="timetable" title="Sessions" subtitle="Academic years, e.g. 2025/2026" count={sessions.length} label="sessions" onClick={() => setView({ name: "sessions" })} />
             </div>
           )}
