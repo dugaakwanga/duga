@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, PageHeader, Badge, Alert, Spinner, EmptyState, Button, Modal, Field, Input, Select, Icon } from "@duga/ui";
-import { api } from "@/lib/client/api";
+import { api, setActiveSection } from "@/lib/client/api";
 import { useSection } from "@/components/SectionContext";
 
 interface Level { id: string; name: string; section: string; order: number }
@@ -102,17 +103,20 @@ export default function ClassesPage() {
   const [shownSubjects, setShownSubjects] = useState<Record<string, boolean>>({});
   const [editingClass, setEditingClass] = useState<ClassGroup | null>(null);
   const [editingItem, setEditingItem] = useState<{ kind: "subject" | "level" | "session"; id: string } | null>(null);
-  // Drill-down navigation: overview -> (classes | subjects | sessions | sections) -> section -> items.
+  // Drill-down navigation: overview -> (classes | subjects | levels | sessions | sections) -> section -> items.
   type View =
     | { name: "overview" }
     | { name: "classes" }
     | { name: "subjects" }
+    | { name: "levels" }
     | { name: "sessions" }
     | { name: "sections" }
     | { name: "classes-list"; section: string }
-    | { name: "subjects-list"; section: string };
+    | { name: "subjects-list"; section: string }
+    | { name: "levels-list"; section: string };
   const [view, setView] = useState<View>({ name: "overview" });
-  const { section } = useSection();
+  const router = useRouter();
+  const { section, setSection } = useSection();
   const isAdmin = role === "OWNER" || role === "ADMIN";
   // Non-admins (students, parents, teachers) only see the sections that
   // actually contain their classes/subjects — never an empty sibling section.
@@ -258,6 +262,7 @@ export default function ClassesPage() {
       setAddKind("");
       setAddForm({});
       load();
+      if (addKind === "section") router.refresh();
     } catch (e) {
       alert((e as Error).message);
     } finally {
@@ -298,21 +303,32 @@ export default function ClassesPage() {
     }
   }
 
-  async function renameSection(section: string) {
-    const name = window.prompt(`Rename the "${section}" section to:`, section);
-    if (!name || name.trim() === section) return;
+  async function renameSection(sectionName: string) {
+    const name = window.prompt(`Rename the "${sectionName}" section to:`, sectionName);
+    if (!name || name.trim() === sectionName) return;
     try {
-      await api("classes/updateSection", { method: "POST", body: { section, name: name.trim() } });
+      await api("classes/updateSection", { method: "POST", body: { section: sectionName, name: name.trim() } });
+      // The active section may have just been renamed — reset the scope and
+      // re-render the shell so the section switcher and every other page pick
+      // up the new name without a browser refresh.
+      setActiveSection(null);
+      setSection(null);
+      router.refresh();
       load();
     } catch (e) {
       alert((e as Error).message);
     }
   }
 
-  async function removeSection(section: string) {
-    if (!confirm(`Delete the "${section}" section? This cannot be undone.`)) return;
+  async function removeSection(sectionName: string) {
+    if (!confirm(`Delete the "${sectionName}" section? This cannot be undone.`)) return;
     try {
-      await api("classes/removeSection", { method: "POST", body: { section } });
+      await api("classes/removeSection", { method: "POST", body: { section: sectionName } });
+      if (section === sectionName) {
+        setActiveSection(null);
+        setSection(null);
+      }
+      router.refresh();
       load();
     } catch (e) {
       alert((e as Error).message);
@@ -337,6 +353,8 @@ export default function ClassesPage() {
               </div>
             ) : view.name === "subjects-list" ? (
               <Button variant="outline" onClick={() => openAdd("subject")}><Icon name="plus" size={16} /> Add subject</Button>
+            ) : view.name === "levels" || view.name === "levels-list" ? (
+              <Button variant="outline" onClick={() => openAdd("level")}><Icon name="plus" size={16} /> Add level</Button>
             ) : view.name === "sessions" ? (
               <Button variant="outline" onClick={() => openAdd("session")}><Icon name="plus" size={16} /> Add session</Button>
             ) : view.name === "classes" ? (
@@ -359,6 +377,7 @@ export default function ClassesPage() {
             )}
             {view.name === "classes" && <span className="classes-crumb__current">Classes</span>}
             {view.name === "subjects" && <span className="classes-crumb__current">Subjects</span>}
+            {view.name === "levels" && <span className="classes-crumb__current">Levels</span>}
             {view.name === "sessions" && <span className="classes-crumb__current">Sessions</span>}
             {view.name === "sections" && <span className="classes-crumb__current">Sections</span>}
             {view.name === "classes-list" && (
@@ -375,6 +394,13 @@ export default function ClassesPage() {
                 <span className="classes-crumb__current">{view.section}</span>
               </>
             )}
+            {view.name === "levels-list" && (
+              <>
+                <button className="classes-crumb__link" onClick={() => setView({ name: "levels" })}>Levels</button>
+                <span className="classes-crumb__sep">/</span>
+                <span className="classes-crumb__current">{view.section}</span>
+              </>
+            )}
           </div>
 
           {/* Overview */}
@@ -382,6 +408,7 @@ export default function ClassesPage() {
             <div className="classes-drill">
               <DrillCard icon="classes" title="Classes" subtitle="Class groups organised by school section" count={classes.length} label="classes" onClick={() => setView(section ? { name: "classes-list", section } : { name: "classes" })} />
               <DrillCard icon="notes" title="Subjects" subtitle="Subjects taught across your school sections" count={subjects.length} label="subjects" onClick={() => setView(section ? { name: "subjects-list", section } : { name: "subjects" })} />
+              <DrillCard icon="classes" title="Levels" subtitle="Stages per section, e.g. Basic 1, JSS 1" count={levels.length} label="levels" onClick={() => setView(section ? { name: "levels-list", section } : { name: "levels" })} />
               <DrillCard icon="timetable" title="Sessions" subtitle="Academic years, e.g. 2025/2026" count={sessions.length} label="sessions" onClick={() => setView({ name: "sessions" })} />
               {isAdmin && (
                 <DrillCard icon="classes" title="Sections" subtitle="Add, rename or remove your school sections" count={schoolSections.length} label="sections" onClick={() => setView({ name: "sections" })} />
@@ -511,6 +538,51 @@ export default function ClassesPage() {
                             <div className="subject-list__actions">
                               <Button size="sm" variant="ghost" onClick={() => openEditItem("subject", s.id)}>Edit</Button>
                               <Button size="sm" variant="ghost" onClick={() => deleteItem("subject", s.id)}>Delete</Button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </Card>
+              );
+            })()}
+
+          {/* Levels -> pick a category */}
+          {view.name === "levels" && (
+            <CategoryPicker
+              onPick={(s) => setView({ name: "levels-list", section: s })}
+              sections={sectionNames.map((section) => {
+                const items = levels
+                  .filter((item) => item.section === section)
+                  .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+                return { section, label: section, count: items.length, items: items.map((item) => item.name) };
+              })}
+            />
+          )}
+
+          {/* Levels -> category -> list */}
+          {view.name === "levels-list" &&
+            (() => {
+              const sectionLevels = levels
+                .filter((item) => item.section === view.section)
+                .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+              return (
+                <Card title={`${view.section} levels`}>
+                  <div style={{ fontSize: 13.5, color: "var(--duga-ink-2)", marginBottom: 12 }}>
+                    Levels group classes by stage (e.g. Basic 1, JSS 1, SS 1). Rename, reorder or remove them here — removing a level is blocked while it still has classes.
+                  </div>
+                  {sectionLevels.length === 0 ? (
+                    <EmptyState title={`No ${view.section.toLowerCase()} levels yet`} hint={isAdmin ? "Create one with the “Add level” button above." : "Check back later."} />
+                  ) : (
+                    <div className="subject-list">
+                      {sectionLevels.map((l) => (
+                        <div key={l.id} className="subject-list__item">
+                          <span>{l.name}</span>
+                          {isAdmin && (
+                            <div className="subject-list__actions">
+                              <Button size="sm" variant="ghost" onClick={() => openEditItem("level", l.id)}>Edit</Button>
+                              <Button size="sm" variant="ghost" onClick={() => deleteItem("level", l.id)}>Delete</Button>
                             </div>
                           )}
                         </div>
