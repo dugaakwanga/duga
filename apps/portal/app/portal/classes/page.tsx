@@ -116,8 +116,13 @@ export default function ClassesPage() {
   const isAdmin = role === "OWNER" || role === "ADMIN";
   // Non-admins (students, parents, teachers) only see the sections that
   // actually contain their classes/subjects — never an empty sibling section.
+  // Admins (and the owner) always scope against the school sections the owner
+  // created — never data-derived ghost sections from legacy rows. Only fall
+  // back to data-derived names when no explicit sections exist yet.
   const allSectionNames = isAdmin
-    ? [...new Set([...schoolSections.map((item) => item.name), ...classes.map((item) => item.level.section), ...subjects.map((item) => item.section)])]
+    ? schoolSections.length
+      ? [...new Set(schoolSections.map((item) => item.name))]
+      : [...new Set([...classes.map((item) => item.level.section), ...subjects.map((item) => item.section)])]
     : [...new Set([...classes.map((item) => item.level.section), ...subjects.map((item) => item.section)])];
   // When a section is active (switcher), only that section is shown — admins
   // should never see sibling sections while scoped to one.

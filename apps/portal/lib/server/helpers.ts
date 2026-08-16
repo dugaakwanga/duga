@@ -18,26 +18,51 @@ export function isStaff(role: string): boolean {
 }
 
 // Distinct school sections a teacher is assigned to, derived from their classes.
+// Explicit teacher sections are kept only when they match a school section the
+// owner created (legacy free-form values like "PRIMARY"/"SECONDARY" are dropped).
 export async function sectionsOfTeacher(teacherId: string): Promise<Section[]> {
   const [teacher, rows] = await Promise.all([
-    prisma.teacher.findUnique({ where: { id: teacherId }, select: { sections: true } }),
+    prisma.teacher.findUnique({ where: { id: teacherId }, select: { sections: true, schoolId: true } }),
     prisma.classSubject.findMany({
     where: { teacherId },
     select: { classGroup: { select: { level: { select: { section: true } } } } },
     distinct: ["classGroupId"],
     }),
   ]);
+  const fromClasses = rows.map((r) => r.classGroup.level.section);
+  if (!teacher) return [...new Set(fromClasses)];
+  const saved = await prisma.schoolSection.findMany({ where: { schoolId: teacher.schoolId }, select: { name: true } });
+  const valid = new Set(saved.map((s) => s.name.trim().toLowerCase()));
+  const seen = new Set<string>();
   // Existing schools may have teachers created before explicit sections were
   // introduced. Keep their existing class assignments visible while new
   // assignments are always validated against the explicit setting.
-  return [...new Set([...sectionArray(teacher?.sections), ...rows.map((r) => r.classGroup.level.section)])];
+  const explicit = sectionArray(teacher.sections).filter((s) => {
+    const key = s.trim().toLowerCase();
+    if (!valid.has(key) || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return [...new Set([...explicit, ...fromClasses])];
 }
 
 // Admin and bursar section assignments. A missing profile or empty assignment
 // preserves the legacy full-school scope; an explicit assignment is restrictive.
+// Only sections the owner actually created count — legacy free-form values
+// (e.g. "PRIMARY"/"SECONDARY") and case-duplicates are filtered out.
 export async function sectionsOfAdmin(adminId: string, schoolId: string): Promise<Section[]> {
-  const admin = await prisma.admin.findFirst({ where: { id: adminId, schoolId }, select: { sections: true } });
-  const assigned = sectionArray(admin?.sections);
+  const [admin, saved] = await Promise.all([
+    prisma.admin.findFirst({ where: { id: adminId, schoolId }, select: { sections: true } }),
+    prisma.schoolSection.findMany({ where: { schoolId }, select: { name: true } }),
+  ]);
+  const valid = new Set(saved.map((s) => s.name.trim().toLowerCase()));
+  const seen = new Set<string>();
+  const assigned = sectionArray(admin?.sections).filter((s) => {
+    const key = s.trim().toLowerCase();
+    if (!valid.has(key) || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
   return assigned.length ? assigned : schoolSections(schoolId);
 }
 
