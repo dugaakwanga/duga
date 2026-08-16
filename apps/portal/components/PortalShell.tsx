@@ -338,30 +338,41 @@ interface ShellUser {
   canSwitchSection?: boolean;
 }
 
-// Primary | Secondary switcher shown to admins/bursars; auto-scoped pill for
-// teachers (based on the classes assigned to them).
+// Human-readable label for a section: "PRIMARY" -> "Primary",
+// "SECONDARY" -> "Secondary", otherwise the raw name capitalised.
+function sectionLabel(s: Section): string {
+  if (s === "PRIMARY") return "Primary";
+  if (s === "SECONDARY") return "Secondary";
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+}
+
+// Section navigator for the topbar. Admins/bursars get a dropdown to switch
+// between the school sections; teachers see an auto-scoped locked pill.
 function SectionSwitcher() {
   const { section, available, canSwitch, setSection } = useSection();
   if (available.length === 0) return null;
   if (canSwitch) {
     return (
-      <div className="duga-seg" aria-label="School section">
-        {available.map((s) => (
-          <button
-            key={s}
-            className={section === s ? "active" : ""}
-            onClick={() => setSection(s)}
-            aria-pressed={section === s}
-          >
-            {s === "SECONDARY" ? "Secondary" : "Primary"}
-          </button>
-        ))}
+      <div className="duga-section-switcher" aria-label="School section">
+        <span className="duga-section-switcher__label">Section</span>
+        <select
+          className="duga-select duga-section-switcher__select"
+          value={section ?? available[0] ?? ""}
+          onChange={(e) => setSection(e.target.value as Section)}
+          aria-label="Active school section"
+        >
+          {available.map((s) => (
+            <option key={s} value={s}>
+              {sectionLabel(s)}
+            </option>
+          ))}
+        </select>
       </div>
     );
   }
   return (
     <div className="duga-seg duga-seg--locked" title="Auto-scoped to your assigned classes">
-      <span>{available[0] === "SECONDARY" ? "Secondary" : "Primary"}</span>
+      <span>{section ? sectionLabel(section) : sectionLabel(available[0] ?? "PRIMARY")}</span>
     </div>
   );
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Card, Badge, Table, PageHeader, Button, Modal, Field, Input, Select, EmptyState, Alert, Spinner, Icon } from "@duga/ui";
 import { api } from "@/lib/client/api";
+import { useSection } from "@/components/SectionContext";
 
 interface StaffUser {
   id: string;
@@ -19,6 +20,7 @@ interface StaffUser {
 interface Subject { id: string; name: string; section: string }
 
 export default function StaffPage() {
+  const { section } = useSection();
   const [items, setItems] = useState<StaffUser[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [sections, setSections] = useState<string[]>([]);
@@ -62,7 +64,7 @@ export default function StaffPage() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [section]);
 
   async function save() {
     setSaving(true);
