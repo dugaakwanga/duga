@@ -2,7 +2,7 @@ import { prisma } from "@duga/core/server";
 import { logAudit } from "@duga/core/server";
 import type { Module } from ".";
 import type { Ctx } from "@/app/api/v1/[...path]/route";
-import { can, str, num, resolveSection, sectionsOfTeacher, sectionArray } from "../helpers";
+import { can, str, num, resolveSection, sectionsOfTeacher, sectionArray, isOwnerOrAdmin } from "../helpers";
 
 async function visibleClassIds(ctx: Ctx): Promise<string[] | undefined> {
   const { role, teacher, student, parent } = ctx.session.user;
@@ -162,7 +162,7 @@ export const classesModule: Module = {
 
   actions: {
     addSection: async (ctx) => {
-      if (ctx.session.user.role !== "OWNER") throw new Error("Only the school owner can create sections");
+      isOwnerOrAdmin(ctx);
       const schoolId = ctx.session.user.schoolId;
       const name = str(ctx.body.name)?.trim();
       if (!name) throw new Error("Section name is required");
@@ -180,7 +180,7 @@ export const classesModule: Module = {
     // Rename a school section and cascade it to every related record
     // (levels, subjects, students and staff section assignments).
     updateSection: async (ctx) => {
-      if (ctx.session.user.role !== "OWNER") throw new Error("Only the school owner can edit sections");
+      isOwnerOrAdmin(ctx);
       const schoolId = ctx.session.user.schoolId;
       const oldName = str(ctx.body.section)?.trim();
       const newName = str(ctx.body.name)?.trim();
@@ -216,7 +216,7 @@ export const classesModule: Module = {
 
     // Delete a section, but only once it has no classes, subjects or students.
     removeSection: async (ctx) => {
-      if (ctx.session.user.role !== "OWNER") throw new Error("Only the school owner can delete sections");
+      isOwnerOrAdmin(ctx);
       const schoolId = ctx.session.user.schoolId;
       const name = str(ctx.body.section)?.trim();
       if (!name) throw new Error("Section name is required");

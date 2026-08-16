@@ -102,12 +102,13 @@ export default function ClassesPage() {
   const [shownSubjects, setShownSubjects] = useState<Record<string, boolean>>({});
   const [editingClass, setEditingClass] = useState<ClassGroup | null>(null);
   const [editingItem, setEditingItem] = useState<{ kind: "subject" | "level" | "session"; id: string } | null>(null);
-  // Drill-down navigation: overview -> (classes | subjects | sessions) -> section -> items.
+  // Drill-down navigation: overview -> (classes | subjects | sessions | sections) -> section -> items.
   type View =
     | { name: "overview" }
     | { name: "classes" }
     | { name: "subjects" }
     | { name: "sessions" }
+    | { name: "sections" }
     | { name: "classes-list"; section: string }
     | { name: "subjects-list"; section: string };
   const [view, setView] = useState<View>({ name: "overview" });
@@ -322,6 +323,8 @@ export default function ClassesPage() {
           isAdmin ? (
             view.name === "overview" && role === "OWNER" ? (
               <Button variant="outline" onClick={() => openAdd("section")}><Icon name="plus" size={16} /> Add section</Button>
+            ) : view.name === "sections" ? (
+              <Button variant="outline" onClick={() => openAdd("section")}><Icon name="plus" size={16} /> Add section</Button>
             ) : view.name === "classes-list" ? (
               <div style={{ display: "inline-flex", gap: 8 }}>
                 <Button onClick={() => setOpen(true)}><Icon name="plus" size={16} /> New class</Button>
@@ -352,6 +355,7 @@ export default function ClassesPage() {
             {view.name === "classes" && <span className="classes-crumb__current">Classes</span>}
             {view.name === "subjects" && <span className="classes-crumb__current">Subjects</span>}
             {view.name === "sessions" && <span className="classes-crumb__current">Sessions</span>}
+            {view.name === "sections" && <span className="classes-crumb__current">Sections</span>}
             {view.name === "classes-list" && (
               <>
                 <button className="classes-crumb__link" onClick={() => setView({ name: "classes" })}>Classes</button>
@@ -374,6 +378,9 @@ export default function ClassesPage() {
               <DrillCard icon="classes" title="Classes" subtitle="Class groups organised by school section" count={classes.length} label="classes" onClick={() => setView(section ? { name: "classes-list", section } : { name: "classes" })} />
               <DrillCard icon="notes" title="Subjects" subtitle="Subjects taught across your school sections" count={subjects.length} label="subjects" onClick={() => setView(section ? { name: "subjects-list", section } : { name: "subjects" })} />
               <DrillCard icon="timetable" title="Sessions" subtitle="Academic years, e.g. 2025/2026" count={sessions.length} label="sessions" onClick={() => setView({ name: "sessions" })} />
+              {isAdmin && (
+                <DrillCard icon="classes" title="Sections" subtitle="Add, rename or remove your school sections" count={schoolSections.length} label="sections" onClick={() => setView({ name: "sections" })} />
+              )}
             </div>
           )}
 
@@ -381,7 +388,7 @@ export default function ClassesPage() {
           {view.name === "classes" && (
             <CategoryPicker
               onPick={(s) => setView({ name: "classes-list", section: s })}
-              manage={role === "OWNER" ? (s) => (
+              manage={isAdmin ? (s) => (
                 <span style={{ display: "inline-flex", gap: 4, marginLeft: 8 }}>
                   <Button size="sm" variant="ghost" onClick={() => renameSection(s)}>Rename</Button>
                   <Button size="sm" variant="danger" onClick={() => removeSection(s)}>Delete</Button>
@@ -540,6 +547,38 @@ export default function ClassesPage() {
                   ))}
                 </div>
               )}
+            </Card>
+          )}
+
+          {/* Sections — management area (owner & admin) */}
+          {view.name === "sections" && (
+            <Card title="School sections">
+              <div style={{ fontSize: 13.5, color: "var(--duga-ink-2)", marginBottom: 12 }}>
+                Sections group your school into arms (e.g. Nursery, Primary, Secondary). Renaming or deleting a section updates it everywhere — classes, subjects, students and staff.
+              </div>
+              {schoolSections.length === 0 ? (
+                <EmptyState title="No sections yet" hint="Add your first section with the button below." />
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {schoolSections.map((s) => (
+                    <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, borderBottom: "1px solid var(--duga-border)", paddingBottom: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 13.5, fontWeight: 700 }}>{s.name}</div>
+                        <div style={{ fontSize: 12, color: "var(--duga-muted)" }}>
+                          {classes.filter((c) => c.level.section === s.name).length} class(es) · {subjects.filter((sub) => sub.section === s.name).length} subject(s)
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <Button size="sm" variant="outline" onClick={() => renameSection(s.name)}>Rename</Button>
+                        <Button size="sm" variant="danger" onClick={() => removeSection(s.name)}>Delete</Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Button variant="outline" style={{ marginTop: 12 }} onClick={() => openAdd("section")}>
+                <Icon name="plus" size={16} /> Add section
+              </Button>
             </Card>
           )}
         </div>

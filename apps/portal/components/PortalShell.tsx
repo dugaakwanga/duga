@@ -353,7 +353,7 @@ function SectionSwitcher({ role }: { role?: string }) {
   const router = useRouter();
   const { section, available, canSwitch, setSection } = useSection();
   if (available.length === 0) return null;
-  const canAdd = role === "OWNER";
+  const canAdd = role === "OWNER" || role === "ADMIN";
 
   async function addSection() {
     const name = window.prompt("New section name (e.g. Secondary):", "");

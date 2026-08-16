@@ -76,6 +76,9 @@ async function handle(
       }
     } else if (method === "PATCH") {
       if (rest.length === 1) result = await run(mod.update!, { id: rest[0] });
+      // Self-scoped updates (profile, settings) target the logged-in user /
+      // their own school, so no id is required.
+      else if (rest.length === 0) result = await run(mod.update!);
       else return NextResponse.json({ error: "Not found" }, { status: 404 });
     } else if (method === "DELETE") {
       if (rest.length === 1) result = await run(mod.remove!, { id: rest[0] });
