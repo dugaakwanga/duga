@@ -330,6 +330,7 @@ interface ShellUser {
   role: Role;
   schoolId: string;
   photoUrl?: string | null;
+  designation?: string | null;
   financeAccess?: boolean;
   features?: string[];
   subfeatures?: string[];
@@ -520,7 +521,7 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
               <Avatar name={user.name} src={user.photoUrl} size={38} />
               <div className="portal-topbar__user-details">
                 <div className="portal-topbar__user-name">{user.name}</div>
-                <div className="portal-topbar__user-role">{user.role.toLowerCase()}</div>
+                <div className="portal-topbar__user-role">{user.role.toLowerCase()}{user.designation ? ` · ${user.designation}` : ""}</div>
               </div>
             </div>
 

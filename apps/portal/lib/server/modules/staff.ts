@@ -136,7 +136,7 @@ export const staffModule: Module = {
         },
       });
     } else {
-      await prisma.admin.create({ data: { userId: user.id, schoolId, designation: str(b.designation) ?? "Staff", sections: assignedSections.length ? assignedSections : undefined } });
+      await prisma.admin.create({ data: { userId: user.id, schoolId, designation: str(b.designation) ?? "Staff", sections: assignedSections.length ? assignedSections : undefined, staffNumber: staffNumber ?? null } });
     }
 
     await logAudit({ schoolId, userId: ctx.session.user.id, action: "staff.created", entityType: "User", entityId: user.id, meta: { role } });
@@ -230,7 +230,13 @@ export const staffModule: Module = {
         await prisma.admin.updateMany({ where: { userId: ctx.id, schoolId }, data: { designation: String(b.designation) } });
         await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { designation: String(b.designation) } });
       }
-      if (!target.admin) await prisma.admin.create({ data: { userId: target.id, schoolId, designation: str(b.designation) ?? "Staff" } });
+      const adminStaffNumber = str(b.staffNumber);
+      if (adminStaffNumber) {
+        const taken = await prisma.admin.findFirst({ where: { schoolId, staffNumber: adminStaffNumber, userId: { not: ctx.id } } });
+        if (taken) throw new Error("A staff member with this staff number already exists");
+        await prisma.admin.updateMany({ where: { userId: ctx.id, schoolId }, data: { staffNumber: adminStaffNumber } });
+      }
+      if (!target.admin) await prisma.admin.create({ data: { userId: target.id, schoolId, designation: str(b.designation) ?? "Staff", staffNumber: str(b.staffNumber) ?? null } });
       if (b.sections !== undefined) {
         if (ctx.session.user.role !== "OWNER") throw new Error("Only the school owner can assign sections to administrators or bursars");
         await prisma.admin.updateMany({ where: { userId: ctx.id, schoolId }, data: { sections: assignedSections } });

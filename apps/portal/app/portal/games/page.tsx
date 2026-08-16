@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { PageHeader, Card, Badge, Button, Field, Input, Textarea, Select, Modal, Alert, Spinner, EmptyState, Icon } from "@duga/ui";
 import { api } from "@/lib/client/api";
+import { FunGameLauncher, recommendedGame } from "@/components/FunGames";
 
 interface GameProgressRow {
   id: string;
@@ -51,56 +52,6 @@ interface RosterStudent {
   admissionNumber: string;
 }
 
-interface Challenge {
-  prompt: string;
-  options: string[];
-  answer: string;
-}
-
-const ACTIVITY_CHALLENGES: Record<string, Challenge[]> = {
-  MATH: [
-    { prompt: "What is 7 + 8?", options: ["13", "14", "15", "16"], answer: "15" },
-    { prompt: "What is 6 × 4?", options: ["20", "22", "24", "26"], answer: "24" },
-    { prompt: "Which fraction is equal to one half?", options: ["1/3", "2/4", "3/4", "4/5"], answer: "2/4" },
-    { prompt: "What comes next: 5, 10, 15, …?", options: ["18", "20", "25", "30"], answer: "20" },
-    { prompt: "A triangle has how many sides?", options: ["2", "3", "4", "5"], answer: "3" },
-  ],
-  WORD: [
-    { prompt: "Choose the correctly spelled word.", options: ["Becouse", "Because", "Becaus", "Beacause"], answer: "Because" },
-    { prompt: "Which word is a noun?", options: ["Quickly", "Happy", "School", "Run"], answer: "School" },
-    { prompt: "Choose the opposite of ‘ancient’.", options: ["Old", "Modern", "Historic", "Past"], answer: "Modern" },
-    { prompt: "Which word completes: ‘The pupils ___ quietly.’", options: ["reads", "read", "reading", "reader"], answer: "read" },
-    { prompt: "Which word rhymes with ‘light’?", options: ["Late", "Lift", "Night", "Lid"], answer: "Night" },
-  ],
-  QUIZ: [
-    { prompt: "Which organ pumps blood around the body?", options: ["Lungs", "Heart", "Brain", "Stomach"], answer: "Heart" },
-    { prompt: "Which planet is known as the Red Planet?", options: ["Earth", "Mars", "Jupiter", "Venus"], answer: "Mars" },
-    { prompt: "Water changes to vapour through which process?", options: ["Freezing", "Melting", "Evaporation", "Condensation"], answer: "Evaporation" },
-    { prompt: "Nigeria’s capital city is…", options: ["Lagos", "Kano", "Abuja", "Jos"], answer: "Abuja" },
-    { prompt: "A strong password should include…", options: ["Only your name", "Letters, numbers and symbols", "Only 123456", "Your date of birth"], answer: "Letters, numbers and symbols" },
-  ],
-  PUZZLE: [
-    { prompt: "Which shape has four equal sides?", options: ["Triangle", "Rectangle", "Square", "Circle"], answer: "Square" },
-    { prompt: "Find the odd one out.", options: ["Map", "Globe", "Atlas", "Banana"], answer: "Banana" },
-    { prompt: "Complete the pattern: ▲ ● ▲ ● …", options: ["▲", "■", "●", "★"], answer: "▲" },
-    { prompt: "Which direction is opposite to east?", options: ["North", "South", "West", "Up"], answer: "West" },
-    { prompt: "Which comes first in a timeline?", options: ["Tomorrow", "Next year", "Yesterday", "Later"], answer: "Yesterday" },
-  ],
-  MEMORY: [
-    { prompt: "Remember: apple, book, sun. Which word was in the list?", options: ["Moon", "Book", "River", "Chair"], answer: "Book" },
-    { prompt: "Remember: 3, 7, 2. What was the middle number?", options: ["2", "3", "7", "9"], answer: "7" },
-    { prompt: "Remember: red, blue, green. Which colour was last?", options: ["Red", "Blue", "Green", "Yellow"], answer: "Green" },
-    { prompt: "Remember: cat, drum, tree. Which item makes music?", options: ["Cat", "Drum", "Tree", "None"], answer: "Drum" },
-    { prompt: "Remember: 9, 4, 6. Which number was first?", options: ["4", "6", "8", "9"], answer: "9" },
-  ],
-};
-
-const DEFAULT_CHALLENGES: Challenge[] = ACTIVITY_CHALLENGES.QUIZ ?? [];
-
-function challengesFor(item: GameItem): Challenge[] {
-  return ACTIVITY_CHALLENGES[item.category] ?? DEFAULT_CHALLENGES;
-}
-
 export default function GamesPage() {
   const [list, setList] = useState<ApiList | null>(null);
   const [classes, setClasses] = useState<ClassOption[]>([]);
@@ -115,7 +66,6 @@ export default function GamesPage() {
   const [scores, setScores] = useState<Record<string, string>>({});
   const [btn, setBtn] = useState<Record<string, boolean>>({});
   const [playing, setPlaying] = useState<GameItem | null>(null);
-  const [answers, setAnswers] = useState<Record<number, string>>({});
   const [preview, setPreview] = useState(false);
 
   const isManager = list?.role === "manage";
@@ -275,28 +225,21 @@ export default function GamesPage() {
     }
   }
 
-  async function completeBuiltInGame() {
+  async function completeBuiltInGame(score: number) {
     if (!playing) return;
-    const challenges = challengesFor(playing);
-    if (Object.keys(answers).length !== challenges.length) return alert("Answer every question before finishing.");
     if (preview) {
-      const score = Math.round((challenges.filter((challenge, index) => answers[index] === challenge.answer).length / challenges.length) * 100);
       setPlaying(null);
-      setAnswers({});
       setPreview(false);
-      alert(`Preview complete — your score would be ${score}%.`);
       return;
     }
-    const score = Math.round((challenges.filter((challenge, index) => answers[index] === challenge.answer).length / challenges.length) * 100);
     setBtn((b) => ({ ...b, [`play-${playing.id}`]: true }));
     try {
       await api(`games/${playing.id}/play`, { method: "POST", body: { score } });
       setPlaying(null);
-      setAnswers({});
       load();
-      alert(`Great work! Your score is ${score}%.`);
     } catch (e) {
       alert((e as Error).message);
+      setPlaying(null);
     } finally {
       setBtn((b) => ({ ...b, [`play-${playing.id}`]: false }));
     }
@@ -339,7 +282,7 @@ export default function GamesPage() {
 
                 {isManager ? (
                   <div style={{ display: "flex", gap: 8 }}>
-                    <Button size="sm" variant="outline" onClick={() => { setPreview(true); setPlaying(item); setAnswers({}); }}>Preview play</Button>
+                    <Button size="sm" variant="outline" onClick={() => { setPreview(true); setPlaying(item); }}>Preview play</Button>
                     {item.isPublished ? (
                       <Button size="sm" variant="ghost" loading={btn[`unpublish-${item.id}`]} onClick={() => action(item, "unpublish")}>Unpublish</Button>
                     ) : (
@@ -352,7 +295,7 @@ export default function GamesPage() {
                   <Badge tone="neutral">Assigned to your child</Badge>
                 ) : (
                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    <Button size="sm" variant="accent" onClick={() => { setPlaying(item); setAnswers({}); }}>▶ Play activity</Button>
+                    <Button size="sm" variant="accent" onClick={() => { setPlaying(item); }}>▶ Play a game</Button>
                     {item.gameUrl && (
                       <a href={item.gameUrl} target="_blank" rel="noreferrer" className="duga-btn duga-btn--outline duga-btn--sm">Open linked game</a>
                     )}
@@ -445,25 +388,14 @@ export default function GamesPage() {
         </Modal>
       )}
 
-      <Modal open={!!playing} onClose={() => { setPlaying(null); setAnswers({}); setPreview(false); }} title={playing ? playing.title : "Play activity"} wide>
+      <Modal open={!!playing} onClose={() => { setPlaying(null); setPreview(false); }} title={playing ? `${playing.title}${preview ? " — preview" : ""}` : "Play a game"} wide>
         {playing && (
-          <div style={{ display: "grid", gap: 16 }}>
-            <p style={{ margin: 0, color: "var(--duga-muted)" }}>{preview ? "Previewing the activity to check it works — your answers here are not recorded." : "Answer all five questions. Your completed score will be recorded automatically."}</p>
-            {challengesFor(playing).map((challenge, index) => (
-              <div key={challenge.prompt} style={{ border: "1px solid var(--duga-border)", borderRadius: 10, padding: 14 }}>
-                <div style={{ fontWeight: 700, marginBottom: 10 }}>{index + 1}. {challenge.prompt}</div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 8 }}>
-                  {challenge.options.map((option) => (
-                    <Button key={option} size="sm" variant={answers[index] === option ? "accent" : "outline"} onClick={() => setAnswers((current) => ({ ...current, [index]: option }))}>{option}</Button>
-                  ))}
-                </div>
-              </div>
-            ))}
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-              <Button variant="ghost" onClick={() => { setPlaying(null); setAnswers({}); setPreview(false); }}>Cancel</Button>
-              <Button loading={btn[`play-${playing.id}`]} onClick={completeBuiltInGame}>{preview ? "Finish preview" : "Finish activity"}</Button>
-            </div>
-          </div>
+          <FunGameLauncher
+            key={`${playing.id}-${preview ? "preview" : "play"}`}
+            initialKind={recommendedGame(playing.category)}
+            preview={preview}
+            onFinish={completeBuiltInGame}
+          />
         )}
       </Modal>
     </div>

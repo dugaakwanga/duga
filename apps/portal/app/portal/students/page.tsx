@@ -57,7 +57,7 @@ export default function StudentsPage() {
   const [newClass, setNewClass] = useState<Record<string, string>>({});
   const [creatingClass, setCreatingClass] = useState(false);
   // Drill-down navigation: overview -> a configured school section (or unassigned) -> classes -> students.
-  type View = { name: "overview" } | { name: "category"; section: string };
+  type View = { name: "overview" } | { name: "category"; section: string } | { name: "class"; section: string; className: string };
   const [view, setView] = useState<View>({ name: "overview" });
   const unassignedStudents = items.filter((s) => !s.classGroup);
   const schoolSections = [...new Set([
@@ -76,6 +76,7 @@ export default function StudentsPage() {
     byClass.set(key, arr);
   }
   const classGroups = [...byClass.entries()].sort(([a], [b]) => a.localeCompare(b));
+  const activeClassStudents = view.name === "class" ? (byClass.get(view.className) ?? []) : [];
 
   const { section } = useSection();
   const load = useCallback(async () => {
@@ -305,7 +306,7 @@ export default function StudentsPage() {
             </button>
           )}
         </div>
-      ) : (
+      ) : view.name === "category" ? (
         <div style={{ display: "grid", gap: 18 }}>
           <div className="classes-crumb">
             <Button variant="ghost" size="sm" onClick={() => setView({ name: "overview" })}>
@@ -325,50 +326,70 @@ export default function StudentsPage() {
             {classGroups.length === 0 ? (
               <EmptyState title={`No ${view.section === "UNASSIGNED" ? "unassigned" : view.section.toLowerCase()} classes yet`} hint="Enroll students into classes to see them grouped here." />
             ) : (
-              <div style={{ display: "grid", gap: 16 }}>
-                {classGroups.map(([className, classStudents]) => (
-                  <Card key={className} title={className} className="students-group-card">
-                    <div style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
-                      <Badge tone="neutral">{classStudents.length} student{classStudents.length === 1 ? "" : "s"}</Badge>
+              <div className="classes-drill">
+                {classGroups.map(([className, classStudents], index) => (
+                  <button key={className} type="button" className={`classes-drill-card${index % 2 ? " classes-drill-card--primary" : ""}`} onClick={() => setView({ name: "class", section: view.section, className })}>
+                    <div className="classes-drill-card__icon"><Icon name="classes" size={20} /></div>
+                    <div className="classes-drill-card__title">{className}</div>
+                    <div className="classes-drill-card__sub">Click to view the students in this class</div>
+                    <div className="classes-drill-card__foot">
+                      <Badge tone={index % 2 ? "info" : "accent"}>{classStudents.length} student{classStudents.length === 1 ? "" : "s"}</Badge>
+                      <span className="classes-drill-card__manage">View students →</span>
                     </div>
-                    <Table headers={["Adm No.", "Name", "Status", "Fee access", "Actions"]}>
-                      {classStudents.map((s) => (
-                        <tr key={s.id}>
-                          <td>{s.admissionNumber}</td>
-                          <td>
-                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                              {s.photoUrl ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={s.photoUrl} alt="" style={{ width: 34, height: 34, borderRadius: "50%", objectFit: "cover", border: "1px solid var(--duga-border)" }} />
-                              ) : (
-                                <div style={{ width: 34, height: 34, borderRadius: "50%", background: "linear-gradient(135deg, var(--duga-primary), var(--duga-gold))", color: "#fff", display: "grid", placeItems: "center", fontWeight: 700, fontSize: 12, flexShrink: 0 }}>
-                                  {`${s.user.firstName[0] ?? ""}${s.user.lastName[0] ?? ""}`.toUpperCase()}
-                                </div>
-                              )}
-                              <span>
-                                {s.user.firstName} {s.user.lastName}
-                                <div style={{ fontSize: 12, color: "var(--duga-muted)" }}>{s.user.email || "—"}</div>
-                              </span>
-                            </div>
-                          </td>
-                          <td><Badge tone={s.status === "ACTIVE" ? "success" : "warning"}>{s.status}</Badge></td>
-                          <td>{feeBadge(s)}</td>
-                          <td>
-                            <div style={{ display: "flex", gap: 8 }}>
-                              <Button size="sm" variant="ghost" onClick={() => openEdit(s)}>Edit</Button>
-                              <Button size="sm" variant="outline" onClick={() => { setFeeTarget(s); setFeeForm({}); }}>Set fee</Button>
-                              <Button size="sm" variant="outline" onClick={() => { setPromoteTarget(s); setPromoteForm({}); }}>Move class</Button>
-                              <Button size="sm" variant="danger" onClick={() => removeStudent(s)}>Remove</Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </Table>
-                  </Card>
+                  </button>
                 ))}
               </div>
             )}
           </div>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 18 }}>
+          <div className="classes-crumb">
+            <Button variant="ghost" size="sm" onClick={() => setView({ name: "category", section: view.section })}>
+              <Icon name="back" size={14} /> {view.section === "UNASSIGNED" ? "Unassigned" : view.section}
+            </Button>
+            <span className="classes-crumb__sep">/</span>
+            <span className="classes-crumb__current">{view.className}</span>
+          </div>
+
+          <Card key={view.className} title={view.className} className="students-group-card">
+            <div style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+              <Badge tone="neutral">{activeClassStudents.length} student{activeClassStudents.length === 1 ? "" : "s"}</Badge>
+            </div>
+            <Table headers={["Adm No.", "Name", "Status", "Fee access", "Actions"]}>
+              {activeClassStudents.map((s) => (
+                <tr key={s.id}>
+                  <td>{s.admissionNumber}</td>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      {s.photoUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={s.photoUrl} alt="" style={{ width: 34, height: 34, borderRadius: "50%", objectFit: "cover", border: "1px solid var(--duga-border)" }} />
+                      ) : (
+                        <div style={{ width: 34, height: 34, borderRadius: "50%", background: "linear-gradient(135deg, var(--duga-primary), var(--duga-gold))", color: "#fff", display: "grid", placeItems: "center", fontWeight: 700, fontSize: 12, flexShrink: 0 }}>
+                          {`${s.user.firstName[0] ?? ""}${s.user.lastName[0] ?? ""}`.toUpperCase()}
+                        </div>
+                      )}
+                      <span>
+                        {s.user.firstName} {s.user.lastName}
+                        <div style={{ fontSize: 12, color: "var(--duga-muted)" }}>{s.user.email || "—"}</div>
+                      </span>
+                    </div>
+                  </td>
+                  <td><Badge tone={s.status === "ACTIVE" ? "success" : "warning"}>{s.status}</Badge></td>
+                  <td>{feeBadge(s)}</td>
+                  <td>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <Button size="sm" variant="ghost" onClick={() => openEdit(s)}>Edit</Button>
+                      <Button size="sm" variant="outline" onClick={() => { setFeeTarget(s); setFeeForm({}); }}>Set fee</Button>
+                      <Button size="sm" variant="outline" onClick={() => { setPromoteTarget(s); setPromoteForm({}); }}>Move class</Button>
+                      <Button size="sm" variant="danger" onClick={() => removeStudent(s)}>Remove</Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </Table>
+          </Card>
         </div>
       )}
 

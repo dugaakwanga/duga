@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { setActiveSection } from "@/lib/client/api";
+import { beginLoading, endLoading } from "@/lib/client/loading";
 import type { Section } from "@/lib/sections";
 
 interface SectionScope {
@@ -35,6 +36,16 @@ export function SectionProvider({
 }) {
   const [section, setSection] = useState<Section | null>(() => available[0] ?? null);
 
+  // Switching section changes every scoped query in the portal, so show the
+  // global loading overlay. The timed end is a minimum: in-flight API calls
+  // keep the overlay up until the new section's data has actually loaded.
+  function changeSection(next: Section) {
+    setActiveSection(next);
+    setSection(next);
+    beginLoading();
+    window.setTimeout(endLoading, 700);
+  }
+
   // Keep the api() layer in sync even before effects run.
   setActiveSection(section);
 
@@ -49,7 +60,7 @@ export function SectionProvider({
   }, [section]);
 
   const value = useMemo<SectionScope>(
-    () => ({ section, available, canSwitch, setSection }),
+    () => ({ section, available, canSwitch, setSection: changeSection }),
     [section, available, canSwitch],
   );
 

@@ -14,7 +14,7 @@ interface StaffUser {
   firstName: string;
   lastName: string;
   teacher?: { staffNumber: string; specialty: string | null; subjectIds?: string[] | null; sections?: string[] | null; designation: string | null } | null;
-  admin?: { designation: string | null; sections?: string[] | null } | null;
+  admin?: { designation: string | null; sections?: string[] | null; staffNumber?: string | null } | null;
 }
 interface Subject { id: string; name: string; section: string }
 
@@ -38,6 +38,11 @@ export default function StaffPage() {
   const [tempPassword, setTempPassword] = useState("");
   const [resetError, setResetError] = useState<string | null>(null);
   const [resetSaving, setResetSaving] = useState(false);
+  // Change-role modal (owner only)
+  const [roleTarget, setRoleTarget] = useState<StaffUser | null>(null);
+  const [roleValue, setRoleValue] = useState("");
+  const [roleSaving, setRoleSaving] = useState(false);
+  const [roleError, setRoleError] = useState<string | null>(null);
   const canManage = (user: StaffUser) => currentRole === "OWNER" || !["OWNER", "ADMIN", "BURSAR"].includes(user.role);
 
   async function load() {
@@ -88,7 +93,7 @@ export default function StaffPage() {
     setEditing(u);
     setForm({
       role: u.role,
-      staffNumber: u.teacher?.staffNumber ?? "",
+      staffNumber: u.teacher?.staffNumber ?? u.admin?.staffNumber ?? "",
       firstName: u.firstName,
       lastName: u.lastName,
       email: u.email ?? "",
@@ -134,6 +139,29 @@ export default function StaffPage() {
     }
   }
 
+  function openRole(u: StaffUser) {
+    setRoleTarget(u);
+    setRoleValue(u.role);
+    setRoleError(null);
+  }
+
+  async function saveRole() {
+    if (!roleTarget) return;
+    if (!roleValue || roleValue === roleTarget.role) { setRoleTarget(null); return; }
+    setRoleError(null);
+    setRoleSaving(true);
+    try {
+      await api(`staff/${roleTarget.id}`, { method: "PATCH", body: { role: roleValue } });
+      setNotice(`${roleTarget.firstName} ${roleTarget.lastName}'s role is now ${roleValue.toLowerCase()}.`);
+      setRoleTarget(null);
+      load();
+    } catch (e) {
+      setRoleError((e as Error).message);
+    } finally {
+      setRoleSaving(false);
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -168,10 +196,13 @@ export default function StaffPage() {
                 <td><Badge tone={u.role === "OWNER" ? "accent" : u.role === "ADMIN" ? "info" : "neutral"}>{u.role.toLowerCase()}</Badge></td>
                 <td>{u.teacher?.designation ?? u.admin?.designation ?? "—"}</td>
                 <td>{u.email || "—"}</td>
-                <td>{u.teacher?.staffNumber ?? u.admin?.designation ?? "—"}</td>
+                <td>{u.teacher?.staffNumber ?? u.admin?.staffNumber ?? "—"}</td>
                 <td><Badge tone={u.status === "ACTIVE" ? "success" : "danger"}>{u.status}</Badge></td>
                 <td>
                   <div style={{ display: "flex", gap: 6 }}>
+                    {currentRole === "OWNER" && u.role !== "OWNER" && (
+                      <Button size="sm" variant="accent" onClick={() => openRole(u)}>Change role</Button>
+                    )}
                     {canManage(u) && (
                       <Button size="sm" variant="ghost" onClick={() => { setResetTarget(u); setTempPassword(""); setResetError(null); }}>
                         Set password
@@ -254,11 +285,9 @@ export default function StaffPage() {
               <Field label="Phone">
                 <Input value={form.phone ?? ""} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
               </Field>
-              {(form.role === "TEACHER" || editing.role === "TEACHER") && (
-                <Field label="Staff number">
-                  <Input value={form.staffNumber ?? ""} onChange={(e) => setForm({ ...form, staffNumber: e.target.value })} placeholder="Auto if empty" />
-                </Field>
-              )}
+              <Field label="Staff number">
+                <Input value={form.staffNumber ?? ""} onChange={(e) => setForm({ ...form, staffNumber: e.target.value })} placeholder="Auto if empty" />
+              </Field>
             </>
           )}
           <Field label="Specialty">
@@ -338,6 +367,27 @@ export default function StaffPage() {
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <Button variant="ghost" onClick={() => setResetTarget(null)}>Cancel</Button>
           <Button onClick={submitTempPassword} loading={resetSaving}>Set temporary password</Button>
+        </div>
+      </Modal>
+
+      <Modal open={!!roleTarget} onClose={() => setRoleTarget(null)} title={roleTarget ? `Change role — ${roleTarget.firstName} ${roleTarget.lastName}` : ""}>
+        <Alert tone="info">
+          The role controls what this staff member can do: teachers manage classes and learning, admins run the school,
+          and bursars are limited to fees and finance. Their sections and subjects are managed in Edit.
+        </Alert>
+        <div style={{ marginTop: 14 }}>
+          <Field label="New role" required>
+            <Select value={roleValue} onChange={(e) => setRoleValue(e.target.value)}>
+              <option value="TEACHER">Teacher</option>
+              <option value="ADMIN">Admin</option>
+              <option value="BURSAR">Bursar</option>
+            </Select>
+          </Field>
+          {roleError && <Alert tone="danger">{roleError}</Alert>}
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+          <Button variant="ghost" onClick={() => setRoleTarget(null)}>Cancel</Button>
+          <Button onClick={saveRole} loading={roleSaving} disabled={!roleValue || roleValue === roleTarget?.role}>Save role</Button>
         </div>
       </Modal>
     </div>
