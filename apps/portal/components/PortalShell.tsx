@@ -406,7 +406,7 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
     setAiPreset(null);
     setAiBusy(true);
     try {
-      const d = await api<{ reply: string }>("ai/chat", { method: "POST", body: { messages: [...aiMessages, { role: "user", content: prompt }], page: pathname, section: getActiveSection() ?? undefined } });
+      const d = await api<{ reply: string }>("ai/chat", { method: "POST", body: { messages: [...aiMessages, { role: "user", content: prompt }], page: pathname, section: getActiveSection() ?? undefined }, loading: false });
       setAiMessages((prev) => [...prev, { role: "assistant", content: d.reply }]);
     } catch (e) {
       setAiMessages((prev) => [...prev, { role: "assistant", content: (e as Error).message }]);
@@ -419,7 +419,7 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
 
   const loadNotifs = useCallback(async () => {
     try {
-      const data = await api<{ items: Array<{ id: string; title: string; body: string; read: boolean; link?: string | null; createdAt: string }> }>("messages/notifications");
+      const data = await api<{ items: Array<{ id: string; title: string; body: string; read: boolean; link?: string | null; createdAt: string }> }>("messages/notifications", { loading: false });
       setNotifs(data.items);
       setNotifCount(data.items.filter((n) => !n.read).length);
     } catch {
@@ -435,7 +435,7 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
 
   async function markAllRead() {
     try {
-      await api("messages/notificationsRead", { method: "POST" });
+      await api("messages/notificationsRead", { method: "POST", loading: false });
       setNotifs((prev) => prev.map((n) => ({ ...n, read: true })));
       setNotifCount(0);
     } catch {
