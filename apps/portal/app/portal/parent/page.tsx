@@ -17,6 +17,7 @@ interface ChildStudent {
   feeStatus?: string | null;
   attendancePct?: number | null;
   subjectCount?: number;
+  subjects?: Array<{ id: string; name: string }>;
 }
 
 interface Announcement {
@@ -156,6 +157,19 @@ export default function ParentHomePage() {
                         <div className="parent-child-stat__label">Subjects</div>
                       </div>
                     </div>
+
+                    {(s.subjects ?? []).length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--duga-muted)", marginBottom: 6 }}>
+                          Subjects this term
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          {(s.subjects ?? []).map((sub) => (
+                            <Badge key={sub.id} tone="info">{sub.name}</Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {s.feeBalance != null && Number(s.feeBalance) > 0 && (
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, background: "var(--duga-danger-soft)", borderRadius: 10, padding: "8px 12px" }}>

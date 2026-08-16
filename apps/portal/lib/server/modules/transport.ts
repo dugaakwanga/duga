@@ -40,7 +40,13 @@ export const transportModule: Module = {
     });
     const vehicles = await prisma.vehicle.findMany({ where: { schoolId }, include: { route: true, driver: true, locations: { orderBy: { recordedAt: "desc" }, take: 1 } } });
     const drivers = await prisma.driver.findMany({ where: { schoolId } });
-    return { role, routes, vehicles, drivers };
+    const students = await prisma.student.findMany({
+      where: { schoolId, status: "ACTIVE" },
+      select: { id: true, admissionNumber: true, user: { select: { firstName: true, lastName: true } } },
+      orderBy: { admissionNumber: "asc" },
+      take: 500,
+    });
+    return { role, routes, vehicles, drivers, students };
   },
 
   actions: {

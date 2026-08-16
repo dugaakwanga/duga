@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { PageHeader, Card, Badge, Table, Alert, Spinner, EmptyState, Button, Icon, Modal, Field, Input, Select } from "@duga/ui";
+import { PageHeader, Card, Badge, Table, Alert, Spinner, EmptyState, Button, Icon, Modal, Field, Input, Select, Textarea } from "@duga/ui";
 import { api } from "@/lib/client/api";
 
 interface Bed {
@@ -66,6 +66,10 @@ export default function HostelPage() {
   const [hostelId, setHostelId] = useState<string>("");
   const [form, setForm] = useState<Record<string, string>>(emptyForm());
   const [saving, setSaving] = useState(false);
+  const [incidentOpen, setIncidentOpen] = useState(false);
+  const [incidentForm, setIncidentForm] = useState<Record<string, string>>({});
+  const [resolveIncident, setResolveIncident] = useState<Incident | null>(null);
+  const [resolveForm, setResolveForm] = useState<Record<string, string>>({});
 
   const load = useCallback(() => {
     return api<HostelData>("hostel")
@@ -128,6 +132,35 @@ export default function HostelPage() {
     }
   }
 
+  async function logIncident() {
+    setSaving(true);
+    try {
+      await api("hostel/logIncident", { method: "POST", body: incidentForm });
+      setIncidentOpen(false);
+      setIncidentForm({});
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveResolve() {
+    if (!resolveIncident) return;
+    setSaving(true);
+    try {
+      await api(`hostel/${resolveIncident.id}/resolveIncident`, { method: "POST", body: resolveForm });
+      setResolveIncident(null);
+      setResolveForm({});
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const roomName = (r: Room) => r.name ?? r.roomNumber ?? "—";
 
   if (error) return <Alert tone="danger">{error}</Alert>;
@@ -169,7 +202,7 @@ export default function HostelPage() {
       <PageHeader
         title="Hostel management"
         subtitle="Hostels, rooms, beds and boarding students."
-        actions={<Button onClick={() => openModal("hostel")}><Icon name="plus" size={16} /> New hostel</Button>}
+        actions={<div style={{ display: "flex", gap: 8 }}><Button variant="outline" onClick={() => { setIncidentOpen(true); setIncidentForm({}); }}>Log incident</Button><Button onClick={() => openModal("hostel")}><Icon name="plus" size={16} /> New hostel</Button></div>}
       />
       {(data.hostels ?? []).length === 0 ? (
         <EmptyState title="No hostels yet" />
@@ -253,6 +286,9 @@ export default function HostelPage() {
 
       {(data.incidents ?? []).length > 0 && (
         <Card title="Incident reports" style={{ marginTop: 16 }}>
+          <div style={{ marginBottom: 10 }}>
+            <Button variant="outline" size="sm" onClick={() => { setIncidentOpen(true); setIncidentForm({}); }}>Log incident</Button>
+          </div>
           <Table headers={["Title", "Severity", "Status", "Date", "Actions"]}>
             {(data.incidents ?? []).map((i) => (
               <tr key={i.id}>
@@ -260,7 +296,14 @@ export default function HostelPage() {
                 <td>{i.severity ?? "LOW"}</td>
                 <td><Badge tone={i.status === "RESOLVED" ? "success" : "warning"}>{i.status}</Badge></td>
                 <td>{new Date(i.date).toLocaleDateString()}</td>
-                <td><Button size="sm" variant="ghost" onClick={() => remove("incident", i.id, `incident "${i.title}"`)}>Delete</Button></td>
+                <td>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {i.status !== "RESOLVED" && (
+                      <Button size="sm" variant="outline" onClick={() => { setResolveIncident(i); setResolveForm({}); }}>Resolve</Button>
+                    )}
+                    <Button size="sm" variant="ghost" onClick={() => remove("incident", i.id, `incident "${i.title}"`)}>Delete</Button>
+                  </div>
+                </td>
               </tr>
             ))}
           </Table>
@@ -307,6 +350,52 @@ export default function HostelPage() {
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <Button variant="ghost" onClick={() => { setModal(""); setEditId(null); setForm(emptyForm()); }}>Cancel</Button>
           <Button onClick={submit} loading={saving}>{editId ? "Save changes" : "Create"}</Button>
+        </div>
+      </Modal>
+
+      <Modal open={incidentOpen} onClose={() => setIncidentOpen(false)} title="Log hostel incident">
+        <div className="duga-form-grid">
+          <Field label="Hostel" required>
+            <Select value={incidentForm.hostelId ?? ""} onChange={(e) => setIncidentForm({ ...incidentForm, hostelId: e.target.value })}>
+              <option value="">Select hostel…</option>
+              {(data.hostels ?? []).map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
+            </Select>
+          </Field>
+          <Field label="Severity">
+            <Select value={incidentForm.severity ?? "LOW"} onChange={(e) => setIncidentForm({ ...incidentForm, severity: e.target.value })}>
+              <option value="LOW">Low</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="HIGH">High</option>
+            </Select>
+          </Field>
+        </div>
+        <Field label="Student (optional)">
+          <Select value={incidentForm.studentId ?? ""} onChange={(e) => setIncidentForm({ ...incidentForm, studentId: e.target.value })}>
+            <option value="">—</option>
+            {(data.boardingStudents ?? []).map((s) => (
+              <option key={s.id} value={s.id}>{s.user.firstName} {s.user.lastName}</option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Title" required>
+          <Input value={incidentForm.title ?? ""} onChange={(e) => setIncidentForm({ ...incidentForm, title: e.target.value })} placeholder="e.g. Damaged property" />
+        </Field>
+        <Field label="Description">
+          <Textarea rows={3} value={incidentForm.description ?? ""} onChange={(e) => setIncidentForm({ ...incidentForm, description: e.target.value })} />
+        </Field>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+          <Button variant="ghost" onClick={() => setIncidentOpen(false)}>Cancel</Button>
+          <Button onClick={logIncident} loading={saving}>Log incident</Button>
+        </div>
+      </Modal>
+
+      <Modal open={!!resolveIncident} onClose={() => setResolveIncident(null)} title={resolveIncident ? `Resolve — ${resolveIncident.title}` : "Resolve incident"}>
+        <Field label="Action taken" hint="Record what was done to resolve this incident.">
+          <Textarea rows={3} value={resolveForm.actionTaken ?? ""} onChange={(e) => setResolveForm({ ...resolveForm, actionTaken: e.target.value })} />
+        </Field>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+          <Button variant="ghost" onClick={() => setResolveIncident(null)}>Cancel</Button>
+          <Button onClick={saveResolve} loading={saving}>Mark resolved</Button>
         </div>
       </Modal>
     </div>

@@ -49,6 +49,8 @@ export default function StudentsPage() {
   const [editForm, setEditForm] = useState<Record<string, string>>({});
   const [feeTarget, setFeeTarget] = useState<Student | null>(null);
   const [feeForm, setFeeForm] = useState<Record<string, string>>({});
+  const [promoteTarget, setPromoteTarget] = useState<Student | null>(null);
+  const [promoteForm, setPromoteForm] = useState<Record<string, string>>({});
   const [levels, setLevels] = useState<{ id: string; name: string; section: string }[]>([]);
   const [sessions, setSessions] = useState<{ id: string; name: string }[]>([]);
   const [newClassOpen, setNewClassOpen] = useState(false);
@@ -169,6 +171,21 @@ export default function StudentsPage() {
     try {
       await api(`students/${feeTarget.id}/setFee`, { method: "POST", body: feeForm });
       setFeeTarget(null);
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function savePromote() {
+    if (!promoteTarget) return;
+    setSaving(true);
+    try {
+      await api(`students/${promoteTarget.id}/promote`, { method: "POST", body: { ...promoteForm } });
+      setPromoteTarget(null);
+      setPromoteForm({});
       load();
     } catch (e) {
       alert((e as Error).message);
@@ -340,6 +357,7 @@ export default function StudentsPage() {
                             <div style={{ display: "flex", gap: 8 }}>
                               <Button size="sm" variant="ghost" onClick={() => openEdit(s)}>Edit</Button>
                               <Button size="sm" variant="outline" onClick={() => { setFeeTarget(s); setFeeForm({}); }}>Set fee</Button>
+                              <Button size="sm" variant="outline" onClick={() => { setPromoteTarget(s); setPromoteForm({}); }}>Move class</Button>
                               <Button size="sm" variant="danger" onClick={() => removeStudent(s)}>Remove</Button>
                             </div>
                           </td>
@@ -548,8 +566,7 @@ export default function StudentsPage() {
         </div>
       </Modal>
 
-      <Modal open={!!feeTarget} onClose={() => setFeeTarget(null)} title={feeTarget ? `Set fee — ${feeTarget.user.firstName} ${feeTarget.user.lastName}` : ""}>
-        {feeTarget?.fee?.expired && (
+      <Modal open={!!feeTarget} onClose={() => setFeeTarget(null)} title={feeTarget ? `Set fee — ${feeTarget.user.firstName} ${feeTarget.user.lastName}` : ""}>        {feeTarget?.fee?.expired && (
           <div style={{ marginBottom: 12 }}>
             <Alert tone="danger">This child&apos;s fee access has expired. Renew it below to reopen their portal access.</Alert>
           </div>
@@ -570,6 +587,27 @@ export default function StudentsPage() {
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <Button variant="ghost" onClick={() => setFeeTarget(null)}>Cancel</Button>
           <Button onClick={saveFee} loading={saving}>Save fee</Button>
+        </div>
+      </Modal>
+
+      <Modal open={!!promoteTarget} onClose={() => setPromoteTarget(null)} title={promoteTarget ? `Move to class — ${promoteTarget.user.firstName} ${promoteTarget.user.lastName}` : ""}>
+        <div style={{ marginBottom: 12 }}>
+          <Alert tone="info">Moving a student places them in a new class and records it in their placement history (e.g. promoting to the next grade).</Alert>
+        </div>
+        <Field label="New class" required>
+          <Select value={promoteForm.classGroupId ?? ""} onChange={(e) => setPromoteForm({ ...promoteForm, classGroupId: e.target.value })}>
+            <option value="">Select class…</option>
+            {classes.map((c) => (
+              <option key={c.id} value={c.id}>{c.level.name} {c.name} ({c.session.name})</option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Reason (optional)">
+          <Input value={promoteForm.reason ?? ""} onChange={(e) => setPromoteForm({ ...promoteForm, reason: e.target.value })} placeholder="e.g. Promoted to next grade" />
+        </Field>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+          <Button variant="ghost" onClick={() => setPromoteTarget(null)}>Cancel</Button>
+          <Button onClick={savePromote} loading={saving}>Move student</Button>
         </div>
       </Modal>
     </div>

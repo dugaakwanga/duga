@@ -45,6 +45,7 @@ interface TransportData {
   routes: Route[];
   vehicles: Vehicle[];
   drivers: Driver[];
+  students?: Array<{ id: string; admissionNumber: string; user: { firstName: string; lastName: string } }>;
   my?: Array<{ id: string; route: Route; stop: Stop | null; student?: { user: { firstName: string; lastName: string } } }>;
 }
 
@@ -59,6 +60,9 @@ export default function TransportPage() {
   const [routeId, setRouteId] = useState<string>("");
   const [form, setForm] = useState<Record<string, string>>(emptyForm());
   const [saving, setSaving] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [assignRoute, setAssignRoute] = useState<Route | null>(null);
+  const [assignForm, setAssignForm] = useState<Record<string, string>>({});
 
   const load = useCallback(() => {
     return api<TransportData>("transport")
@@ -112,6 +116,21 @@ export default function TransportPage() {
       load();
     } catch (e) {
       alert((e as Error).message);
+    }
+  }
+
+  async function assignStudent() {
+    if (!assignRoute) return;
+    setSaving(true);
+    try {
+      await api("transport/assignStudent", { method: "POST", body: { ...assignForm, routeId: assignRoute.id } });
+      setAssignOpen(false);
+      setAssignForm({});
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -173,6 +192,7 @@ export default function TransportPage() {
                 {r.fee ? ` · Fee: ₦${Number(r.fee).toLocaleString()}` : ""}
               </div>
               <div style={{ display: "flex", gap: 6 }}>
+                <Button size="sm" variant="outline" onClick={() => { setAssignRoute(r); setAssignForm({}); setAssignOpen(true); }}>Assign student</Button>
                 <Button size="sm" variant="outline" onClick={() => openModal("stop", { id: undefined, form: emptyForm(), routeId: r.id })}>Add stop</Button>
                 <Button size="sm" variant="outline" onClick={() => openModal("route", { id: r.id, form: { name: r.name, description: r.description ?? "", fee: r.fee != null ? String(r.fee) : "" }, routeId: "" })}>Edit</Button>
                 <Button size="sm" variant="ghost" onClick={() => remove("route", r.id, `route "${r.name}"`)}>Delete</Button>
@@ -357,6 +377,29 @@ export default function TransportPage() {
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <Button variant="ghost" onClick={() => { setModal(""); setEditId(null); setForm(emptyForm()); }}>Cancel</Button>
           <Button onClick={submit} loading={saving}>{editId ? "Save changes" : "Create"}</Button>
+        </div>
+      </Modal>
+
+      <Modal open={assignOpen} onClose={() => setAssignOpen(false)} title={`Assign student — ${assignRoute?.name ?? ""}`}>
+        <Field label="Student" required>
+          <Select value={assignForm.studentId ?? ""} onChange={(e) => setAssignForm({ ...assignForm, studentId: e.target.value })}>
+            <option value="">Select student…</option>
+            {(data.students ?? []).map((s) => (
+              <option key={s.id} value={s.id}>{s.user.firstName} {s.user.lastName} · {s.admissionNumber}</option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Pick-up stop">
+          <Select value={assignForm.stopId ?? ""} onChange={(e) => setAssignForm({ ...assignForm, stopId: e.target.value })}>
+            <option value="">—</option>
+            {(assignRoute?.stops ?? []).map((s) => (
+              <option key={s.id} value={s.id}>{s.order}. {s.name}</option>
+            ))}
+          </Select>
+        </Field>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+          <Button variant="ghost" onClick={() => setAssignOpen(false)}>Cancel</Button>
+          <Button loading={saving} onClick={assignStudent}>Assign</Button>
         </div>
       </Modal>
     </div>

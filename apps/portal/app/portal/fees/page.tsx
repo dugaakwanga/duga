@@ -163,6 +163,16 @@ export default function FeesPage() {
     setSetupOpen(true);
   }
 
+  async function sendReminders() {
+    if (!confirm("Send fee reminders to all parents with unpaid or partially paid invoices?")) return;
+    try {
+      const result = await api<{ sent: number }>("fees/remind", { method: "POST", body: {} });
+      alert(`${result.sent} reminder(s) sent.`);
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
   function openEditSetup(kind: SetupKind, item: FeeType | FeeStructure) {
     setSetupKind(kind);
     setEditingSetupId(item.id);
@@ -229,6 +239,7 @@ export default function FeesPage() {
           isStaff ? (
             <div style={{ display: "flex", gap: 8 }}>
               <Button variant="outline" onClick={() => openSetup("type")}><Icon name="plus" size={16} /> Add fee type</Button>
+              <Button variant="outline" onClick={sendReminders}><Icon name="notifications" size={16} /> Send reminders</Button>
               <Button onClick={() => setOpen(true)}><Icon name="plus" size={16} /> Generate invoices</Button>
             </div>
           ) : undefined

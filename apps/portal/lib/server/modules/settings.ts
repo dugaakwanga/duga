@@ -41,6 +41,7 @@ export const settingsModule: Module = {
     const settings = await prisma.schoolSetting.findMany({ where: { schoolId: ctx.session.user.schoolId } });
     const subscription = await prisma.subscription.findUnique({ where: { schoolId: ctx.session.user.schoolId } });
     const terms = await prisma.term.findMany({ where: { schoolId: ctx.session.user.schoolId }, include: { session: true }, orderBy: [{ session: { createdAt: "desc" } }, { termNumber: "asc" }] });
+    const sessions = await prisma.academicSession.findMany({ where: { schoolId: ctx.session.user.schoolId }, orderBy: { createdAt: "desc" } });
     const gradingSchemes = await prisma.gradingScheme.findMany({ where: { schoolId: ctx.session.user.schoolId } });
     const financeAccess = await prisma.schoolSetting.findUnique({
       where: { schoolId_key: { schoolId: ctx.session.user.schoolId, key: "adminFinanceAccess" } },
@@ -60,6 +61,7 @@ export const settingsModule: Module = {
       settings,
       subscription,
       terms,
+      sessions,
       gradingSchemes,
       role: ctx.session.user.role,
       financeAccess: financeAccess?.value === true || financeAccess?.value === "true",

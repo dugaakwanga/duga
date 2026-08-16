@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Card, PageHeader, Field, Input, Button, Badge, Alert, Spinner, Table, EmptyState } from "@duga/ui";
+import { Card, PageHeader, Field, Input, Button, Badge, Alert, Spinner, Table, EmptyState, Modal, Select } from "@duga/ui";
 import { api } from "@/lib/client/api";
 
 interface Term {
@@ -11,6 +11,11 @@ interface Term {
   termNumber: number;
   status: string;
   session: { name: string };
+}
+
+interface SessionOpt {
+  id: string;
+  name: string;
 }
 
 interface SchoolDaysConfig {
@@ -27,7 +32,9 @@ interface SettingsData {
   school: { id: string; name: string; shortName: string; phone: string | null; email: string | null; address: string | null; logoUrl: string | null };
   subscription: { plan: string; status: string; expiresAt: string | null } | null;
   terms: Term[];
+  sessions?: SessionOpt[];
   role?: string;
+  financeAccess?: boolean;
   schoolDays?: SchoolDaysConfig;
   restrictions?: RestrictionsConfig;
 }
@@ -54,6 +61,9 @@ export default function SettingsPage() {
   const [holidays, setHolidays] = useState<Array<{ date: string; name: string }>>([]);
   const [holidayForm, setHolidayForm] = useState<{ date: string; name: string }>({ date: "", name: "" });
   const [restrictions, setRestrictions] = useState<RestrictionsConfig>({ resultsRequirePayment: true, applicationsOpen: true });
+  const [termOpen, setTermOpen] = useState(false);
+  const [termForm, setTermForm] = useState<Record<string, string>>({});
+  const [termBusy, setTermBusy] = useState(false);
 
   useEffect(() => {
     api<SettingsData>("settings")
@@ -115,10 +125,37 @@ export default function SettingsPage() {
     }
   }
 
+  async function toggleFinanceAccess() {
+    setError(null);
+    try {
+      await api("settings/setFinanceAccess", { method: "POST", body: { value: !data?.financeAccess } });
+      setData({ ...data!, financeAccess: !data?.financeAccess });
+      setSaved(true);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   function addHoliday() {
     if (!holidayForm.date || !holidayForm.name) return;
     setHolidays((h) => [...h, holidayForm]);
     setHolidayForm({ date: "", name: "" });
+  }
+
+  async function createTerm() {
+    if (!termForm.sessionId || !termForm.termNumber) return alert("Choose a session and term number.");
+    setTermBusy(true);
+    try {
+      await api("settings/addTerm", { method: "POST", body: { ...termForm, name: termForm.name || undefined } });
+      setTermOpen(false);
+      setTermForm({});
+      const d = await api<SettingsData>("settings");
+      setData(d);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setTermBusy(false);
+    }
   }
 
   if (error) return <Alert tone="danger">{error}</Alert>;
@@ -246,7 +283,29 @@ export default function SettingsPage() {
             </Link>
           </Card>
 
+          {data.role === "OWNER" && (
+            <Card title="Finance access" style={{ marginTop: 16 }}>
+              <div style={{ fontSize: 13.5, color: "var(--duga-ink-2)", marginBottom: 12 }}>
+                By default only you (the owner) can see financial details. Grant an admin access to the finance dashboard, fees, reports and payroll here.
+              </div>
+              <button
+                type="button"
+                onClick={toggleFinanceAccess}
+                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", border: "1px solid var(--duga-border)", borderRadius: 10, cursor: "pointer", textAlign: "left", background: "transparent", width: "100%" }}
+              >
+                <span style={{ fontSize: 13.5, fontWeight: 600 }}>Admin finance access</span>
+                <Badge tone={data.financeAccess ? "success" : "neutral"}>{data.financeAccess ? "Granted" : "Not granted"}</Badge>
+              </button>
+              <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginTop: 8 }}>
+                When granted, administrators can view fees, reports, payroll and the finance dashboard. Teachers, students and parents never see financial details.
+              </div>
+            </Card>
+          )}
+
           <Card title="Academic terms" style={{ marginTop: 16 }}>
+            <div style={{ fontSize: 13.5, color: "var(--duga-ink-2)", marginBottom: 12 }}>
+              Each session can hold first, second and third term. Activate the current term.
+            </div>
             {data.terms.length === 0 ? (
               <EmptyState title="No terms yet" />
             ) : (
@@ -267,9 +326,36 @@ export default function SettingsPage() {
                 ))}
               </Table>
             )}
+            <Button variant="outline" style={{ marginTop: 12 }} onClick={() => { setTermForm({}); setTermOpen(true); }}>Add term</Button>
           </Card>
         </div>
       </div>
+
+      <Modal open={termOpen} onClose={() => setTermOpen(false)} title="Add term">
+        <Field label="Session" required>
+          <Select value={termForm.sessionId ?? ""} onChange={(e) => setTermForm({ ...termForm, sessionId: e.target.value })}>
+            <option value="">Select session…</option>
+            {(data.sessions ?? []).map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Term number" required>
+          <Select value={termForm.termNumber ?? ""} onChange={(e) => setTermForm({ ...termForm, termNumber: e.target.value })}>
+            <option value="">Select term…</option>
+            <option value="1">First term</option>
+            <option value="2">Second term</option>
+            <option value="3">Third term</option>
+          </Select>
+        </Field>
+        <Field label="Name (optional)">
+          <Input value={termForm.name ?? ""} onChange={(e) => setTermForm({ ...termForm, name: e.target.value })} placeholder="Defaults to First/Second/Third Term" />
+        </Field>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+          <Button variant="ghost" onClick={() => setTermOpen(false)}>Cancel</Button>
+          <Button loading={termBusy} onClick={createTerm}>Add term</Button>
+        </div>
+      </Modal>
     </div>
   );
 }

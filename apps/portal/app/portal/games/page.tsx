@@ -116,6 +116,7 @@ export default function GamesPage() {
   const [btn, setBtn] = useState<Record<string, boolean>>({});
   const [playing, setPlaying] = useState<GameItem | null>(null);
   const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [preview, setPreview] = useState(false);
 
   const isManager = list?.role === "manage";
   const isParent = list?.role === "PARENT";
@@ -278,6 +279,14 @@ export default function GamesPage() {
     if (!playing) return;
     const challenges = challengesFor(playing);
     if (Object.keys(answers).length !== challenges.length) return alert("Answer every question before finishing.");
+    if (preview) {
+      const score = Math.round((challenges.filter((challenge, index) => answers[index] === challenge.answer).length / challenges.length) * 100);
+      setPlaying(null);
+      setAnswers({});
+      setPreview(false);
+      alert(`Preview complete — your score would be ${score}%.`);
+      return;
+    }
     const score = Math.round((challenges.filter((challenge, index) => answers[index] === challenge.answer).length / challenges.length) * 100);
     setBtn((b) => ({ ...b, [`play-${playing.id}`]: true }));
     try {
@@ -330,6 +339,7 @@ export default function GamesPage() {
 
                 {isManager ? (
                   <div style={{ display: "flex", gap: 8 }}>
+                    <Button size="sm" variant="outline" onClick={() => { setPreview(true); setPlaying(item); setAnswers({}); }}>Preview play</Button>
                     {item.isPublished ? (
                       <Button size="sm" variant="ghost" loading={btn[`unpublish-${item.id}`]} onClick={() => action(item, "unpublish")}>Unpublish</Button>
                     ) : (
@@ -435,10 +445,10 @@ export default function GamesPage() {
         </Modal>
       )}
 
-      <Modal open={!!playing} onClose={() => { setPlaying(null); setAnswers({}); }} title={playing ? playing.title : "Play activity"} wide>
+      <Modal open={!!playing} onClose={() => { setPlaying(null); setAnswers({}); setPreview(false); }} title={playing ? playing.title : "Play activity"} wide>
         {playing && (
           <div style={{ display: "grid", gap: 16 }}>
-            <p style={{ margin: 0, color: "var(--duga-muted)" }}>Answer all five questions. Your completed score will be recorded automatically.</p>
+            <p style={{ margin: 0, color: "var(--duga-muted)" }}>{preview ? "Previewing the activity to check it works — your answers here are not recorded." : "Answer all five questions. Your completed score will be recorded automatically."}</p>
             {challengesFor(playing).map((challenge, index) => (
               <div key={challenge.prompt} style={{ border: "1px solid var(--duga-border)", borderRadius: 10, padding: 14 }}>
                 <div style={{ fontWeight: 700, marginBottom: 10 }}>{index + 1}. {challenge.prompt}</div>
@@ -450,8 +460,8 @@ export default function GamesPage() {
               </div>
             ))}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-              <Button variant="ghost" onClick={() => { setPlaying(null); setAnswers({}); }}>Cancel</Button>
-              <Button loading={btn[`play-${playing.id}`]} onClick={completeBuiltInGame}>Finish activity</Button>
+              <Button variant="ghost" onClick={() => { setPlaying(null); setAnswers({}); setPreview(false); }}>Cancel</Button>
+              <Button loading={btn[`play-${playing.id}`]} onClick={completeBuiltInGame}>{preview ? "Finish preview" : "Finish activity"}</Button>
             </div>
           </div>
         )}

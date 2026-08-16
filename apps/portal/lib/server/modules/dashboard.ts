@@ -119,6 +119,17 @@ export const dashboardModule: Module = {
         attMap.set(a.studentId, e);
       }
       const countByClass = new Map(subjectCounts.map((s) => [s.classGroupId, s._count._all]));
+      const childClassIdsUnique = [...new Set(children.map((c) => c.student.currentClassGroupId).filter((id): id is string => !!id))];
+      const subjectRows = await prisma.classSubject.findMany({
+        where: { classGroupId: { in: childClassIdsUnique } },
+        include: { subject: { select: { id: true, name: true } } },
+      });
+      const subjectsByClass = new Map<string, Array<{ id: string; name: string }>>();
+      for (const row of subjectRows) {
+        const list = subjectsByClass.get(row.classGroupId) ?? [];
+        list.push({ id: row.subject.id, name: row.subject.name });
+        subjectsByClass.set(row.classGroupId, list);
+      }
       const enriched = children.map((c) => {
         const att = attMap.get(c.studentId);
         return {
@@ -130,6 +141,7 @@ export const dashboardModule: Module = {
             feeStatus: invoiceById.get(c.studentId)?.status ?? null,
             attendancePct: att && att.total > 0 ? Math.round((att.present / att.total) * 100) : null,
             subjectCount: countByClass.get(c.student.currentClassGroupId ?? "") ?? 0,
+            subjects: subjectsByClass.get(c.student.currentClassGroupId ?? "") ?? [],
           },
         };
       });

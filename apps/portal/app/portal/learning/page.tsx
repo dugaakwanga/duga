@@ -33,7 +33,12 @@ export default function LearningPage() {
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
+  const [role, setRole] = useState<string | null>(null);
   const [isStudent, setIsStudent] = useState(false);
+  const [submitItem, setSubmitItem] = useState<Item | null>(null);
+  const [submitForm, setSubmitForm] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [liveBusy, setLiveBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -49,6 +54,7 @@ export default function LearningPage() {
       setItems(d.items);
       setOptions(opts);
       setIsStudent(me?.role === "STUDENT");
+      setRole(me?.role ?? null);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -112,6 +118,48 @@ export default function LearningPage() {
     }
   }
 
+  async function submitAssignment() {
+    if (!submitItem) return;
+    setSubmitting(true);
+    try {
+      await api(`learning/${submitItem.id}/submitAssignment`, { method: "POST", body: submitForm });
+      setSubmitItem(null);
+      setSubmitForm({});
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function controlLive(item: Item, action: "startLive" | "endLive") {
+    setLiveBusy(item.id);
+    try {
+      await api(`learning/${item.id}/${action}`, { method: "POST", body: {} });
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setLiveBusy(null);
+    }
+  }
+
+  async function joinLive(item: Item) {
+    setLiveBusy(item.id);
+    try {
+      const live = await api<{ joinLink?: string | null }>(`learning/${item.id}/joinLive`, { method: "POST", body: {} });
+      load();
+      if (item.joinLink) window.open(item.joinLink, "_blank");
+      else if (live.joinLink) window.open(live.joinLink, "_blank");
+      else alert("Live class joined — your attendance has been recorded.");
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setLiveBusy(null);
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -151,12 +199,46 @@ export default function LearningPage() {
                 {kind === "assignments" && item.dueAt && <>Due: {new Date(item.dueAt).toLocaleString()}</>}
                 {kind === "tests" && item._count && <> {item._count.questions ?? 0} questions</>}
                 {kind === "live" && item.scheduledAt && <>Starts: {new Date(item.scheduledAt).toLocaleString()}</>}
+                {kind === "live" && item.status && (
+                  <>
+                    {" "}· <Badge tone={item.status === "LIVE" ? "success" : item.status === "ENDED" ? "neutral" : "warning"}>{item.status}</Badge>
+                  </>
+                )}
                 {kind === "notes" && item.week ? <>Week {item.week}</> : null}
               </div>
-              {kind === "live" && item.joinLink && (
+              {kind === "live" && item.status === "LIVE" && (
+                <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+                  {isStudent ? (
+                    <Button size="sm" variant="accent" loading={liveBusy === item.id} onClick={() => joinLive(item)}>Join live class</Button>
+                  ) : (
+                    <>
+                      {item.joinLink && (
+                        <a href={item.joinLink} target="_blank" rel="noreferrer" className="duga-btn duga-btn--accent duga-btn--sm">Open session</a>
+                      )}
+                      <Button size="sm" variant="outline" loading={liveBusy === item.id} onClick={() => controlLive(item, "endLive")}>End class</Button>
+                    </>
+                  )}
+                </div>
+              )}
+              {kind === "live" && item.status !== "LIVE" && !isStudent && (
+                <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+                  {item.status === "SCHEDULED" && (
+                    <Button size="sm" variant="accent" loading={liveBusy === item.id} onClick={() => controlLive(item, "startLive")}>Start class</Button>
+                  )}
+                  {item.status === "ENDED" && item.joinLink && (
+                    <a href={item.joinLink} target="_blank" rel="noreferrer" className="duga-btn duga-btn--outline duga-btn--sm">Replay</a>
+                  )}
+                </div>
+              )}
+              {kind === "live" && item.joinLink && isStudent && (
                 <a href={item.joinLink} target="_blank" rel="noreferrer" className="duga-btn duga-btn--accent duga-btn--sm" style={{ marginTop: 10, display: "inline-flex" }}>
                   Join live class
                 </a>
+              )}
+              {kind === "assignments" && isStudent && (
+                <div style={{ marginTop: 10 }}>
+                  <Button size="sm" variant="accent" onClick={() => { setSubmitItem(item); setSubmitForm({}); }}>Submit assignment</Button>
+                </div>
               )}
               {kind === "tests" && item.status === "PUBLISHED" && isStudent && (
                 <Link href={`/portal/learning/take/${item.id}`} className="duga-btn duga-btn--accent duga-btn--sm" style={{ marginTop: 10, display: "inline-flex" }}>
@@ -232,6 +314,19 @@ export default function LearningPage() {
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <Button variant="ghost" onClick={() => { setOpen(false); setEditItem(null); }}>Cancel</Button>
           <Button onClick={() => (editItem ? saveEdit(editItem) : createItem())}>{editItem ? "Save changes" : "Create"}</Button>
+        </div>
+      </Modal>
+
+      <Modal open={!!submitItem} onClose={() => setSubmitItem(null)} title={submitItem ? `Submit — ${submitItem.title ?? ""}` : "Submit assignment"}>
+        <Field label="Your answer" hint="Type or paste your completed work below.">
+          <Textarea rows={6} value={submitForm.content ?? ""} onChange={(e) => setSubmitForm({ ...submitForm, content: e.target.value })} />
+        </Field>
+        <Field label="Attachment link" hint="Optional — paste a link to your file or upload URL (e.g. Google Drive).">
+          <Input value={submitForm.attachments ?? ""} onChange={(e) => setSubmitForm({ ...submitForm, attachments: e.target.value })} placeholder="https://…" />
+        </Field>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+          <Button variant="ghost" onClick={() => setSubmitItem(null)}>Cancel</Button>
+          <Button loading={submitting} onClick={submitAssignment}>Submit</Button>
         </div>
       </Modal>
     </div>
