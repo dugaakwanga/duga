@@ -1,11 +1,11 @@
 import { prisma, initializePayment, verifyPayment, logAudit, dispatchNotification } from "@duga/core/server";
 import { generateReference, formatNaira } from "@duga/core";
 import type { Module } from ".";
-import { can, str, num, studentScope, resolveSection } from "../helpers";
+import { can, str, num, studentScope, resolveSection, financeManager } from "../helpers";
 
-function assertFinanceManager(ctx: { session: { user: { role: string } } }) {
-  if (!["OWNER", "BURSAR"].includes(ctx.session.user.role)) {
-    const err = new Error("Finance is managed only by the bursar and school owner") as Error & { status?: number };
+async function assertFinanceManager(ctx: { session: { user: { role: string; schoolId: string } } }) {
+  if (!(await financeManager(ctx as Parameters<typeof financeManager>[0]))) {
+    const err = new Error("Finance is managed only by the bursar and school owner, or an admin granted access") as Error & { status?: number };
     err.status = 403;
     throw err;
   }
@@ -79,7 +79,7 @@ export const feesModule: Module = {
       });
       return { role, invoices };
     }
-    assertFinanceManager(ctx);
+    await assertFinanceManager(ctx);
 
     const section = await resolveSection(ctx);
     const studentSectionWhere = section ? { student: { is: { section } } } : {};
@@ -119,7 +119,7 @@ export const feesModule: Module = {
   async get(ctx) {
     can(ctx, "fees:view");
     const role = ctx.session.user.role;
-    if (role !== "STUDENT" && role !== "PARENT") assertFinanceManager(ctx);
+    if (role !== "STUDENT" && role !== "PARENT") await assertFinanceManager(ctx);
     const invoice = await prisma.invoice.findFirst({
       where: {
         id: ctx.id,
@@ -136,7 +136,7 @@ export const feesModule: Module = {
   actions: {
     // Bursar/owner: generate invoices for all students of a class (or level) from fee structures
     generateInvoices: async (ctx) => {
-      assertFinanceManager(ctx);
+      await assertFinanceManager(ctx);
       const schoolId = ctx.session.user.schoolId;
       const termId = str(ctx.body.termId);
       const classGroupId = str(ctx.body.classGroupId);
@@ -201,7 +201,7 @@ export const feesModule: Module = {
     },
 
     addFeeType: async (ctx) => {
-      assertFinanceManager(ctx);
+      await assertFinanceManager(ctx);
       const name = str(ctx.body.name);
       if (!name) throw new Error("name required");
       const ft = await prisma.feeType.create({
@@ -211,7 +211,7 @@ export const feesModule: Module = {
     },
 
     addFeeStructure: async (ctx) => {
-      assertFinanceManager(ctx);
+      await assertFinanceManager(ctx);
       const schoolId = ctx.session.user.schoolId;
       const feeTypeId = str(ctx.body.feeTypeId);
       const amount = num(ctx.body.amount);
@@ -232,7 +232,7 @@ export const feesModule: Module = {
     },
 
     updateFeeType: async (ctx) => {
-      assertFinanceManager(ctx);
+      await assertFinanceManager(ctx);
       const schoolId = ctx.session.user.schoolId;
       const existing = await prisma.feeType.findFirst({ where: { id: ctx.id, schoolId } });
       if (!existing) throw new Error("Fee type not found");
@@ -247,7 +247,7 @@ export const feesModule: Module = {
     },
 
     deleteFeeType: async (ctx) => {
-      assertFinanceManager(ctx);
+      await assertFinanceManager(ctx);
       const schoolId = ctx.session.user.schoolId;
       const existing = await prisma.feeType.findFirst({ where: { id: ctx.id, schoolId } });
       if (!existing) throw new Error("Fee type not found");
@@ -259,7 +259,7 @@ export const feesModule: Module = {
     },
 
     updateFeeStructure: async (ctx) => {
-      assertFinanceManager(ctx);
+      await assertFinanceManager(ctx);
       const schoolId = ctx.session.user.schoolId;
       const existing = await prisma.feeStructure.findFirst({ where: { id: ctx.id, schoolId } });
       if (!existing) throw new Error("Fee structure not found");
@@ -276,7 +276,7 @@ export const feesModule: Module = {
     },
 
     deleteFeeStructure: async (ctx) => {
-      assertFinanceManager(ctx);
+      await assertFinanceManager(ctx);
       const schoolId = ctx.session.user.schoolId;
       const existing = await prisma.feeStructure.findFirst({ where: { id: ctx.id, schoolId } });
       if (!existing) throw new Error("Fee structure not found");
@@ -286,7 +286,7 @@ export const feesModule: Module = {
     },
 
     deleteInvoice: async (ctx) => {
-      assertFinanceManager(ctx);
+      await assertFinanceManager(ctx);
       const schoolId = ctx.session.user.schoolId;
       const invoice = await prisma.invoice.findFirst({ where: { id: ctx.id, schoolId } });
       if (!invoice) throw new Error("Invoice not found");
@@ -402,7 +402,7 @@ export const feesModule: Module = {
 
     // Send fee reminders to parents with unpaid/partial invoices
     remind: async (ctx) => {
-      assertFinanceManager(ctx);
+      await assertFinanceManager(ctx);
       const schoolId = ctx.session.user.schoolId;
       const unpaid = await prisma.invoice.findMany({
         where: { schoolId, status: { in: ["UNPAID", "PARTIAL"] } },
@@ -429,7 +429,7 @@ export const feesModule: Module = {
 
     // Create a manual cash payment (admin/owner)
     recordManual: async (ctx) => {
-      assertFinanceManager(ctx);
+      await assertFinanceManager(ctx);
       const schoolId = ctx.session.user.schoolId;
       const invoiceId = str(ctx.body.invoiceId) ?? ctx.id;
       const amount = num(ctx.body.amount);

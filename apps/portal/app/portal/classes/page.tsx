@@ -6,7 +6,8 @@ import { api } from "@/lib/client/api";
 import { useSection } from "@/components/SectionContext";
 
 interface Level { id: string; name: string; section: string; order: number }
-interface Session { id: string; name: string }
+interface Term { id: string; name: string; termNumber: number; status: string }
+interface Session { id: string; name: string; terms?: Term[] }
 interface Teacher { id: string; firstName: string; lastName: string; subjectIds: string[]; sections: string[] }
 interface Subject { id: string; name: string; section: string }
 interface SchoolSection { id: string; name: string; order: number }
@@ -107,7 +108,11 @@ export default function ClassesPage() {
   const [view, setView] = useState<View>({ name: "overview" });
   const { section } = useSection();
   const isAdmin = role === "OWNER" || role === "ADMIN";
-  const sectionNames = [...new Set([...schoolSections.map((item) => item.name), ...classes.map((item) => item.level.section), ...subjects.map((item) => item.section)])];
+  // Non-admins (students, parents, teachers) only see the sections that
+  // actually contain their classes/subjects — never an empty sibling section.
+  const sectionNames = isAdmin
+    ? [...new Set([...schoolSections.map((item) => item.name), ...classes.map((item) => item.level.section), ...subjects.map((item) => item.section)])]
+    : [...new Set([...classes.map((item) => item.level.section), ...subjects.map((item) => item.section)])];
   const assignableSubjects = assignTarget
     ? subjects.filter((s) => s.section === assignTarget.level.section)
     : subjects;
@@ -474,8 +479,19 @@ export default function ClassesPage() {
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {sessions.map((s) => (
-                    <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 13.5 }}>{s.name}</span>
+                    <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, borderBottom: "1px solid var(--duga-border)", paddingBottom: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 13.5, fontWeight: 700 }}>{s.name}</div>
+                        {s.terms && s.terms.length > 0 ? (
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                            {s.terms.map((t) => (
+                              <Badge key={t.id} tone={t.status === "ACTIVE" ? "success" : "neutral"}>{t.name}</Badge>
+                            ))}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 12, color: "var(--duga-muted)", marginTop: 4 }}>No terms added yet</div>
+                        )}
+                      </div>
                       {isAdmin && (
                         <div style={{ display: "flex", gap: 4 }}>
                           <Button size="sm" variant="ghost" onClick={() => openEditItem("session", s.id)}>Edit</Button>

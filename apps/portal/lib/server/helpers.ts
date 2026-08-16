@@ -94,6 +94,17 @@ export function requireOwnerOrAdmin(ctx: Ctx): void {
   }
 }
 
+// Whether an account may view and manage school financials. The owner always
+// can; an admin or bursar only when the owner explicitly granted them access.
+export async function financeManager(ctx: Ctx): Promise<boolean> {
+  const role = ctx.session.user.role;
+  if (role === "OWNER") return true;
+  const key = role === "ADMIN" ? "adminFinanceAccess" : role === "BURSAR" ? "bursarFinanceAccess" : null;
+  if (!key) return false;
+  const row = await prisma.schoolSetting.findUnique({ where: { schoolId_key: { schoolId: ctx.session.user.schoolId, key } } });
+  return row?.value === true || row?.value === "true";
+}
+
 // studentId scoping by role. For PARENT: all linked children; for STUDENT: self.
 export async function studentScope(ctx: Ctx): Promise<{ studentId?: { in: string[] } }> {
   const role = ctx.session.user.role;

@@ -21,6 +21,7 @@ interface Subject { id: string; name: string; section: string }
 export default function StaffPage() {
   const [items, setItems] = useState<StaffUser[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [sections, setSections] = useState<string[]>([]);
   const [selectedSubjectIds, setSelectedSubjectIds] = useState<string[]>([]);
   const [selectedSections, setSelectedSections] = useState<string[]>([]);
   const [currentRole, setCurrentRole] = useState("");
@@ -42,9 +43,10 @@ export default function StaffPage() {
   async function load() {
     setLoading(true);
     try {
-      const data = await api<{ items: StaffUser[]; subjects: Subject[]; role: string }>("staff");
+      const data = await api<{ items: StaffUser[]; subjects: Subject[]; sections?: string[]; role: string }>("staff");
       setItems(data.items);
       setSubjects(data.subjects ?? []);
+      setSections(data.sections?.length ? data.sections : ["PRIMARY", "SECONDARY"]);
       setCurrentRole(data.role);
     } catch (e) {
       setError((e as Error).message);
@@ -102,7 +104,7 @@ export default function StaffPage() {
   }
 
   async function removeStaff(u: StaffUser) {
-    if (!confirm(`Remove ${u.firstName} ${u.lastName}? Their account will be suspended.`)) return;
+    if (!confirm(`Remove ${u.firstName} ${u.lastName}? Their account will be deactivated and they will no longer be able to sign in.`)) return;
     try {
       await api(`staff/${u.id}`, { method: "DELETE" });
       setNotice(`${u.firstName} ${u.lastName} has been removed.`);
@@ -244,9 +246,9 @@ export default function StaffPage() {
               </Field>
               <Field label="Status">
                 <Select value={form.status ?? "ACTIVE"} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                  <option value="ACTIVE">Active</option>
-                  <option value="SUSPENDED">Suspended</option>
-                  <option value="INACTIVE">Inactive</option>
+                  {(["ACTIVE", "SUSPENDED", "DEACTIVATED"] as const).map((status) => (
+                    <option key={status} value={status}>{status[0] + status.slice(1).toLowerCase()}</option>
+                  ))}
                 </Select>
               </Field>
               <Field label="Phone">
@@ -269,16 +271,16 @@ export default function StaffPage() {
                 <small>{form.role === "TEACHER" || editing?.role === "TEACHER" ? "Choose where this teacher is allowed to teach." : "Choose the sections this staff account can access. Leave both unassigned for full-school access."}</small>
               </div>
               <div className="staff-subject-picker__grid staff-section-picker">
-                {(["PRIMARY", "SECONDARY"] as const).map((schoolSection) => {
+                {sections.map((schoolSection) => {
                   const selected = selectedSections.includes(schoolSection);
                   return (
                     <button key={schoolSection} type="button" className={`staff-subject-picker__option${selected ? " is-selected" : ""}`}
                       onClick={() => {
-                        setSelectedSections((sections) => selected ? sections.filter((item) => item !== schoolSection) : [...sections, schoolSection]);
+                        setSelectedSections((current) => selected ? current.filter((item) => item !== schoolSection) : [...current, schoolSection]);
                         if (selected && (form.role === "TEACHER" || editing?.role === "TEACHER")) setSelectedSubjectIds((ids) => ids.filter((id) => subjects.find((subject) => subject.id === id)?.section !== schoolSection));
                       }} aria-pressed={selected}>
-                      <span>{schoolSection === "PRIMARY" ? "Primary" : "Secondary"}</span>
-                      <Badge tone={schoolSection === "PRIMARY" ? "info" : "accent"}>{selected ? "Assigned" : "Not assigned"}</Badge>
+                      <span>{schoolSection[0] + schoolSection.slice(1).toLowerCase()}</span>
+                      <Badge tone="neutral">{selected ? "Assigned" : "Not assigned"}</Badge>
                     </button>
                   );
                 })}

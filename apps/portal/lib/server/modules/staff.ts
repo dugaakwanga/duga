@@ -24,26 +24,31 @@ export const staffModule: Module = {
     can(ctx, "staff:view");
     const section = await resolveSection(ctx);
     const schoolId = ctx.session.user.schoolId;
-    const [users, subjects] = await Promise.all([prisma.user.findMany({
-      where: {
-        schoolId,
-        role: { in: ["TEACHER", "ADMIN", "BURSAR", "OWNER"] },
-      },
-      select: {
-        id: true,
-        role: true,
-        email: true,
-        phone: true,
-        avatarUrl: true,
-        status: true,
-        firstName: true,
-        lastName: true,
-        teacher: true,
-        admin: true,
-      },
-      orderBy: { createdAt: "desc" },
-      take: 300,
-    }), prisma.subject.findMany({ where: { schoolId, ...(section ? { section } : {}) }, select: { id: true, name: true, section: true }, orderBy: [{ section: "asc" }, { name: "asc" }] })]);
+    const [users, subjects, schoolSections] = await Promise.all([
+      prisma.user.findMany({
+        where: {
+          schoolId,
+          role: { in: ["TEACHER", "ADMIN", "BURSAR", "OWNER"] },
+          status: { not: "DEACTIVATED" },
+        },
+        select: {
+          id: true,
+          role: true,
+          email: true,
+          phone: true,
+          avatarUrl: true,
+          status: true,
+          firstName: true,
+          lastName: true,
+          teacher: true,
+          admin: true,
+        },
+        orderBy: { createdAt: "desc" },
+        take: 300,
+      }),
+      prisma.subject.findMany({ where: { schoolId, ...(section ? { section } : {}) }, select: { id: true, name: true, section: true }, orderBy: [{ section: "asc" }, { name: "asc" }] }),
+      prisma.schoolSection.findMany({ where: { schoolId }, select: { name: true }, orderBy: [{ order: "asc" }, { name: "asc" }] }),
+    ]);
     const scopedUsers = section
       ? await Promise.all(users.map(async (user) => {
           const sections = user.teacher
@@ -51,10 +56,12 @@ export const staffModule: Module = {
             : user.admin
               ? await sectionsOfAdmin(user.admin.id, schoolId)
               : [];
-          return sections.includes(section) ? user : null;
+          // Staff with no explicit section assignment work across the whole
+          // school, so they remain visible in every section view.
+          return sections.length === 0 || sections.includes(section) ? user : null;
         })).then((rows) => rows.filter((row): row is typeof users[number] => !!row))
       : users;
-    return { items: scopedUsers, subjects, total: scopedUsers.length, role: ctx.session.user.role };
+    return { items: scopedUsers, subjects, sections: schoolSections.map((s) => s.name), total: scopedUsers.length, role: ctx.session.user.role };
   },
 
   async get(ctx) {
@@ -252,7 +259,7 @@ export const staffModule: Module = {
     assertStaffTargetAccess(ctx.session.user.role, target.role);
     if (target.role === "OWNER") throw new Error("The school owner cannot be removed");
     if (target.id === ctx.session.user.id) throw new Error("You cannot remove your own account");
-    await prisma.user.update({ where: { id: ctx.id }, data: { status: "SUSPENDED" } });
+    await prisma.user.update({ where: { id: ctx.id }, data: { status: "DEACTIVATED" } });
     await logAudit({ schoolId, userId: ctx.session.user.id, action: "staff.deleted", entityType: "User", entityId: ctx.id, meta: { role: target.role } });
     return { ok: true };
   },

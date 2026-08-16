@@ -1,13 +1,13 @@
 import { prisma, logAudit } from "@duga/core/server";
 import type { Module } from ".";
-import { can, num, str } from "../helpers";
+import { can, num, str, financeManager } from "../helpers";
 
 const BURSAR_ACCESS_KEY = "bursarFinanceAccess";
 
 async function assertPayrollAccess(ctx: Parameters<NonNullable<Module["list"]>>[0], manage = false) {
   can(ctx, manage ? "payroll:manage" : "payroll:view");
-  if (!["OWNER", "BURSAR"].includes(ctx.session.user.role)) {
-    const err = new Error("Finance is managed only by the bursar and school owner") as Error & { status?: number };
+  if (!(await financeManager(ctx))) {
+    const err = new Error("Finance is managed only by the bursar and school owner, or an admin granted access") as Error & { status?: number };
     err.status = 403;
     throw err;
   }

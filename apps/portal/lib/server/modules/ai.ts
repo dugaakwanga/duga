@@ -1,5 +1,6 @@
 import type { Module } from ".";
-import { can, str } from "../helpers";
+import { can, str, num } from "../helpers";
+import { generateSmartTimetable } from "./timetable";
 
 // ---------------------------------------------------------------------------
 // AI assistant (OpenRouter — free tier)
@@ -83,6 +84,26 @@ export const aiModule: Module = {
       const last = messages[messages.length - 1];
       const prompt = String(last?.content ?? "").trim();
       if (!prompt) throw new Error("A message is required");
+      // If an owner/admin asks the assistant to create/generate the timetable,
+      // run the smart clash-free builder directly instead of a generic reply.
+      const wantsTimetable = /\b(create|generate|make|set ?up|build|draft)\b/i.test(prompt) && /\btimetable|time\s*table|schedule\b/i.test(prompt);
+      if (wantsTimetable && ["OWNER", "ADMIN"].includes(ctx.session.user.role)) {
+        try {
+          const result = await generateSmartTimetable(ctx.session.user.schoolId, {
+            termId: str(ctx.body.termId),
+            section: str(ctx.body.section),
+            periodsPerDay: num(ctx.body.periodsPerDay),
+          });
+          return {
+            reply:
+              result.created > 0
+                ? `I created ${result.created} class period(s) for the timetable, each one free of clashes for both the class and its teacher.${result.skipped ? ` ${result.skipped} period(s) couldn't be placed because there was no free slot for that class and teacher.` : ""}`
+                : "There was nothing new to schedule. Make sure each class has subjects with teachers assigned in Classes, then I can build the timetable.",
+          };
+        } catch (e) {
+          return { reply: `I couldn't build the timetable: ${(e as Error).message}` };
+        }
+      }
       // The shell tells us which portal page the user is on so the assistant
       // can ground its help in what they are actually trying to do.
       const page = String(ctx.body.page ?? "").trim();
@@ -157,6 +178,23 @@ export const aiModule: Module = {
       }`;
       const reply = await generate(system, prompt, 0.7, 1200);
       return { reply };
+    },
+
+    // Owner/admin: build the whole class timetable with a single smart,
+    // clash-free pass (shared with the manual "Generate" button).
+    timetable: async (ctx) => {
+      can(ctx, "timetable:manage");
+      const result = await generateSmartTimetable(ctx.session.user.schoolId, {
+        termId: str(ctx.body.termId),
+        section: str(ctx.body.section),
+        periodsPerDay: num(ctx.body.periodsPerDay),
+      });
+      return {
+        reply:
+          result.created > 0
+            ? `I created ${result.created} class period(s) for the timetable, each one free of clashes for both the class and its teacher.${result.skipped ? ` ${result.skipped} period(s) couldn't be placed because there was no free slot for that class and teacher.` : ""}`
+            : "There was nothing new to schedule. Make sure each class has subjects with teachers assigned in Classes, then I can build the timetable.",
+      };
     },
   },
 };

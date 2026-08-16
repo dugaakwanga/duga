@@ -1,14 +1,15 @@
 import { prisma } from "@duga/core/server";
 import type { Module } from ".";
+import { financeManager } from "../helpers";
 
-async function canViewFinance(ctx: { session: { user: { role: string; schoolId: string } } }): Promise<boolean> {
-  return ["OWNER", "BURSAR"].includes(ctx.session.user.role);
+async function canViewFinance(ctx: Parameters<typeof financeManager>[0]): Promise<boolean> {
+  return financeManager(ctx);
 }
 
 export const reportsModule: Module = {
   async list(ctx) {
     if (!(await canViewFinance(ctx))) {
-      const err = new Error("Only the bursar and school owner can view financial reports") as Error & { status?: number };
+      const err = new Error("Only the bursar and school owner (or an admin granted finance access) can view financial reports") as Error & { status?: number };
       err.status = 403;
       throw err;
     }
@@ -50,7 +51,7 @@ export const reportsModule: Module = {
     // Fee status per class/term for the fees dashboard
     feeStatus: async (ctx) => {
       if (!(await canViewFinance(ctx))) {
-        const err = new Error("Only the bursar and school owner can view financial reports") as Error & { status?: number };
+        const err = new Error("Only the bursar and school owner (or an admin granted finance access) can view financial reports") as Error & { status?: number };
         err.status = 403;
         throw err;
       }

@@ -41,7 +41,11 @@ export const classesModule: Module = {
     const visibleIds = await visibleClassIds(ctx);
     const sectionWhere = section ? { section } : {};
     const [sessions, classGroups, teachers, schoolSections] = await Promise.all([
-      prisma.academicSession.findMany({ where: { schoolId }, orderBy: { createdAt: "desc" } }),
+      prisma.academicSession.findMany({
+        where: { schoolId },
+        orderBy: { createdAt: "desc" },
+        include: { terms: { select: { id: true, name: true, termNumber: true, status: true }, orderBy: { termNumber: "asc" } } },
+      }),
       prisma.classGroup.findMany({
         where: { schoolId, ...(visibleIds ? { id: { in: visibleIds } } : {}), ...(section ? { level: { section } } : {}) },
         include: {
@@ -55,7 +59,7 @@ export const classesModule: Module = {
       }),
       ctx.session.user.role === "OWNER" || ctx.session.user.role === "ADMIN"
         ? prisma.user.findMany({
-            where: { schoolId, role: "TEACHER" },
+            where: { schoolId, role: "TEACHER", status: "ACTIVE" },
             include: { teacher: true },
             orderBy: { firstName: "asc" },
             take: 300,

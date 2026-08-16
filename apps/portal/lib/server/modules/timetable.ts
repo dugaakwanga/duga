@@ -71,6 +71,77 @@ async function validateRegularEntry(schoolId: string, input: RegularEntryInput, 
   return classGroup;
 }
 
+// Constraint-based timetable builder shared by the manual "Generate" button and
+// the AI assistant. It uses the subject's weekly period requirement and only
+// creates slots that are free for BOTH the class and the assigned teacher, so
+// the same subject/teacher never clashes across classes at the same time.
+export async function generateSmartTimetable(
+  schoolId: string,
+  opts: { termId?: string; section?: string; periodsPerDay?: number } = {},
+): Promise<{ created: number; skipped: number }> {
+  const { termId, section } = opts;
+  const periodsPerDay = Math.max(1, Math.min(12, opts.periodsPerDay ?? 7));
+  const dayNumbers = [1, 2, 3, 4, 5];
+  const candidates = await prisma.classSubject.findMany({
+    where: { schoolId, teacherId: { not: null }, ...(section ? { classGroup: { level: { section } } } : {}) },
+    include: { classGroup: { include: { level: true } }, subject: true },
+  });
+  if (!candidates.length) throw new Error("Assign teachers to class subjects before generating a timetable");
+  const existing = await prisma.timetableEntry.findMany({
+    where: { schoolId, ...(termId ? { termId } : { termId: null }) },
+    select: { classSubjectId: true, classGroupId: true, teacherId: true, dayOfWeek: true, startTime: true, endTime: true },
+  });
+  const teacherSlots = new Map<string, Array<{ start: string; end: string }>>();
+  const classSlots = new Map<string, Array<{ start: string; end: string }>>();
+  const currentCount = new Map<string, number>();
+  const subjectDays = new Map<string, Set<number>>();
+  for (const entry of existing) {
+    const day = entry.dayOfWeek;
+    const teacherKey = `${entry.teacherId}:${day}`;
+    const classKey = `${entry.classGroupId}:${day}`;
+    teacherSlots.set(teacherKey, [...(teacherSlots.get(teacherKey) ?? []), { start: entry.startTime, end: entry.endTime }]);
+    classSlots.set(classKey, [...(classSlots.get(classKey) ?? []), { start: entry.startTime, end: entry.endTime }]);
+    if (entry.classSubjectId) {
+      currentCount.set(entry.classSubjectId, (currentCount.get(entry.classSubjectId) ?? 0) + 1);
+      subjectDays.set(entry.classSubjectId, new Set([...(subjectDays.get(entry.classSubjectId) ?? []), day]));
+    }
+  }
+
+  const toCreate: Array<{ schoolId: string; termId?: string; classGroupId: string; classSubjectId: string; subjectId: string; teacherId: string; dayOfWeek: number; periodNumber: number; startTime: string; endTime: string }> = [];
+  let skipped = 0;
+  const ordered = [...candidates].sort((a, b) => (b.weeklyPeriods - (currentCount.get(b.id) ?? 0)) - (a.weeklyPeriods - (currentCount.get(a.id) ?? 0)));
+  for (const assignment of ordered) {
+    if (!assignment.teacherId) continue;
+    const needed = Math.max(0, assignment.weeklyPeriods - (currentCount.get(assignment.id) ?? 0));
+    for (let added = 0; added < needed; added++) {
+      let placed = false;
+      const usedDays = subjectDays.get(assignment.id) ?? new Set<number>();
+      const orderedDays = [...dayNumbers].sort((a, b) => Number(usedDays.has(a)) - Number(usedDays.has(b)));
+      for (const dayOfWeek of orderedDays) {
+        for (let periodNumber = 1; periodNumber <= periodsPerDay; periodNumber++) {
+          const startTime = timeAfter("08:00", (periodNumber - 1) * 50);
+          const endTime = timeAfter(startTime, 45);
+          const teacherKey = `${assignment.teacherId}:${dayOfWeek}`;
+          const classKey = `${assignment.classGroupId}:${dayOfWeek}`;
+          if ((teacherSlots.get(teacherKey) ?? []).some((slot) => overlaps(startTime, endTime, slot.start, slot.end))) continue;
+          if ((classSlots.get(classKey) ?? []).some((slot) => overlaps(startTime, endTime, slot.start, slot.end))) continue;
+          const slot = { start: startTime, end: endTime };
+          teacherSlots.set(teacherKey, [...(teacherSlots.get(teacherKey) ?? []), slot]);
+          classSlots.set(classKey, [...(classSlots.get(classKey) ?? []), slot]);
+          subjectDays.set(assignment.id, new Set([...usedDays, dayOfWeek]));
+          toCreate.push({ schoolId, ...(termId ? { termId } : {}), classGroupId: assignment.classGroupId, classSubjectId: assignment.id, subjectId: assignment.subjectId, teacherId: assignment.teacherId, dayOfWeek, periodNumber, startTime, endTime });
+          placed = true;
+          break;
+        }
+        if (placed) break;
+      }
+      if (!placed) skipped += 1;
+    }
+  }
+  if (toCreate.length) await prisma.timetableEntry.createMany({ data: toCreate });
+  return { created: toCreate.length, skipped };
+}
+
 export const timetableModule: Module = {
   async list(ctx) {
     can(ctx, "timetable:view");
@@ -145,69 +216,14 @@ export const timetableModule: Module = {
     generate: async (ctx) => {
       can(ctx, "timetable:manage");
       const schoolId = ctx.session.user.schoolId;
-      const termId = str(ctx.body.termId);
       const section = await resolveSection(ctx);
-      const periodsPerDay = Math.max(1, Math.min(12, num(ctx.body.periodsPerDay) ?? 7));
-      const dayNumbers = [1, 2, 3, 4, 5];
-      const candidates = await prisma.classSubject.findMany({
-        where: { schoolId, teacherId: { not: null }, ...(section ? { classGroup: { level: { section } } } : {}) },
-        include: { classGroup: { include: { level: true } }, subject: true },
+      const result = await generateSmartTimetable(schoolId, {
+        termId: str(ctx.body.termId),
+        section,
+        periodsPerDay: num(ctx.body.periodsPerDay),
       });
-      if (!candidates.length) throw new Error("Assign teachers to class subjects before generating a timetable");
-      const existing = await prisma.timetableEntry.findMany({
-        where: { schoolId, ...(termId ? { termId } : { termId: null }) },
-        select: { classSubjectId: true, classGroupId: true, teacherId: true, dayOfWeek: true, startTime: true, endTime: true },
-      });
-      const teacherSlots = new Map<string, Array<{ start: string; end: string }>>();
-      const classSlots = new Map<string, Array<{ start: string; end: string }>>();
-      const currentCount = new Map<string, number>();
-      const subjectDays = new Map<string, Set<number>>();
-      for (const entry of existing) {
-        const day = entry.dayOfWeek;
-        const teacherKey = `${entry.teacherId}:${day}`;
-        const classKey = `${entry.classGroupId}:${day}`;
-        teacherSlots.set(teacherKey, [...(teacherSlots.get(teacherKey) ?? []), { start: entry.startTime, end: entry.endTime }]);
-        classSlots.set(classKey, [...(classSlots.get(classKey) ?? []), { start: entry.startTime, end: entry.endTime }]);
-        if (entry.classSubjectId) {
-          currentCount.set(entry.classSubjectId, (currentCount.get(entry.classSubjectId) ?? 0) + 1);
-          subjectDays.set(entry.classSubjectId, new Set([...(subjectDays.get(entry.classSubjectId) ?? []), day]));
-        }
-      }
-
-      const toCreate: Array<{ schoolId: string; termId?: string; classGroupId: string; classSubjectId: string; subjectId: string; teacherId: string; dayOfWeek: number; periodNumber: number; startTime: string; endTime: string }> = [];
-      let skipped = 0;
-      const ordered = [...candidates].sort((a, b) => (b.weeklyPeriods - (currentCount.get(b.id) ?? 0)) - (a.weeklyPeriods - (currentCount.get(a.id) ?? 0)));
-      for (const assignment of ordered) {
-        if (!assignment.teacherId) continue;
-        const needed = Math.max(0, assignment.weeklyPeriods - (currentCount.get(assignment.id) ?? 0));
-        for (let added = 0; added < needed; added++) {
-          let placed = false;
-          const usedDays = subjectDays.get(assignment.id) ?? new Set<number>();
-          const orderedDays = [...dayNumbers].sort((a, b) => Number(usedDays.has(a)) - Number(usedDays.has(b)));
-          for (const dayOfWeek of orderedDays) {
-            for (let periodNumber = 1; periodNumber <= periodsPerDay; periodNumber++) {
-              const startTime = timeAfter("08:00", (periodNumber - 1) * 50);
-              const endTime = timeAfter(startTime, 45);
-              const teacherKey = `${assignment.teacherId}:${dayOfWeek}`;
-              const classKey = `${assignment.classGroupId}:${dayOfWeek}`;
-              if ((teacherSlots.get(teacherKey) ?? []).some((slot) => overlaps(startTime, endTime, slot.start, slot.end))) continue;
-              if ((classSlots.get(classKey) ?? []).some((slot) => overlaps(startTime, endTime, slot.start, slot.end))) continue;
-              const slot = { start: startTime, end: endTime };
-              teacherSlots.set(teacherKey, [...(teacherSlots.get(teacherKey) ?? []), slot]);
-              classSlots.set(classKey, [...(classSlots.get(classKey) ?? []), slot]);
-              subjectDays.set(assignment.id, new Set([...usedDays, dayOfWeek]));
-              toCreate.push({ schoolId, ...(termId ? { termId } : {}), classGroupId: assignment.classGroupId, classSubjectId: assignment.id, subjectId: assignment.subjectId, teacherId: assignment.teacherId, dayOfWeek, periodNumber, startTime, endTime });
-              placed = true;
-              break;
-            }
-            if (placed) break;
-          }
-          if (!placed) skipped += 1;
-        }
-      }
-      if (toCreate.length) await prisma.timetableEntry.createMany({ data: toCreate });
-      await logAudit({ schoolId, userId: ctx.session.user.id, action: "timetable.generated", entityType: "Timetable", meta: { termId: termId ?? null, created: toCreate.length, skipped } });
-      return { created: toCreate.length, skipped };
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "timetable.generated", entityType: "Timetable", meta: { termId: str(ctx.body.termId) ?? null, ...result } });
+      return result;
     },
 
     // Owner/admin confirms a timetable is ready. Each affected student and
