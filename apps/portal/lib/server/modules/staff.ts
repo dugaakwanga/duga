@@ -19,6 +19,17 @@ function teacherSections(value: unknown): string[] {
   return sectionArray(value);
 }
 
+// Every staff member gets a staff number (their login ID). Teachers use the
+// STF- prefix; administrators/bursars the ADM- prefix. When one is not given,
+// the next sequential number is generated.
+async function nextStaffNumber(schoolId: string, prefix: "STF" | "ADM", model: "teacher" | "admin"): Promise<string> {
+  const count =
+    model === "teacher"
+      ? await prisma.teacher.count({ where: { schoolId } })
+      : await prisma.admin.count({ where: { schoolId } });
+  return `${prefix}-${String(count + 1).padStart(3, "0")}`;
+}
+
 export const staffModule: Module = {
   async list(ctx) {
     can(ctx, "staff:view");
@@ -56,9 +67,16 @@ export const staffModule: Module = {
             : user.admin
               ? await sectionsOfAdmin(user.admin.id, schoolId)
               : [];
-          // Staff with no explicit section assignment work across the whole
-          // school, so they remain visible in every section view.
-          return sections.length === 0 || sections.includes(section) ? user : null;
+          // Compare section names case-insensitively. Staff with no explicit
+          // section assignment, or whose stored section names no longer match
+          // any existing school section (e.g. legacy "PRIMARY"/"SECONDARY"
+          // values after sections were renamed), work across the whole school
+          // and stay visible in every section view.
+          const valid = schoolSections.map((s) => s.name.trim().toLowerCase());
+          const assigned = sections.map((s) => s.trim().toLowerCase());
+          const overlap = assigned.filter((s) => valid.includes(s));
+          const fullSchool = assigned.length === 0 || overlap.length === 0;
+          return fullSchool || overlap.includes(section.trim().toLowerCase()) ? user : null;
         })).then((rows) => rows.filter((row): row is typeof users[number] => !!row))
       : users;
     return { items: scopedUsers, subjects, sections: schoolSections.map((s) => s.name), total: scopedUsers.length, role: ctx.session.user.role };
@@ -128,7 +146,7 @@ export const staffModule: Module = {
         data: {
           userId: user.id,
           schoolId,
-          staffNumber: staffNumber ?? `STF-${String((await prisma.teacher.count({ where: { schoolId } })) + 1).padStart(3, "0")}`,
+          staffNumber: staffNumber ?? (await nextStaffNumber(schoolId, "STF", "teacher")),
           specialty: str(b.specialty),
           subjectIds: assignedSubjectIds,
           sections: assignedSections,
@@ -136,7 +154,15 @@ export const staffModule: Module = {
         },
       });
     } else {
-      await prisma.admin.create({ data: { userId: user.id, schoolId, designation: str(b.designation) ?? "Staff", sections: assignedSections.length ? assignedSections : undefined, staffNumber: staffNumber ?? null } });
+      await prisma.admin.create({
+        data: {
+          userId: user.id,
+          schoolId,
+          designation: str(b.designation) ?? "Staff",
+          sections: assignedSections.length ? assignedSections : undefined,
+          staffNumber: staffNumber ?? (await nextStaffNumber(schoolId, "ADM", "admin")),
+        },
+      });
     }
 
     await logAudit({ schoolId, userId: ctx.session.user.id, action: "staff.created", entityType: "User", entityId: user.id, meta: { role } });
@@ -180,7 +206,7 @@ export const staffModule: Module = {
     if (finalRole === "TEACHER") {
       if (!target.teacher) {
         // Transitioning admin/bursar -> teacher: build the teacher profile.
-        const staffNumber = str(b.staffNumber) ?? `STF-${String((await prisma.teacher.count({ where: { schoolId } })) + 1).padStart(3, "0")}`;
+        const staffNumber = str(b.staffNumber) ?? (await nextStaffNumber(schoolId, "STF", "teacher"));
         const takenNo = await prisma.teacher.findUnique({ where: { schoolId_staffNumber: { schoolId, staffNumber } } });
         if (takenNo) throw new Error("A teacher with this staff number already exists");
         await prisma.teacher.create({
@@ -236,7 +262,7 @@ export const staffModule: Module = {
         if (taken) throw new Error("A staff member with this staff number already exists");
         await prisma.admin.updateMany({ where: { userId: ctx.id, schoolId }, data: { staffNumber: adminStaffNumber } });
       }
-      if (!target.admin) await prisma.admin.create({ data: { userId: target.id, schoolId, designation: str(b.designation) ?? "Staff", staffNumber: str(b.staffNumber) ?? null } });
+      if (!target.admin) await prisma.admin.create({ data: { userId: target.id, schoolId, designation: str(b.designation) ?? "Staff", staffNumber: str(b.staffNumber) ?? (await nextStaffNumber(schoolId, "ADM", "admin")) } });
       if (b.sections !== undefined) {
         if (ctx.session.user.role !== "OWNER") throw new Error("Only the school owner can assign sections to administrators or bursars");
         await prisma.admin.updateMany({ where: { userId: ctx.id, schoolId }, data: { sections: assignedSections } });

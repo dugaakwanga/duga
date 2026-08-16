@@ -372,10 +372,11 @@ function SectionSwitcher({ role }: { role?: string }) {
         <span className="duga-section-switcher__label">Section</span>
         <select
           className="duga-select duga-section-switcher__select"
-          value={section ?? available[0] ?? ""}
-          onChange={(e) => setSection(e.target.value as Section)}
+          value={section ?? ""}
+          onChange={(e) => setSection(e.target.value ? (e.target.value as Section) : null)}
           aria-label="Active school section"
         >
+          <option value="">All sections</option>
           {available.map((s) => (
             <option key={s} value={s}>
               {sectionLabel(s)}
@@ -477,8 +478,8 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/login");
-    router.refresh();
+    const staffRole = user.role === "OWNER" || user.role === "ADMIN" || user.role === "BURSAR";
+    window.location.href = staffRole ? "/admin" : "/";
   }
 
   const baseNav = user.role === "STUDENT" ? STUDENT_NAV : user.role === "PARENT" ? PARENT_NAV : STAFF_NAV;

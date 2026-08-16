@@ -9,7 +9,7 @@ interface SectionScope {
   section: Section | null;
   available: Section[];
   canSwitch: boolean;
-  setSection: (s: Section) => void;
+  setSection: (s: Section | null) => void;
 }
 
 const SectionCtx = createContext<SectionScope>({
@@ -34,12 +34,15 @@ export function SectionProvider({
   canSwitch: boolean;
   children: React.ReactNode;
 }) {
-  const [section, setSection] = useState<Section | null>(() => available[0] ?? null);
+  // Owners/admins/bursars can switch between sections; they start on "All
+  // sections" so nothing is hidden behind a default section. Teachers are
+  // auto-scoped to the first of their assigned sections.
+  const [section, setSection] = useState<Section | null>(() => (canSwitch ? null : available[0] ?? null));
 
   // Switching section changes every scoped query in the portal, so show the
   // global loading overlay. The timed end is a minimum: in-flight API calls
   // keep the overlay up until the new section's data has actually loaded.
-  function changeSection(next: Section) {
+  function changeSection(next: Section | null) {
     setActiveSection(next);
     setSection(next);
     beginLoading();

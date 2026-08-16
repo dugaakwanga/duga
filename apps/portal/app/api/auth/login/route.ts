@@ -51,6 +51,11 @@ export async function POST(request: NextRequest) {
       const teacher = await prisma.teacher.findFirst({ where: { staffNumber: identifier } });
       if (teacher) user = await prisma.user.findUnique({ where: { id: teacher.userId } });
     }
+    // Administrators and bursars carry their staff number on the Admin profile.
+    if (!user) {
+      const admin = await prisma.admin.findFirst({ where: { staffNumber: identifier } });
+      if (admin) user = await prisma.user.findUnique({ where: { id: admin.userId } });
+    }
     if (!user) {
       const student = await prisma.student.findFirst({
         where: { admissionNumber: { equals: identifier, mode: "insensitive" } },

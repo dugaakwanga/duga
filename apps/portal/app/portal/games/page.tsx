@@ -22,6 +22,9 @@ interface GameItem {
   gameUrl: string | null;
   difficulty: string;
   rewardPoints: number;
+  durationMinutes: number;
+  validDays: number;
+  validUntil: string | null;
   targetClassGroupIds: unknown;
   targetStudentIds: unknown;
   isPublished: boolean;
@@ -142,6 +145,8 @@ export default function GamesPage() {
           gameUrl: form.gameUrl || undefined,
           difficulty: form.difficulty ?? "MEDIUM",
           rewardPoints: form.rewardPoints ? Number(form.rewardPoints) : 0,
+          durationMinutes: form.durationMinutes ? Number(form.durationMinutes) : 15,
+          validDays: form.validDays ? Number(form.validDays) : 7,
           targetClassGroupIds: classIds,
           targetStudentIds: studentIds,
           isPublished: form.publish === "1",
@@ -169,6 +174,8 @@ export default function GamesPage() {
       gameUrl: item.gameUrl ?? "",
       difficulty: item.difficulty ?? "MEDIUM",
       rewardPoints: item.rewardPoints != null ? String(item.rewardPoints) : "0",
+      durationMinutes: item.durationMinutes != null ? String(item.durationMinutes) : "15",
+      validDays: item.validDays != null ? String(item.validDays) : "7",
       publish: item.isPublished ? "1" : "0",
     });
     setSelClassIds(classIds);
@@ -191,6 +198,8 @@ export default function GamesPage() {
           gameUrl: form.gameUrl || undefined,
           difficulty: form.difficulty ?? "MEDIUM",
           rewardPoints: form.rewardPoints ? Number(form.rewardPoints) : 0,
+          durationMinutes: form.durationMinutes ? Number(form.durationMinutes) : 15,
+          validDays: form.validDays ? Number(form.validDays) : 7,
           targetClassGroupIds: classIds,
           targetStudentIds: studentIds,
           isPublished: form.publish === "1",
@@ -318,6 +327,10 @@ export default function GamesPage() {
                   {isManager ? (
                     <>
                       <Badge tone={item.isPublished ? "success" : "neutral"}>{item.isPublished ? "Published" : "Draft"}</Badge>
+                      <Badge tone="neutral">⏱ {item.durationMinutes} min · {item.validDays} day(s) valid</Badge>
+                      {item.validUntil && new Date(item.validUntil).getTime() < Date.now() && (
+                        <Badge tone="danger">Expired</Badge>
+                      )}
                       <Badge tone="neutral">{item.assignedCount ?? 0} assigned · {item.playedCount ?? 0} played · avg {item.avgScore ?? 0}</Badge>
                     </>
                   ) : prog && !isParent ? (
@@ -342,8 +355,11 @@ export default function GamesPage() {
                   </div>
                 ) : isParent ? (
                   <Badge tone="neutral">Assigned to your child</Badge>
-                ) : (
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+) : (
+                    <>
+                      <Badge tone="neutral">⏱ {item.durationMinutes} min play</Badge>
+                      {item.validUntil && new Date(item.validUntil).getTime() < Date.now() && <Badge tone="danger">Expired</Badge>}
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                     <Button size="sm" variant="accent" onClick={() => { setPlaying(item); }}>▶ Play a game</Button>
                     {item.gameUrl && (
                       <a href={item.gameUrl} target="_blank" rel="noreferrer" className="duga-btn duga-btn--outline duga-btn--sm">Open linked game</a>
@@ -352,7 +368,8 @@ export default function GamesPage() {
                       <Input type="number" placeholder="My score" style={{ width: 110 }} value={scores[item.id] ?? ""} onChange={(e) => setScores((s) => ({ ...s, [item.id]: e.target.value }))} />
                       <Button size="sm" variant="outline" loading={btn[`play-${item.id}`]} onClick={() => logScore(item)}>Submit score</Button>
                     </div>
-                  </div>
+                    </div>
+                    </>
                 )}
               </Card>
             );
@@ -390,6 +407,12 @@ export default function GamesPage() {
               </Field>
               <Field label="Reward points">
                 <Input type="number" value={form.rewardPoints ?? ""} onChange={(e) => setForm({ ...form, rewardPoints: e.target.value })} placeholder="10" />
+              </Field>
+              <Field label="Play duration (minutes)" hint="How long a student may play in one session.">
+                <Input type="number" min={1} value={form.durationMinutes ?? ""} onChange={(e) => setForm({ ...form, durationMinutes: e.target.value })} placeholder="15" />
+              </Field>
+              <Field label="Valid for (days)" hint="How many days the game stays available after publishing.">
+                <Input type="number" min={1} value={form.validDays ?? ""} onChange={(e) => setForm({ ...form, validDays: e.target.value })} placeholder="7" />
               </Field>
             </div>
             <Field label="Description">
@@ -487,6 +510,7 @@ export default function GamesPage() {
           <FunGameLauncher
             key={`${playing.id}-${preview ? "preview" : "play"}`}
             initialKind={recommendedGameFor(playing.category, playing.id)}
+            durationMinutes={preview ? undefined : playing.durationMinutes}
             preview={preview}
             onFinish={completeBuiltInGame}
           />

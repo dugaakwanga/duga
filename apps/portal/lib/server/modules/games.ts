@@ -3,13 +3,37 @@ import type { Module } from ".";
 import type { Ctx } from "@/app/api/v1/[...path]/route";
 import { can, str, num, idArray, isAssignedTo, resolveTargetStudentIds, ensureTeacher, assertFeeAccess } from "../helpers";
 
-const GAME_LIBRARY = [
-  ["Number Ninja", "MATH", "EASY"], ["Times Table Sprint", "MATH", "MEDIUM"], ["Fraction Match", "MATH", "MEDIUM"], ["Shape Detective", "PUZZLE", "EASY"],
-  ["Word Builder", "WORD", "EASY"], ["Spelling Bee", "WORD", "MEDIUM"], ["Vocabulary Voyage", "WORD", "MEDIUM"], ["Grammar Quest", "QUIZ", "HARD"],
-  ["Science Lab Challenge", "QUIZ", "MEDIUM"], ["Human Body Explorer", "QUIZ", "MEDIUM"], ["Planet Puzzle", "PUZZLE", "EASY"], ["Weather Watch", "QUIZ", "EASY"],
-  ["History Timeline", "PUZZLE", "MEDIUM"], ["Nigeria Knowledge Quiz", "QUIZ", "MEDIUM"], ["Map Master", "PUZZLE", "HARD"], ["Memory Masters", "MEMORY", "EASY"],
-  ["Pattern Power", "PUZZLE", "MEDIUM"], ["Reading Race", "WORD", "EASY"], ["Logic Ladder", "PUZZLE", "HARD"], ["Digital Safety Challenge", "QUIZ", "EASY"],
+const GAME_LIBRARY: Array<[string, string, string, string]> = [
+  ["Number Ninja", "MATH", "EASY", "Sharpen mental arithmetic — add, subtract and multiply your way to the top."],
+  ["Times Table Sprint", "MATH", "MEDIUM", "Race the clock on multiplication tables from 2 to 12."],
+  ["Fraction Match", "MATH", "MEDIUM", "Match equivalent fractions and build a solid fraction sense."],
+  ["Shape Detective", "PUZZLE", "EASY", "Spot the hidden shapes and train your visual thinking."],
+  ["Word Builder", "WORD", "EASY", "Rearrange letters to build new words from the clues."],
+  ["Spelling Bee", "WORD", "MEDIUM", "Spell tricky words correctly to earn reward points."],
+  ["Vocabulary Voyage", "WORD", "MEDIUM", "Travel the dictionary and master new words each level."],
+  ["Grammar Quest", "QUIZ", "HARD", "Tackle challenging grammar questions on a quest for mastery."],
+  ["Science Lab Challenge", "QUIZ", "MEDIUM", "Answer science questions and run a virtual lab experiment."],
+  ["Human Body Explorer", "QUIZ", "MEDIUM", "Explore the organs and systems that keep the body alive."],
+  ["Planet Puzzle", "PUZZLE", "EASY", "Piece together the planets and learn the solar system."],
+  ["Weather Watch", "QUIZ", "EASY", "Predict and identify the weather from sky clues."],
+  ["History Timeline", "PUZZLE", "MEDIUM", "Order events on the timeline and make sense of the past."],
+  ["Nigeria Knowledge Quiz", "QUIZ", "MEDIUM", "Test your knowledge of Nigeria — geography, states and more."],
+  ["Map Master", "PUZZLE", "HARD", "Navigate maps, capitals and coordinates like a pro."],
+  ["Memory Masters", "MEMORY", "EASY", "Flip cards and train your memory through 200 levels."],
+  ["Pattern Power", "PUZZLE", "MEDIUM", "Spot patterns and sequences to unlock the next level."],
+  ["Reading Race", "WORD", "EASY", "Read fast and answer questions to win the reading race."],
+  ["Logic Ladder", "PUZZLE", "HARD", "Climb the ladder of logic puzzles — each level harder."],
+  ["Digital Safety Challenge", "QUIZ", "EASY", "Learn to stay safe online with smart digital choices."],
 ] as const;
+
+// A game is valid from the moment it is published for `validDays` days.
+function validUntilFor(validDays: number, publishedAt: Date): Date {
+  return new Date(publishedAt.getTime() + Math.max(0, validDays) * 86400000);
+}
+
+function isExpired(item: { validUntil: Date | null }): boolean {
+  return item.validUntil !== null && item.validUntil.getTime() < Date.now();
+}
 
 // Sync "assigned" game progress rows for the targeted students.
 async function syncGameTargets(schoolId: string, gameId: string, classGroupIds: string[], studentIds: string[]): Promise<void> {
@@ -97,7 +121,9 @@ export const gamesModule: Module = {
     const myIds = consumers.map((student) => student.id);
 
     const all = await prisma.educationalGame.findMany({ where: { schoolId, isPublished: true }, orderBy: { publishedAt: "desc" }, take: 300 });
-    const visible = all.filter((g) => assignedToConsumer(g, consumers));
+    const visible = all
+      .filter((g) => !isExpired(g))
+      .filter((g) => assignedToConsumer(g, consumers));
     const progress = await prisma.gameProgress.findMany({ where: { studentId: { in: myIds } } });
     const byGame = new Map<string, typeof progress>();
     progress.forEach((p) => {
@@ -151,10 +177,15 @@ export const gamesModule: Module = {
         gameUrl: str(ctx.body.gameUrl),
         difficulty: str(ctx.body.difficulty) ?? "MEDIUM",
         rewardPoints: num(ctx.body.rewardPoints) ?? 0,
+        durationMinutes: num(ctx.body.durationMinutes) ?? 15,
+        validDays: num(ctx.body.validDays) ?? 7,
         targetClassGroupIds: classGroupIds,
         targetStudentIds: studentIds,
         isPublished,
         publishedAt: isPublished ? new Date() : undefined,
+        ...(isPublished
+          ? { validUntil: validUntilFor(num(ctx.body.validDays) ?? 7, new Date()) }
+          : {}),
       },
     });
     if (isPublished) {
@@ -185,9 +216,19 @@ export const gamesModule: Module = {
         gameUrl: body.gameUrl === undefined ? item.gameUrl : str(body.gameUrl),
         difficulty: str(body.difficulty) ?? item.difficulty,
         rewardPoints: num(body.rewardPoints) ?? item.rewardPoints,
+        durationMinutes: num(body.durationMinutes) ?? item.durationMinutes,
+        validDays: num(body.validDays) ?? item.validDays,
         targetClassGroupIds: classGroupIds,
         targetStudentIds: studentIds,
-        ...(body.isPublished !== undefined ? { isPublished, publishedAt: isPublished ? new Date() : undefined } : {}),
+        ...(body.isPublished !== undefined
+          ? {
+              isPublished,
+              publishedAt: isPublished ? new Date() : undefined,
+              // Re-publishing (or keeping it published after an edit) refreshes
+              // the validity window from today.
+              validUntil: isPublished ? validUntilFor(num(body.validDays) ?? item.validDays, new Date()) : null,
+            }
+          : {}),
       },
     });
     if (updated.isPublished) {
@@ -269,7 +310,7 @@ export const gamesModule: Module = {
       const existing = await prisma.educationalGame.findMany({ where: { schoolId: ctx.session.user.schoolId }, select: { title: true } });
       const titles = new Set(existing.map((game) => game.title));
       const missing = GAME_LIBRARY.filter(([title]) => !titles.has(title));
-      if (missing.length) await prisma.educationalGame.createMany({ data: missing.map(([title, category, difficulty]) => ({ schoolId: ctx.session.user.schoolId, teacherId: teacher.id, title, description: `Editable ${category.toLowerCase()} activity. Assign it to a class and publish when ready.`, category, difficulty, rewardPoints: 10, targetClassGroupIds: [], targetStudentIds: [], isPublished: false })) });
+      if (missing.length) await prisma.educationalGame.createMany({ data: missing.map(([title, category, difficulty, description]) => ({ schoolId: ctx.session.user.schoolId, teacherId: teacher.id, title, description, category, difficulty, rewardPoints: 10, durationMinutes: 15, validDays: 7, targetClassGroupIds: [], targetStudentIds: [], isPublished: false })) });
       await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "games.librarySeeded", entityType: "EducationalGame", meta: { created: missing.length } });
       return { created: missing.length };
     },
@@ -279,7 +320,10 @@ export const gamesModule: Module = {
       const item = await prisma.educationalGame.findFirst({ where: { id: ctx.id, schoolId } });
       if (!item) throw new Error("Game not found");
       if (ctx.session.user.role === "TEACHER" && item.teacherId !== ctx.session.user.teacher!.id) throw new Error("Not authorized");
-      await prisma.educationalGame.update({ where: { id: ctx.id }, data: { isPublished: true, publishedAt: new Date() } });
+      await prisma.educationalGame.update({
+        where: { id: ctx.id },
+        data: { isPublished: true, publishedAt: new Date(), validUntil: validUntilFor(item.validDays, new Date()) },
+      });
       await syncGameTargets(schoolId, item.id, idArray(item.targetClassGroupIds), idArray(item.targetStudentIds));
       return { ok: true };
     },
@@ -289,7 +333,7 @@ export const gamesModule: Module = {
       const item = await prisma.educationalGame.findFirst({ where: { id: ctx.id, schoolId: ctx.session.user.schoolId } });
       if (!item) throw new Error("Game not found");
       if (ctx.session.user.role === "TEACHER" && item.teacherId !== ctx.session.user.teacher!.id) throw new Error("Not authorized");
-      await prisma.educationalGame.update({ where: { id: ctx.id }, data: { isPublished: false, publishedAt: null } });
+      await prisma.educationalGame.update({ where: { id: ctx.id }, data: { isPublished: false, publishedAt: null, validUntil: null } });
       return { ok: true };
     },
 
@@ -302,6 +346,7 @@ export const gamesModule: Module = {
       const schoolId = ctx.session.user.schoolId;
       const item = await prisma.educationalGame.findFirst({ where: { id: ctx.id, schoolId, isPublished: true } });
       if (!item) throw new Error("Game not found or not published");
+      if (isExpired(item)) throw new Error("This game has expired — it is no longer available to play");
       if (!isAssignedTo(item, student.id, student.currentClassGroupId)) throw new Error("This game is not assigned to you");
 
       const score = num(ctx.body.score) ?? 0;

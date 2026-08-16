@@ -1647,6 +1647,11 @@ model EducationalGame {
   gameUrl      String?
   difficulty   String   @default("MEDIUM")   // EASY | MEDIUM | HARD
   rewardPoints Int      @default(0)
+  // Assignment window: how long a student may play in one sitting and how many
+  // days the game stays accessible after it is published.
+  durationMinutes Int   @default(15)
+  validDays      Int    @default(7)
+  validUntil     DateTime?
   targetClassGroupIds Json
   targetStudentIds Json
   isPublished  Boolean  @default(false)
@@ -1659,6 +1664,7 @@ model EducationalGame {
 
   @@index([schoolId])
   @@index([teacherId])
+  @@index([validUntil])
 }
 
 model GameProgress {
