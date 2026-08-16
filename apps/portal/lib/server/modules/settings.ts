@@ -46,6 +46,9 @@ export const settingsModule: Module = {
     const financeAccess = await prisma.schoolSetting.findUnique({
       where: { schoolId_key: { schoolId: ctx.session.user.schoolId, key: "adminFinanceAccess" } },
     });
+    const bursarFinanceAccess = await prisma.schoolSetting.findUnique({
+      where: { schoolId_key: { schoolId: ctx.session.user.schoolId, key: "bursarFinanceAccess" } },
+    });
     const [schoolDays, restrictions] = await Promise.all([
       readSetting<SchoolDaysConfig>(ctx.session.user.schoolId, SCHOOL_DAYS_KEY, {
         weekdays: { monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: false, sunday: false },
@@ -65,6 +68,7 @@ export const settingsModule: Module = {
       gradingSchemes,
       role: ctx.session.user.role,
       financeAccess: financeAccess?.value === true || financeAccess?.value === "true",
+      bursarFinanceAccess: bursarFinanceAccess?.value === true || bursarFinanceAccess?.value === "true",
       schoolDays,
       restrictions,
     };
@@ -112,7 +116,7 @@ export const settingsModule: Module = {
       return { ok: true };
     },
 
-    // Owner-only: grant or revoke the admin's access to the finance dashboard.
+    // Owner-only: grant or revoke an admin/bursar's access to finance.
     setFinanceAccess: async (ctx) => {
       if (ctx.session.user.role !== "OWNER") {
         const err = new Error("Only the school owner can grant finance access") as Error & { status?: number };
@@ -120,11 +124,12 @@ export const settingsModule: Module = {
         throw err;
       }
       const schoolId = ctx.session.user.schoolId;
+      const role = ctx.body.role === "bursar" ? "bursar" : "admin";
       const value = ctx.body.value === true || ctx.body.value === "true";
       await prisma.schoolSetting.upsert({
-        where: { schoolId_key: { schoolId, key: "adminFinanceAccess" } },
+        where: { schoolId_key: { schoolId, key: role === "bursar" ? "bursarFinanceAccess" : "adminFinanceAccess" } },
         update: { value: value as never },
-        create: { schoolId, key: "adminFinanceAccess", value: value as never },
+        create: { schoolId, key: role === "bursar" ? "bursarFinanceAccess" : "adminFinanceAccess", value: value as never },
       });
       return { granted: value };
     },

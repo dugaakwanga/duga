@@ -35,6 +35,7 @@ interface SettingsData {
   sessions?: SessionOpt[];
   role?: string;
   financeAccess?: boolean;
+  bursarFinanceAccess?: boolean;
   schoolDays?: SchoolDaysConfig;
   restrictions?: RestrictionsConfig;
 }
@@ -125,11 +126,12 @@ export default function SettingsPage() {
     }
   }
 
-  async function toggleFinanceAccess() {
+  async function toggleFinanceAccess(role: "admin" | "bursar") {
     setError(null);
     try {
-      await api("settings/setFinanceAccess", { method: "POST", body: { value: !data?.financeAccess } });
-      setData({ ...data!, financeAccess: !data?.financeAccess });
+      const value = role === "admin" ? !data?.financeAccess : !data?.bursarFinanceAccess;
+      await api("settings/setFinanceAccess", { method: "POST", body: { role, value } });
+      setData({ ...data!, ...(role === "admin" ? { financeAccess: value } : { bursarFinanceAccess: value }) });
       setSaved(true);
     } catch (e) {
       setError((e as Error).message);
@@ -286,18 +288,26 @@ export default function SettingsPage() {
           {data.role === "OWNER" && (
             <Card title="Finance access" style={{ marginTop: 16 }}>
               <div style={{ fontSize: 13.5, color: "var(--duga-ink-2)", marginBottom: 12 }}>
-                By default only you (the owner) can see financial details. Grant an admin access to the finance dashboard, fees, reports and payroll here.
+                By default only you (the owner) can see financial details. Grant the admin or bursar access to the finance dashboard, fees, reports and payroll here. Without a grant, none of the finance items appear in their portal.
               </div>
               <button
                 type="button"
-                onClick={toggleFinanceAccess}
+                onClick={() => toggleFinanceAccess("admin")}
                 style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", border: "1px solid var(--duga-border)", borderRadius: 10, cursor: "pointer", textAlign: "left", background: "transparent", width: "100%" }}
               >
                 <span style={{ fontSize: 13.5, fontWeight: 600 }}>Admin finance access</span>
                 <Badge tone={data.financeAccess ? "success" : "neutral"}>{data.financeAccess ? "Granted" : "Not granted"}</Badge>
               </button>
+              <button
+                type="button"
+                onClick={() => toggleFinanceAccess("bursar")}
+                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", border: "1px solid var(--duga-border)", borderRadius: 10, cursor: "pointer", textAlign: "left", background: "transparent", width: "100%", marginTop: 8 }}
+              >
+                <span style={{ fontSize: 13.5, fontWeight: 600 }}>Bursar finance access</span>
+                <Badge tone={data.bursarFinanceAccess ? "success" : "neutral"}>{data.bursarFinanceAccess ? "Granted" : "Not granted"}</Badge>
+              </button>
               <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginTop: 8 }}>
-                When granted, administrators can view fees, reports, payroll and the finance dashboard. Teachers, students and parents never see financial details.
+                When granted, that account can view fees, reports, payroll and the finance dashboard. Teachers, students and parents never see financial details.
               </div>
             </Card>
           )}

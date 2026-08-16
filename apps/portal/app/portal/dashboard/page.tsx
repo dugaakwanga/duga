@@ -87,8 +87,12 @@ export default function DashboardPage() {
 
           <div className="portal-dashboard-grid">
           <Card title="School monitoring" className="portal-monitor-card">
-            <div className="portal-monitor-row"><div><strong>Fee collection</strong><small>{naira(data.feeSummary?.paid)} received</small></div><b>{data.feeSummary ? Math.round((Number(data.feeSummary.paid) / Math.max(1, Number(data.feeSummary.total))) * 100) : 0}%</b></div>
-            <ProgressBar tone="green" value={data.feeSummary ? (Number(data.feeSummary.paid) / Math.max(1, Number(data.feeSummary.total))) * 100 : 0} />
+            {data.feeSummary && (
+              <>
+                <div className="portal-monitor-row"><div><strong>Fee collection</strong><small>{naira(data.feeSummary.paid)} received</small></div><b>{Math.round((Number(data.feeSummary.paid) / Math.max(1, Number(data.feeSummary.total))) * 100)}%</b></div>
+                <ProgressBar tone="green" value={Number(data.feeSummary.paid) / Math.max(1, Number(data.feeSummary.total)) * 100} />
+              </>
+            )}
             <div className="portal-monitor-row"><div><strong>Average attendance</strong><small>{data.counts?.today ?? 0} records captured today</small></div><b>{data.schoolProgress?.attendanceRate ?? 0}%</b></div>
             <ProgressBar tone="gold" value={data.schoolProgress?.attendanceRate ?? 0} />
             <div className="portal-monitor-row"><div><strong>Average subject progress</strong><small>{data.schoolProgress?.assessedStudents ?? 0} published student results</small></div><b>{data.schoolProgress?.subjectAverage ?? 0}%</b></div>

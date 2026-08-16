@@ -69,8 +69,8 @@ const STAFF_NAV: NavSection[] = [
   {
     title: "Operations",
     items: [
-      { href: "/portal/fees", label: "Fees & Payments", icon: "fees", perm: "fees:view", feature: "fees", subfeature: "finance" },
-      { href: "/portal/payroll", label: "Payroll", icon: "fees", perm: "payroll:view", feature: "payroll", subfeature: "finance" },
+      { href: "/portal/fees", label: "Fees & Payments", icon: "fees", perm: "fees:view", feature: "fees", subfeature: "finance", finance: true },
+      { href: "/portal/payroll", label: "Payroll", icon: "fees", perm: "payroll:view", feature: "payroll", subfeature: "finance", finance: true },
       { href: "/portal/hostel", label: "Hostel", icon: "hostel", perm: "hostel:view", feature: "hostel" },
       { href: "/portal/transport", label: "Transport", icon: "bus", perm: "transport:view", feature: "transport" },
       { href: "/portal/applications", label: "Admissions", icon: "applications", perm: "applications:view", feature: "applications" },
