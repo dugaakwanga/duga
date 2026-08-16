@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, PageHeader, Field, Input, Button, Alert, Spinner, Badge } from "@duga/ui";
 import { api } from "@/lib/client/api";
 
@@ -19,6 +20,7 @@ interface Me {
 }
 
 export default function ProfilePage() {
+  const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -74,6 +76,7 @@ export default function ProfilePage() {
     try {
       await api("profile", { method: "PATCH", body: { firstName, lastName, phone, avatarUrl: avatarUrl || null } });
       setSaved(true);
+      router.refresh();
     } catch (e) {
       setError((e as Error).message);
     }
