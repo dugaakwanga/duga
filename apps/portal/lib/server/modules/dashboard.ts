@@ -38,7 +38,7 @@ export const dashboardModule: Module = {
         prisma.studentAttendance.findMany({ where: attendanceWhere, select: { status: true }, take: 5000 }),
         prisma.reportCard.aggregate({ where: { schoolId, isPublished: true, ...(section ? { classGroup: { level: { section } } } : {}) }, _avg: { average: true }, _count: { average: true } }),
       ]);
-      const staffCount = section ? staff.filter((teacher) => Array.isArray(teacher.sections) && teacher.sections.includes(section)).length : staff.length;
+      const staffCount = section ? staff.filter((teacher) => Array.isArray(teacher.sections) && teacher.sections.some((s) => typeof s === "string" && s.trim().toLowerCase() === section.trim().toLowerCase())).length : staff.length;
       const present = attendanceRows.filter((row) => row.status === "PRESENT" || row.status === "LATE").length;
       const attendanceRate = attendanceRows.length ? Math.round((present / attendanceRows.length) * 100) : 0;
       return {

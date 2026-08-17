@@ -32,37 +32,33 @@ export async function sectionsOfTeacher(teacherId: string): Promise<Section[]> {
   const fromClasses = rows.map((r) => r.classGroup.level.section);
   if (!teacher) return [...new Set(fromClasses)];
   const saved = await prisma.schoolSection.findMany({ where: { schoolId: teacher.schoolId }, select: { name: true } });
-  const valid = new Set(saved.map((s) => s.name.trim().toLowerCase()));
+  const canonical = new Map(saved.map((s) => [s.name.trim().toLowerCase(), s.name]));
   const seen = new Set<string>();
   // Existing schools may have teachers created before explicit sections were
   // introduced. Keep their existing class assignments visible while new
   // assignments are always validated against the explicit setting.
-  const explicit = sectionArray(teacher.sections).filter((s) => {
-    const key = s.trim().toLowerCase();
-    if (!valid.has(key) || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const explicit = sectionArray(teacher.sections)
+    .map((s) => canonical.get(s.trim().toLowerCase()))
+    .filter((s): s is string => !!s && !seen.has(s) && (seen.add(s), true));
   return [...new Set([...explicit, ...fromClasses])];
 }
 
 // Admin and bursar section assignments. A missing profile or empty assignment
 // preserves the legacy full-school scope; an explicit assignment is restrictive.
 // Only sections the owner actually created count — legacy free-form values
-// (e.g. "PRIMARY"/"SECONDARY") and case-duplicates are filtered out.
+// (e.g. "PRIMARY"/"SECONDARY") and case-duplicates are filtered out and each
+// value is normalised to the owner-created casing (e.g. "PRIMARY" -> "Primary")
+// so section-scoped queries actually match the stored rows.
 export async function sectionsOfAdmin(adminId: string, schoolId: string): Promise<Section[]> {
   const [admin, saved] = await Promise.all([
     prisma.admin.findFirst({ where: { id: adminId, schoolId }, select: { sections: true } }),
     prisma.schoolSection.findMany({ where: { schoolId }, select: { name: true } }),
   ]);
-  const valid = new Set(saved.map((s) => s.name.trim().toLowerCase()));
+  const canonical = new Map(saved.map((s) => [s.name.trim().toLowerCase(), s.name]));
   const seen = new Set<string>();
-  const assigned = sectionArray(admin?.sections).filter((s) => {
-    const key = s.trim().toLowerCase();
-    if (!valid.has(key) || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const assigned = sectionArray(admin?.sections)
+    .map((s) => canonical.get(s.trim().toLowerCase()))
+    .filter((s): s is string => !!s && !seen.has(s) && (seen.add(s), true));
   return assigned.length ? assigned : schoolSections(schoolId);
 }
 

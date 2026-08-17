@@ -199,15 +199,15 @@ export const classesModule: Module = {
       const teachers = await prisma.teacher.findMany({ where: { schoolId }, select: { id: true, sections: true } });
       for (const teacher of teachers) {
         const arr = sectionArray(teacher.sections);
-        if (arr.includes(oldName)) {
-          await prisma.teacher.update({ where: { id: teacher.id }, data: { sections: arr.map((s) => (s === oldName ? newName : s)) } });
+        if (arr.some((s) => s.trim().toLowerCase() === oldName.trim().toLowerCase())) {
+          await prisma.teacher.update({ where: { id: teacher.id }, data: { sections: arr.map((s) => (s.trim().toLowerCase() === oldName.trim().toLowerCase() ? newName : s)) } });
         }
       }
       const admins = await prisma.admin.findMany({ where: { schoolId }, select: { id: true, sections: true } });
       for (const admin of admins) {
         const arr = sectionArray(admin.sections);
-        if (arr.includes(oldName)) {
-          await prisma.admin.update({ where: { id: admin.id }, data: { sections: arr.map((s) => (s === oldName ? newName : s)) } });
+        if (arr.some((s) => s.trim().toLowerCase() === oldName.trim().toLowerCase())) {
+          await prisma.admin.update({ where: { id: admin.id }, data: { sections: arr.map((s) => (s.trim().toLowerCase() === oldName.trim().toLowerCase() ? newName : s)) } });
         }
       }
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "section.updated", entityType: "SchoolSection", meta: { from: oldName, to: newName } });

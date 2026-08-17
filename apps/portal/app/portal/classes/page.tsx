@@ -146,7 +146,9 @@ export default function ClassesPage() {
         ? { name: "classes-list", section }
         : v.name === "subjects"
           ? { name: "subjects-list", section }
-          : v,
+          : v.name === "levels"
+            ? { name: "levels-list", section }
+            : v,
     );
   }, [section]);
 

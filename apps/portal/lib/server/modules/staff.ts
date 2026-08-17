@@ -113,7 +113,7 @@ export const staffModule: Module = {
     if (tempPassword && tempPassword.length < 8) throw new Error("Temporary password must be at least 8 characters");
     if (role !== "TEACHER" && assignedSubjectIds.length) throw new Error("Only teachers can be assigned subjects");
     if (ctx.session.user.role !== "OWNER" && role !== "TEACHER" && assignedSections.length) throw new Error("Only the school owner can assign sections to administrators or bursars");
-    if (role === "TEACHER" && assignedSections.length === 0) throw new Error("Assign the teacher to Primary, Secondary, or both");
+    if (role === "TEACHER" && assignedSections.length === 0) throw new Error("Assign the teacher to at least one school section");
     if (assignedSubjectIds.length) {
       const count = await prisma.subject.count({ where: { schoolId, id: { in: assignedSubjectIds }, section: { in: assignedSections } } });
       if (count !== assignedSubjectIds.length) throw new Error("One or more selected subjects were not found");
@@ -317,7 +317,7 @@ export const staffModule: Module = {
         await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { subjectIds: assignedSubjectIds } });
       }
       if (b.sections !== undefined && target.teacher) {
-        if (assignedSections.length === 0) throw new Error("Assign the teacher to Primary, Secondary, or both");
+        if (assignedSections.length === 0) throw new Error("Assign the teacher to at least one school section");
         const assignedClasses = await prisma.classSubject.findMany({ where: { teacherId: target.teacher.id }, select: { classGroup: { select: { level: { select: { section: true } } } } } });
         if (assignedClasses.some((row) => !assignedSections.includes(row.classGroup.level.section))) {
           throw new Error("This teacher still has class assignments in a section you are removing");
