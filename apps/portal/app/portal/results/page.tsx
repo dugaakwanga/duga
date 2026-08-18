@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { PageHeader, Card, Badge, Table, Alert, Spinner, EmptyState, Button, Field, Select, Input } from "@duga/ui";
 import { api } from "@/lib/client/api";
+import { useSection } from "@/components/SectionContext";
 
 interface ResultComponent {
   name: string;
@@ -123,6 +124,7 @@ export default function ResultsPage() {
   const [error, setError] = useState<string | null>(null);
   const [printClassId, setPrintClassId] = useState("");
   const [printTermId, setPrintTermId] = useState("");
+  const { section } = useSection();
 
   // Admin: mark all draft report cards ready (flag to show publish buttons)
   const [configOpen, setConfigOpen] = useState(false);
@@ -249,6 +251,7 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
   }
 
   useEffect(() => {
+    void section;
     api<{ role: string; reportCards?: ReportCard[]; classSubjects?: TeacherClassSubject[]; terms?: TermOption[]; activeTermId?: string; config?: ResultConfig; submissions?: Record<string, SubStatus> }>("results")
       .then((d) => {
         setRole(d.role);
@@ -263,7 +266,7 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [section]);
 
   async function openSheet(csId: string, termIdOverride?: string) {
     const termId = termIdOverride ?? activeTermId;

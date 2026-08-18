@@ -76,7 +76,17 @@ export default function StudentsPage() {
     byClass.set(key, arr);
   }
   const classGroups = [...byClass.entries()].sort(([a], [b]) => a.localeCompare(b));
-  const activeClassStudents = view.name === "class" ? (byClass.get(view.className) ?? []) : [];
+  // The class drill-down keeps the full student list in `items`, so resolve the
+  // clicked class's students directly instead of reusing `byClass` (which is
+  // only built while viewing the section category and would be empty here).
+  const activeClassStudents =
+    view.name === "class"
+      ? items.filter((item) => {
+          if (view.section === "UNASSIGNED") return !item.classGroup && "Unassigned" === view.className;
+          const key = item.classGroup ? `${item.classGroup.level.name} ${item.classGroup.name}` : null;
+          return key === view.className && item.classGroup?.level.section === view.section;
+        })
+      : [];
 
   const { section } = useSection();
   const load = useCallback(async () => {

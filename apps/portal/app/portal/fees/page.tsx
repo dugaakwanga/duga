@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { PageHeader, Card, Badge, Table, Alert, Spinner, EmptyState, Stat, Button, Icon, Modal, Field, Input, Select } from "@duga/ui";
 import { api } from "@/lib/client/api";
+import { useSection } from "@/components/SectionContext";
 
 interface Invoice {
   id: string;
@@ -76,8 +77,10 @@ export default function FeesPage() {
   const [paying, setPaying] = useState<string | null>(null);
   const [paymentRecordsVisible, setPaymentRecordsVisible] = useState(true);
   const isStaff = role === "OWNER" || role === "BURSAR";
+  const { section } = useSection();
 
-  async function load() {
+  const load = useCallback(async () => {
+    void section;
     const d = await api<{
       role: string;
       invoices: Invoice[];
@@ -98,13 +101,13 @@ export default function FeesPage() {
     setLevels(d.levels ?? []);
     setClassGroups(d.classGroups ?? []);
     setPaymentRecordsVisible(d.paymentRecordsVisible !== false);
-  }
+  }, [section]);
 
   useEffect(() => {
     load()
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [load]);
 
   async function generate() {
     try {

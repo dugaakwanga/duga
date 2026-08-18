@@ -54,7 +54,12 @@ export function SectionProvider({
 
   const key = available.join(",");
   useEffect(() => {
-    setSection((prev) => (prev && available.includes(prev) ? prev : available[0] ?? null));
+    setSection((prev) => {
+      if (prev && available.includes(prev)) return prev;
+      // Switcher users (owner/admin/bursar) stay on "All sections" (null) so
+      // nothing is hidden behind a default section; teachers auto-scope.
+      return canSwitch ? null : (available[0] ?? null);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
