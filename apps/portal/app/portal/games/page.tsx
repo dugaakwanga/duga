@@ -273,7 +273,7 @@ export default function GamesPage() {
           title: form.title,
           description: form.description || undefined,
           category: form.category ?? "QUIZ",
-          kind: form.kind ?? "classic",
+          kind: form.kind ?? THEMES[0]!.key,
           gameUrl: form.gameUrl || undefined,
           difficulty: form.difficulty ?? "MEDIUM",
           rewardPoints: form.rewardPoints ? Number(form.rewardPoints) : 0,
@@ -307,7 +307,7 @@ export default function GamesPage() {
       title: item.title,
       description: item.description ?? "",
       category: item.category ?? "QUIZ",
-      kind: item.kind ?? "classic",
+      kind: item.kind ?? THEMES[0]!.key,
       gameUrl: item.gameUrl ?? "",
       difficulty: item.difficulty ?? "MEDIUM",
       rewardPoints: item.rewardPoints != null ? String(item.rewardPoints) : "0",
@@ -332,7 +332,7 @@ export default function GamesPage() {
           title: form.title,
           description: form.description || undefined,
           category: form.category ?? "QUIZ",
-          kind: form.kind ?? "classic",
+          kind: form.kind ?? THEMES[0]!.key,
           gameUrl: form.gameUrl || undefined,
           difficulty: form.difficulty ?? "MEDIUM",
           rewardPoints: form.rewardPoints ? Number(form.rewardPoints) : 0,
@@ -373,9 +373,6 @@ export default function GamesPage() {
     }
   }
 
-  async function addLibrary() {
-    try { const result = await api<{ created: number }>("games/seedLibrary", { method: "POST", body: {} }); alert(`${result.created} game template(s) added.`); load(); } catch (e) { alert((e as Error).message); }
-  }
 
   async function logScore(item: GameItem) {
     const score = Number(scores[item.id] ?? "");
@@ -581,10 +578,7 @@ export default function GamesPage() {
     <div style={{ display: "flex", gap: 8 }}>
       <Button variant="outline" onClick={() => openLeaderboard()}><Icon name="trophy" size={16} /> Leaderboard</Button>
       {isManager && (
-        <>
-          <Button variant="outline" onClick={addLibrary}>Add 20 game templates</Button>
-          <Button onClick={() => { setForm({ publish: "1" }); setOpen(true); }}><Icon name="plus" size={16} /> New game</Button>
-        </>
+        <Button onClick={() => { setForm({ publish: "1" }); setOpen(true); }}><Icon name="plus" size={16} /> New game</Button>
       )}
     </div>
   );
@@ -686,15 +680,14 @@ export default function GamesPage() {
             <Field label="Title" required>
               <Input value={form.title ?? ""} onChange={(e) => setForm({ ...form, title: e.target.value })} />
             </Field>
-            <Field label="Game style" hint="Pick a themed game — students answer real questions to survive/win. Choose Classic to use the original 5 arcade mini-games instead (no question bank).">
-              <Select value={form.kind ?? "classic"} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
-                <option value="classic">Classic (5 arcade mini-games, no questions)</option>
+            <Field label="Game style" hint="Students answer real questions to survive/win — pick which game they play it through.">
+              <Select value={form.kind ?? THEMES[0]!.key} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
                 {THEMES.map((t) => (
-                  <option key={t.key} value={t.key}>{t.emoji} {t.title}</option>
+                  <option key={t.key} value={t.key}>{t.title}</option>
                 ))}
               </Select>
             </Field>
-            {form.kind && form.kind !== "classic" && (
+            {form.kind && (
               <Alert tone="info">{themeFor(form.kind).tagline}</Alert>
             )}
             <div className="duga-form-grid">

@@ -38,16 +38,21 @@ export interface ThemeConfig {
   bg: string;
   winMessage: string;
   loseMessage: string;
+  /** Which drawn scene the gauge mechanic renders. "car" is the fully
+   * illustrated race (Fuel Rush); "traveller" is a themed generic drawn
+   * shape for the games that don't have a bespoke illustration yet. */
+  sceneKind?: "car" | "traveller";
+  vehicleColor?: string;
 }
 
 export const THEMES: ThemeConfig[] = [
-  { key: "fuelRush", title: "Fuel Rush", emoji: "🏎️", tagline: "Your tank is draining — answer fast at every pit stop to refuel.", mechanic: "gauge", gaugeLabel: "Fuel", playerEmoji: "🏎️", hazardEmoji: "⛽", bg: "linear-gradient(135deg,#f97316,#ea580c)", winMessage: "You crossed the finish line!", loseMessage: "You ran out of fuel." },
-  { key: "deepSeaDive", title: "Deep Sea Dive", emoji: "🤿", tagline: "Oxygen is dropping fast — answer right to find your next breath of air.", mechanic: "gauge", gaugeLabel: "Oxygen", playerEmoji: "🤿", hazardEmoji: "🫧", bg: "linear-gradient(135deg,#0ea5e9,#0369a1)", winMessage: "You found the treasure and surfaced safely!", loseMessage: "You ran out of oxygen." },
-  { key: "desertCaravan", title: "Desert Caravan", emoji: "🐫", tagline: "Water is running low crossing the dunes — find the next oasis.", mechanic: "gauge", gaugeLabel: "Water", playerEmoji: "🐫", hazardEmoji: "🏜️", bg: "linear-gradient(135deg,#eab308,#b45309)", winMessage: "You reached the next town!", loseMessage: "Your caravan ran dry." },
-  { key: "marathonStamina", title: "Marathon Stamina", emoji: "🏃", tagline: "Your energy is fading — grab an energy gel with every right answer.", mechanic: "gauge", gaugeLabel: "Stamina", playerEmoji: "🏃", hazardEmoji: "💧", bg: "linear-gradient(135deg,#22c55e,#15803d)", winMessage: "You crossed the finish line first!", loseMessage: "You hit the wall and dropped out." },
-  { key: "pirateSeaBattle", title: "Pirate Sea Battle", emoji: "🏴‍☠️", tagline: "Cannon fire is cracking your hull — patch it up before it's too late.", mechanic: "gauge", gaugeLabel: "Hull", playerEmoji: "🏴‍☠️", hazardEmoji: "💣", bg: "linear-gradient(135deg,#334155,#0f172a)", winMessage: "You sank the enemy ship!", loseMessage: "Your ship went down." },
-  { key: "alienTurretDefense", title: "Alien Turret Defense", emoji: "👾", tagline: "Ammo is low — reload the turret by answering before the next wave.", mechanic: "gauge", gaugeLabel: "Ammo", playerEmoji: "🛰️", hazardEmoji: "👾", bg: "linear-gradient(135deg,#7c3aed,#4c1d95)", winMessage: "The alien fleet retreated!", loseMessage: "Your turret ran dry." },
-  { key: "zombieShooterStandoff", title: "Zombie Shooter Standoff", emoji: "🧟", tagline: "The horde is closing in and you're low on ammo — reload fast.", mechanic: "gauge", gaugeLabel: "Ammo", playerEmoji: "🔫", hazardEmoji: "🧟", bg: "linear-gradient(135deg,#4d7c0f,#1a2e05)", winMessage: "You held the line!", loseMessage: "You were overrun." },
+  { key: "fuelRush", title: "Fuel Rush", emoji: "🏎️", tagline: "Your tank is draining — answer fast at every pit stop to refuel.", mechanic: "gauge", gaugeLabel: "Fuel", playerEmoji: "🏎️", hazardEmoji: "⛽", bg: "linear-gradient(135deg,#f97316,#ea580c)", winMessage: "You crossed the finish line!", loseMessage: "You ran out of fuel.", sceneKind: "car", vehicleColor: "#ef4444" },
+  { key: "deepSeaDive", title: "Deep Sea Dive", emoji: "🤿", tagline: "Oxygen is dropping fast — answer right to find your next breath of air.", mechanic: "gauge", gaugeLabel: "Oxygen", playerEmoji: "🤿", hazardEmoji: "🫧", bg: "linear-gradient(135deg,#0ea5e9,#0369a1)", winMessage: "You found the treasure and surfaced safely!", loseMessage: "You ran out of oxygen.", sceneKind: "traveller", vehicleColor: "#facc15" },
+  { key: "desertCaravan", title: "Desert Caravan", emoji: "🐫", tagline: "Water is running low crossing the dunes — find the next oasis.", mechanic: "gauge", gaugeLabel: "Water", playerEmoji: "🐫", hazardEmoji: "🏜️", bg: "linear-gradient(135deg,#eab308,#b45309)", winMessage: "You reached the next town!", loseMessage: "Your caravan ran dry.", sceneKind: "traveller", vehicleColor: "#a16207" },
+  { key: "marathonStamina", title: "Marathon Stamina", emoji: "🏃", tagline: "Your energy is fading — grab an energy gel with every right answer.", mechanic: "gauge", gaugeLabel: "Stamina", playerEmoji: "🏃", hazardEmoji: "💧", bg: "linear-gradient(135deg,#22c55e,#15803d)", winMessage: "You crossed the finish line first!", loseMessage: "You hit the wall and dropped out.", sceneKind: "traveller", vehicleColor: "#f97316" },
+  { key: "pirateSeaBattle", title: "Pirate Sea Battle", emoji: "🏴‍☠️", tagline: "Cannon fire is cracking your hull — patch it up before it's too late.", mechanic: "gauge", gaugeLabel: "Hull", playerEmoji: "🏴‍☠️", hazardEmoji: "💣", bg: "linear-gradient(135deg,#334155,#0f172a)", winMessage: "You sank the enemy ship!", loseMessage: "Your ship went down.", sceneKind: "traveller", vehicleColor: "#78350f" },
+  { key: "alienTurretDefense", title: "Alien Turret Defense", emoji: "👾", tagline: "Ammo is low — reload the turret by answering before the next wave.", mechanic: "gauge", gaugeLabel: "Ammo", playerEmoji: "🛰️", hazardEmoji: "👾", bg: "linear-gradient(135deg,#7c3aed,#4c1d95)", winMessage: "The alien fleet retreated!", loseMessage: "Your turret ran dry.", sceneKind: "traveller", vehicleColor: "#a3e635" },
+  { key: "zombieShooterStandoff", title: "Zombie Shooter Standoff", emoji: "🧟", tagline: "The horde is closing in and you're low on ammo — reload fast.", mechanic: "gauge", gaugeLabel: "Ammo", playerEmoji: "🔫", hazardEmoji: "🧟", bg: "linear-gradient(135deg,#4d7c0f,#1a2e05)", winMessage: "You held the line!", loseMessage: "You were overrun.", sceneKind: "traveller", vehicleColor: "#84cc16" },
   { key: "zombieCorridor", title: "Zombie Corridor", emoji: "🏃‍♂️", tagline: "Zombies are gaining on you down the hallway — answer to pull ahead.", mechanic: "escape", gaugeLabel: "Distance", playerEmoji: "🏃‍♂️", hazardEmoji: "🧟", bg: "linear-gradient(135deg,#57534e,#1c1917)", winMessage: "You escaped through the exit!", loseMessage: "The zombies caught you." },
   { key: "volcanoEscape", title: "Volcano Escape", emoji: "🌋", tagline: "Lava is rising beneath you — climb to the next platform to stay ahead.", mechanic: "escape", gaugeLabel: "Lava level", playerEmoji: "🧗", hazardEmoji: "🌋", bg: "linear-gradient(135deg,#dc2626,#7c2d12)", winMessage: "You reached safety at the summit!", loseMessage: "The lava caught up with you." },
   { key: "iceCaveFlood", title: "Ice Cave Flood", emoji: "🧊", tagline: "The cave is flooding — melt a path out before the water reaches the top.", mechanic: "escape", gaugeLabel: "Water level", playerEmoji: "⛏️", hazardEmoji: "🌊", bg: "linear-gradient(135deg,#38bdf8,#0c4a6e)", winMessage: "You escaped the flooding cave!", loseMessage: "The water reached the ceiling." },
@@ -202,17 +207,203 @@ function feedbackBanner(state: "correct" | "wrong" | null): CSSProperties {
 }
 
 // ---------------------------------------------------------------------------
-// Gauge engine: fuel/oxygen/water/ammo/hull/stamina drains over time and on
-// wrong answers; correct answers refill it. Lose at 0, win by clearing every
-// question while still alive.
+// Drawn scene pieces (SVG) — no emoji standing in for game objects. A single
+// <style> tag (injected once) carries the CSS keyframes the scenes animate
+// with (wheel spin, road-dash scroll, exhaust puff).
 // ---------------------------------------------------------------------------
+let sceneStylesInjected = false;
+function SceneStyles() {
+  if (sceneStylesInjected) return null;
+  sceneStylesInjected = true;
+  return (
+    <style>{`
+      @keyframes duga-road-scroll { from { background-position-x: 0; } to { background-position-x: -64px; } }
+      @keyframes duga-wheel-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+      @keyframes duga-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+      @keyframes duga-puff { 0% { opacity: .55; transform: translate(0,0) scale(.4); } 100% { opacity: 0; transform: translate(-22px,-6px) scale(1.3); } }
+    `}</style>
+  );
+}
+
+function CarSVG({ color, driving }: { color: string; driving: boolean }) {
+  return (
+    <svg viewBox="0 0 220 110" width="118" height="59" style={{ filter: "drop-shadow(0 5px 4px rgba(0,0,0,.35))", overflow: "visible" }}>
+      <ellipse cx="110" cy="99" rx="92" ry="7" fill="rgba(0,0,0,.28)" />
+      {/* chassis */}
+      <rect x="15" y="55" width="190" height="34" rx="14" fill={color} />
+      {/* cabin */}
+      <path d="M55 55 L76 23 Q81 16 90 16 H148 Q158 16 163 23 L184 55 Z" fill={color} />
+      {/* windshield + rear window */}
+      <path d="M83 50 L97 25 H143 L157 50 Z" fill="#bfe3fb" opacity=".92" />
+      <line x1="120" y1="25" x2="120" y2="50" stroke="rgba(15,23,42,.3)" strokeWidth="2" />
+      {/* racing stripe */}
+      <rect x="15" y="67" width="190" height="7" fill="#fff" opacity=".85" />
+      {/* lights */}
+      <ellipse cx="202" cy="70" rx="6" ry="7" fill="#fef08a" />
+      <rect x="14" y="61" width="6" height="9" rx="2" fill="#dc2626" />
+      {/* wheels */}
+      <g transform="translate(163,90)" style={driving ? { animation: "duga-wheel-spin .5s linear infinite", transformOrigin: "0 0" } : undefined}>
+        <circle r="19" fill="#111827" />
+        <circle r="10" fill="#9ca3af" />
+        <circle r="3.5" fill="#4b5563" />
+        <rect x="-2" y="-19" width="4" height="10" fill="#6b7280" />
+        <rect x="-2" y="9" width="4" height="10" fill="#6b7280" />
+      </g>
+      <g transform="translate(52,90)" style={driving ? { animation: "duga-wheel-spin .5s linear infinite", transformOrigin: "0 0" } : undefined}>
+        <circle r="19" fill="#111827" />
+        <circle r="10" fill="#9ca3af" />
+        <circle r="3.5" fill="#4b5563" />
+        <rect x="-2" y="-19" width="4" height="10" fill="#6b7280" />
+        <rect x="-2" y="9" width="4" height="10" fill="#6b7280" />
+      </g>
+      {driving && (
+        <g>
+          <circle cx="2" cy="80" r="6" fill="#cbd5e1" style={{ animation: "duga-puff .6s ease-out infinite" }} />
+          <circle cx="2" cy="80" r="5" fill="#e2e8f0" style={{ animation: "duga-puff .6s ease-out .2s infinite" }} />
+        </g>
+      )}
+    </svg>
+  );
+}
+
+// A generic drawn "traveller" used by gauge-mechanic themes that don't yet
+// have a bespoke vehicle illustration (submarine, wagon, runner, ship...).
+// Still a real drawn shape, never an emoji — a rounded capsule with a
+// porthole/eye detail and a short trail, reads fine on any track/backdrop.
+function TravellerSVG({ color }: { color: string }) {
+  return (
+    <svg viewBox="0 0 160 90" width="96" height="54" style={{ filter: "drop-shadow(0 5px 4px rgba(0,0,0,.35))" }}>
+      <ellipse cx="80" cy="78" rx="60" ry="6" fill="rgba(0,0,0,.25)" />
+      <path d="M20 55 Q20 25 60 25 H110 Q140 25 140 50 Q140 65 110 65 H45 Q20 65 20 55 Z" fill={color} />
+      <circle cx="105" cy="43" r="14" fill="#bfe3fb" opacity=".9" />
+      <circle cx="105" cy="43" r="14" fill="none" stroke="rgba(15,23,42,.35)" strokeWidth="2" />
+      <path d="M18 52 Q4 50 2 45" stroke={color} strokeWidth="6" fill="none" strokeLinecap="round" opacity=".8" />
+    </svg>
+  );
+}
+
+// Car Rush gets a fully illustrated road (sky, hills, lane dashes, finish
+// line). The other gauge-mechanic themes reuse the same track mechanics
+// (position, finish line, motion animation) on a themed backdrop with the
+// generic drawn traveller shape, tinted per theme — still a real drawn
+// shape, never an emoji.
+function TrackScene({ theme, progressPct, driving, finished }: { theme: ThemeConfig; progressPct: number; driving: boolean; finished: boolean }) {
+  const left = 8 + Math.min(100, progressPct) * 0.74;
+  const isCar = theme.sceneKind === "car";
+  return (
+    <div
+      style={{
+        position: "relative",
+        height: 132,
+        borderRadius: 14,
+        overflow: "hidden",
+        background: isCar ? "linear-gradient(180deg,#7dd3fc 0%,#bae6fd 42%,#57534e 42%,#3f3a37 100%)" : theme.bg,
+      }}
+    >
+      <SceneStyles />
+      {isCar ? (
+        <>
+          <div style={{ position: "absolute", top: 10, right: 18, width: 24, height: 24, borderRadius: "50%", background: "#fde68a", boxShadow: "0 0 18px 4px #fde68a99" }} />
+          <div style={{ position: "absolute", left: -20, right: -20, top: 44, height: 26, background: "radial-gradient(ellipse at 30% 100%, #16a34a99, transparent 70%), radial-gradient(ellipse at 70% 100%, #15803d99, transparent 70%)" }} />
+        </>
+      ) : (
+        <div style={{ position: "absolute", inset: 0, background: "radial-gradient(circle at 20% 20%, rgba(255,255,255,.12), transparent 55%)" }} />
+      )}
+      {/* path + travel dashes */}
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          top: isCar ? "58%" : "62%",
+          height: 5,
+          background: `repeating-linear-gradient(90deg,${isCar ? "#facc15" : "rgba(255,255,255,.65)"} 0 28px,transparent 28px 64px)`,
+          animation: driving ? "duga-road-scroll .55s linear infinite" : undefined,
+        }}
+      />
+      {/* finish line */}
+      <div style={{ position: "absolute", right: 14, top: isCar ? "42%" : "46%", bottom: 0, width: 6, background: "repeating-linear-gradient(180deg,#111 0 6px,#fff 6px 12px)" }} />
+      {/* traveller */}
+      <div style={{ position: "absolute", left: `${left}%`, bottom: 8, transition: "left 1s linear", animation: driving && !finished ? "duga-bob .3s ease-in-out infinite" : undefined }}>
+        {isCar ? <CarSVG color={theme.vehicleColor ?? "#ef4444"} driving={driving && !finished} /> : <TravellerSVG color={theme.vehicleColor ?? "#f59e0b"} />}
+      </div>
+    </div>
+  );
+}
+
+function GasStationSVG() {
+  return (
+    <svg viewBox="0 0 220 120" width="96" height="52" style={{ filter: "drop-shadow(0 4px 4px rgba(0,0,0,.3))" }}>
+      <rect x="8" y="14" width="204" height="14" rx="3" fill="#dc2626" />
+      <rect x="22" y="28" width="9" height="72" fill="#9ca3af" />
+      <rect x="189" y="28" width="9" height="72" fill="#9ca3af" />
+      <rect x="92" y="48" width="36" height="52" rx="5" fill="#1d4ed8" />
+      <rect x="98" y="56" width="24" height="12" fill="#fff" />
+      <path d="M128 62 Q150 62 150 80 L150 92" stroke="#374151" strokeWidth="4" fill="none" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+// Generic "resupply" icon (a crate + gauge dial) for the gauge-mechanic
+// themes that aren't a literal fuel stop.
+function SupplyStopSVG() {
+  return (
+    <svg viewBox="0 0 120 100" width="70" height="52" style={{ filter: "drop-shadow(0 4px 4px rgba(0,0,0,.3))" }}>
+      <rect x="20" y="35" width="80" height="55" rx="4" fill="#92400e" />
+      <rect x="20" y="35" width="80" height="14" fill="#78350f" />
+      <line x1="20" y1="62" x2="100" y2="62" stroke="#78350f" strokeWidth="3" />
+      <line x1="60" y1="35" x2="60" y2="90" stroke="#78350f" strokeWidth="3" />
+      <circle cx="60" cy="24" r="14" fill="#fff" opacity=".9" />
+      <path d="M60 14 v10 l7 4" stroke="#111827" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function FuelGaugeDial({ value, label }: { value: number; label: string }) {
+  const angle = -90 + Math.max(0, Math.min(100, value)) / 100 * 180;
+  const needleColor = value < 25 ? "#dc2626" : value < 55 ? "#b45309" : "#166534";
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <svg viewBox="0 0 120 66" width="104" height="58">
+        <path d="M8 60 A52 52 0 0 1 42 12" fill="none" stroke="#dc2626" strokeWidth="11" strokeLinecap="round" />
+        <path d="M42 12 A52 52 0 0 1 78 12" fill="none" stroke="#f59e0b" strokeWidth="11" strokeLinecap="round" />
+        <path d="M78 12 A52 52 0 0 1 112 60" fill="none" stroke="#22c55e" strokeWidth="11" strokeLinecap="round" />
+        <g transform={`rotate(${angle} 60 60)`} style={{ transition: "transform .5s cubic-bezier(.34,1.56,.64,1)" }}>
+          <line x1="60" y1="60" x2="60" y2="22" stroke="#1f2937" strokeWidth="3" strokeLinecap="round" />
+          <line x1="60" y1="60" x2="60" y2="22" stroke={needleColor} strokeWidth="1.4" strokeLinecap="round" />
+        </g>
+        <circle cx="60" cy="60" r="6" fill="#1f2937" />
+      </svg>
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 800, color: "#fff", textShadow: "0 1px 3px rgba(0,0,0,.4)", letterSpacing: ".02em" }}>{label}</div>
+        <div style={{ fontSize: 20, fontWeight: 900, color: "#fff", textShadow: "0 1px 3px rgba(0,0,0,.4)" }}>{Math.round(value)}%</div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Gauge engine, rebuilt as an actual race: the car drives on its own (fuel
+// draining, visibly moving down the track) with no question on screen at
+// all — that only appears once fuel gets critical and the car pulls into a
+// pit stop. Answer correctly and fast: full refuel, big jump down the track,
+// back to driving. Answer wrong/late: only a token refuel and little
+// progress — two misses in a row and the tank runs dry for good.
+// ---------------------------------------------------------------------------
+const PIT_STOP_THRESHOLD = 32;
+
 function GaugeEngine({ theme, questions, difficulty, sessionExpiresAt, onProgress, onFinish }: EngineProps) {
-  const [gauge, setGauge] = useState(65);
+  const total = questions.length;
+  const [phase, setPhase] = useState<"driving" | "pitstop">("driving");
+  const [gauge, setGauge] = useState(100);
   const [qi, setQi] = useState(0);
+  const [position, setPosition] = useState(0);
   const [feedback, setFeedback] = useState<"correct" | "wrong" | null>(null);
   const answersRef = useRef<EngineAnswer[]>([]);
-  const statsRef = useRef({ correct: 0, done: false });
-  const gaugeRef = useRef(65);
+  const statsRef = useRef({ correct: 0, done: false, misses: 0 });
+  const gaugeRef = useRef(100);
+  const positionRef = useRef(0);
+  const phaseRef = useRef<"driving" | "pitstop">("driving");
   const drainRate = drainRateFor(difficulty);
   const qSeconds = questionSecondsFor(difficulty);
   const onProgressRef = useRef(onProgress);
@@ -226,17 +417,25 @@ function GaugeEngine({ theme, questions, difficulty, sessionExpiresAt, onProgres
     onFinishRef.current(answersRef.current, outcome, statsRef.current.correct);
   }, []);
 
-  // Passive drain tick.
+  // Drive tick: only runs while actually driving — fuel drains and the car
+  // creeps toward the next pit stop's position on the track.
   useEffect(() => {
+    if (total === 0) return;
     const iv = window.setInterval(() => {
-      if (statsRef.current.done) return;
+      if (statsRef.current.done || phaseRef.current !== "driving") return;
       gaugeRef.current = Math.max(0, gaugeRef.current - drainRate);
       setGauge(gaugeRef.current);
+      const nextCheckpoint = Math.min(100, ((qi + 1) / total) * 100);
+      positionRef.current = Math.min(Math.max(0, nextCheckpoint - 2), positionRef.current + 1.4);
+      setPosition(positionRef.current);
       onProgressRef.current?.({ correct: statsRef.current.correct, answered: answersRef.current.length, gaugeOrStep: gaugeRef.current });
-      if (gaugeRef.current <= 0) finish("lost");
+      if (gaugeRef.current <= PIT_STOP_THRESHOLD) {
+        phaseRef.current = "pitstop";
+        setPhase("pitstop");
+      }
     }, 1000);
     return () => window.clearInterval(iv);
-  }, [drainRate, finish]);
+  }, [drainRate, qi, total]);
 
   useEffect(() => {
     if (!sessionExpiresAt) return;
@@ -249,37 +448,64 @@ function GaugeEngine({ theme, questions, difficulty, sessionExpiresAt, onProgres
     const q = questions[qi]!;
     answersRef.current.push({ questionId: q.id, selectedIndex });
     const isCorrect = selectedIndex === q.correctIndex;
+    const nextCheckpoint = Math.min(100, ((qi + 1) / total) * 100);
     if (isCorrect) {
-      gaugeRef.current = Math.min(100, gaugeRef.current + 22);
+      gaugeRef.current = 100;
       statsRef.current.correct += 1;
+      statsRef.current.misses = 0;
+      positionRef.current = nextCheckpoint;
       setFeedback("correct");
     } else {
-      gaugeRef.current = Math.max(0, gaugeRef.current - 18);
+      gaugeRef.current = Math.max(0, gaugeRef.current + 8);
+      statsRef.current.misses += 1;
+      positionRef.current = Math.min(nextCheckpoint, positionRef.current + (nextCheckpoint - positionRef.current) * 0.4);
       setFeedback("wrong");
     }
     setGauge(gaugeRef.current);
-    window.setTimeout(() => setFeedback(null), 500);
-    if (gaugeRef.current <= 0) {
-      window.setTimeout(() => finish("lost"), 350);
+    setPosition(positionRef.current);
+    window.setTimeout(() => setFeedback(null), 600);
+
+    if (!isCorrect && statsRef.current.misses >= 2) {
+      window.setTimeout(() => finish("lost"), 500);
       return;
     }
-    if (qi + 1 >= questions.length) {
-      window.setTimeout(() => finish("won"), 350);
+    const nextQi = qi + 1;
+    if (nextQi >= total) {
+      positionRef.current = 100;
+      setPosition(100);
+      window.setTimeout(() => finish("won"), 500);
       return;
     }
-    window.setTimeout(() => setQi((v) => v + 1), 450);
+    window.setTimeout(() => {
+      setQi(nextQi);
+      phaseRef.current = "driving";
+      setPhase("driving");
+    }, 700);
+  }
+
+  if (total === 0) {
+    return <div style={{ padding: 20, textAlign: "center", color: "#fff", background: theme.bg, borderRadius: 16, fontWeight: 700 }}>This game has no questions yet.</div>;
   }
 
   const q = questions[qi];
+  const finished = statsRef.current.done;
+  const isCar = theme.sceneKind === "car";
   return (
-    <div style={{ display: "grid", gap: 14, padding: 16, borderRadius: 16, background: theme.bg }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontSize: 30 }}>{theme.playerEmoji}</span>
-        <span style={{ fontSize: 22 }}>{theme.hazardEmoji}</span>
-      </div>
-      <GaugeBar label={theme.gaugeLabel} value={gauge} emoji="⛽" />
-      <div style={feedbackBanner(feedback)}>{feedback === "correct" ? "Refilled!" : feedback === "wrong" ? "Lost some — keep going!" : ""}</div>
-      {q && <QuestionPrompt key={q.id} q={q} seconds={qSeconds} onAnswer={onAnswer} />}
+    <div style={{ display: "grid", gap: 12, padding: 16, borderRadius: 16, background: theme.bg }}>
+      <TrackScene theme={theme} progressPct={position} driving={phase === "driving"} finished={finished} />
+      <FuelGaugeDial value={gauge} label={theme.gaugeLabel} />
+      <div style={feedbackBanner(feedback)}>{feedback === "correct" ? `${theme.gaugeLabel} restored — moving again!` : feedback === "wrong" ? `Missed it — ${theme.gaugeLabel.toLowerCase()} still critical!` : ""}</div>
+      {phase === "pitstop" && q ? (
+        <div style={{ display: "grid", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {isCar ? <GasStationSVG /> : <SupplyStopSVG />}
+            <span style={{ color: "#fff", fontWeight: 800, fontSize: 12.5 }}>{isCar ? "PIT STOP" : "CRITICAL"} — answer fast to recover!</span>
+          </div>
+          <QuestionPrompt key={q.id} q={q} seconds={qSeconds} onAnswer={onAnswer} />
+        </div>
+      ) : (
+        <div style={{ textAlign: "center", color: "#fff", fontWeight: 700, fontSize: 13, opacity: 0.85 }}>{isCar ? "Cruising" : "Moving on"} — {theme.gaugeLabel.toLowerCase()} dropping…</div>
+      )}
     </div>
   );
 }
@@ -444,6 +670,28 @@ export function ThemedGameEngine(props: EngineProps) {
   return <ClimbEngine {...props} />;
 }
 
+function TrophyIcon() {
+  return (
+    <svg viewBox="0 0 100 100" width="56" height="56" style={{ filter: "drop-shadow(0 4px 4px rgba(0,0,0,.3))" }}>
+      <path d="M20 18 H80 V38 Q80 60 50 60 Q20 60 20 38 Z" fill="#fbbf24" stroke="#b45309" strokeWidth="3" />
+      <path d="M20 22 H6 Q6 42 26 46" fill="none" stroke="#b45309" strokeWidth="4" strokeLinecap="round" />
+      <path d="M80 22 H94 Q94 42 74 46" fill="none" stroke="#b45309" strokeWidth="4" strokeLinecap="round" />
+      <rect x="44" y="60" width="12" height="14" fill="#b45309" />
+      <rect x="30" y="74" width="40" height="10" rx="2" fill="#92400e" />
+      <path d="M50 26 l5 11 12 1 -9 8 3 12 -11 -6 -11 6 3 -12 -9 -8 12 -1 Z" fill="#fef3c7" />
+    </svg>
+  );
+}
+
+function StopIcon() {
+  return (
+    <svg viewBox="0 0 100 100" width="52" height="52" style={{ filter: "drop-shadow(0 4px 4px rgba(0,0,0,.3))" }}>
+      <circle cx="50" cy="50" r="42" fill="#7f1d1d" stroke="#fecaca" strokeWidth="5" />
+      <rect x="26" y="43" width="48" height="14" rx="3" fill="#fecaca" />
+    </svg>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Result screen — shared across the themed launcher and the outsider trial
 // page, since both need the same win/lose messaging.
@@ -462,7 +710,7 @@ export function ThemedResult({
   const won = outcome === "won";
   return (
     <div style={{ display: "grid", gap: 14, textAlign: "center", padding: 20, borderRadius: 16, background: theme.bg }}>
-      <div style={{ fontSize: 40 }}>{won ? "🏆" : theme.hazardEmoji}</div>
+      <div style={{ display: "flex", justifyContent: "center" }}>{won ? <TrophyIcon /> : <StopIcon />}</div>
       <div style={{ fontSize: 16, fontWeight: 800, color: "#fff" }}>{won ? theme.winMessage : theme.loseMessage}</div>
       <div style={{ fontSize: 42, fontWeight: 900, color: "#fff" }}>{score}<span style={{ fontSize: 18 }}>/100</span></div>
       {actions}
