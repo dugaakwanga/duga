@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Card, Badge, Table, PageHeader, Button, Modal, Field, Input, Select, EmptyState, Alert, Spinner, Icon } from "@duga/ui";
 import { api } from "@/lib/client/api";
 import { useSection } from "@/components/SectionContext";
+import { downloadIdCardsPdf, type IdCardSchool, type IdCardStudent } from "@/lib/client/idCards";
 
 interface FeeInfo {
   feeAmount: string;
@@ -56,6 +57,7 @@ export default function StudentsPage() {
   const [newClassOpen, setNewClassOpen] = useState(false);
   const [newClass, setNewClass] = useState<Record<string, string>>({});
   const [creatingClass, setCreatingClass] = useState(false);
+  const [printingCards, setPrintingCards] = useState<string | null>(null); // studentId, or "batch"
   // Drill-down navigation: overview -> a configured school section (or unassigned) -> classes -> students.
   type View = { name: "overview" } | { name: "category"; section: string } | { name: "class"; section: string; className: string };
   const [view, setView] = useState<View>({ name: "overview" });
@@ -120,6 +122,19 @@ export default function StudentsPage() {
       .then((d) => { setClasses(d.items); setLevels(d.levels ?? []); setSessions(d.sessions ?? []); })
       .catch(() => setClasses([]));
   }, []);
+
+  async function printIdCards(studentIds: string[], key: string) {
+    if (studentIds.length === 0) return;
+    setPrintingCards(key);
+    try {
+      const d = await api<{ school: IdCardSchool; cards: IdCardStudent[] }>("students/idCards", { method: "POST", body: { studentIds } });
+      await downloadIdCardsPdf(d.school, d.cards);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setPrintingCards(null);
+    }
+  }
 
   async function save() {
     setSaving(true);
@@ -365,6 +380,16 @@ export default function StudentsPage() {
           <Card key={view.className} title={view.className} className="students-group-card">
             <div style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
               <Badge tone="neutral">{activeClassStudents.length} student{activeClassStudents.length === 1 ? "" : "s"}</Badge>
+              {activeClassStudents.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  loading={printingCards === "batch"}
+                  onClick={() => printIdCards(activeClassStudents.map((s) => s.id), "batch")}
+                >
+                  <Icon name="reports" size={14} /> Print ID cards for class
+                </Button>
+              )}
             </div>
             <Table headers={["Adm No.", "Name", "Status", "Fee access", "Actions"]}>
               {activeClassStudents.map((s) => (
@@ -389,10 +414,11 @@ export default function StudentsPage() {
                   <td><Badge tone={s.status === "ACTIVE" ? "success" : "warning"}>{s.status}</Badge></td>
                   <td>{feeBadge(s)}</td>
                   <td>
-                    <div style={{ display: "flex", gap: 8 }}>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       <Button size="sm" variant="ghost" onClick={() => openEdit(s)}>Edit</Button>
                       <Button size="sm" variant="outline" onClick={() => { setFeeTarget(s); setFeeForm({}); }}>Set fee</Button>
                       <Button size="sm" variant="outline" onClick={() => { setPromoteTarget(s); setPromoteForm({}); }}>Move class</Button>
+                      <Button size="sm" variant="outline" loading={printingCards === s.id} onClick={() => printIdCards([s.id], s.id)}>ID card</Button>
                       <Button size="sm" variant="danger" onClick={() => removeStudent(s)}>Remove</Button>
                     </div>
                   </td>

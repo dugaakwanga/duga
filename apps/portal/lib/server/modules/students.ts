@@ -1,7 +1,8 @@
 import bcrypt from "bcryptjs";
 import { prisma } from "@duga/core/server";
+import { signGateToken } from "@duga/core";
 import type { Module } from ".";
-import { can, pick, str, num, bool, studentScope, feeInfoOf, assertContactFree, resolveSection } from "../helpers";
+import { can, pick, str, num, bool, idArray, studentScope, feeInfoOf, assertContactFree, resolveSection } from "../helpers";
 
 // Create or update the primary linked parent for a student. If an email is
 // given that matches the current parent, only name/phone are updated; otherwise
@@ -337,6 +338,44 @@ export const studentsModule: Module = {
       });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "student.promoted", entityType: "Student", entityId: ctx.id, meta: { classGroupId } });
       return { ok: true };
+    },
+
+    // Printable ID card data for one class (or an explicit list of students):
+    // each student's details plus a freshly-signed gate QR token, and the
+    // school's own branding — the client renders these into an actual
+    // printable-size PDF. Admin function, not a self-service gate-staff tool.
+    idCards: async (ctx) => {
+      can(ctx, "students:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const classGroupId = str(ctx.body.classGroupId);
+      const studentIds = idArray(ctx.body.studentIds);
+      if (!classGroupId && studentIds.length === 0) throw new Error("Choose a class or specific students");
+      const students = await prisma.student.findMany({
+        where: {
+          schoolId,
+          status: "ACTIVE",
+          ...(classGroupId ? { currentClassGroupId: classGroupId } : { id: { in: studentIds } }),
+        },
+        include: { user: { select: { firstName: true, lastName: true } }, classGroup: { include: { level: true } } },
+        orderBy: { admissionNumber: "asc" },
+      });
+      if (students.length === 0) throw new Error("No active students found");
+      const school = await prisma.school.findUnique({ where: { id: schoolId }, select: { name: true, shortName: true, address: true, phone: true, logoUrl: true } });
+      const cards = await Promise.all(
+        students.map(async (s) => ({
+          studentId: s.id,
+          firstName: s.user.firstName,
+          lastName: s.user.lastName,
+          admissionNumber: s.admissionNumber,
+          className: s.classGroup ? `${s.classGroup.level.name} ${s.classGroup.name}` : null,
+          section: s.section,
+          dateOfBirth: s.dateOfBirth,
+          gender: s.gender,
+          photoUrl: s.photoUrl,
+          code: await signGateToken(s.id, schoolId),
+        })),
+      );
+      return { school, cards };
     },
   },
 };

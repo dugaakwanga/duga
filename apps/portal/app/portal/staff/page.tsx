@@ -231,6 +231,7 @@ export default function StaffPage() {
                 <Select value={form.role ?? ""} onChange={(e) => setForm({ ...form, role: e.target.value })}>
                   <option value="">Select…</option>
                   <option value="TEACHER">Teacher</option>
+                  <option value="SECURITY">Security</option>
                   {currentRole === "OWNER" && <option value="ADMIN">Admin</option>}
                   {currentRole === "OWNER" && <option value="BURSAR">Bursar</option>}
                 </Select>
@@ -260,6 +261,7 @@ export default function StaffPage() {
                 <Field label="Role" required>
                   <Select value={form.role ?? editing.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
                     <option value="TEACHER">Teacher</option>
+                    <option value="SECURITY">Security</option>
                     {currentRole === "OWNER" && <option value="ADMIN">Admin</option>}
                     {currentRole === "OWNER" && <option value="BURSAR">Bursar</option>}
                   </Select>
@@ -381,6 +383,7 @@ export default function StaffPage() {
           <Field label="New role" required>
             <Select value={roleValue} onChange={(e) => setRoleValue(e.target.value)}>
               <option value="TEACHER">Teacher</option>
+              <option value="SECURITY">Security</option>
               <option value="ADMIN">Admin</option>
               <option value="BURSAR">Bursar</option>
             </Select>
