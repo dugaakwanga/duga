@@ -46,11 +46,11 @@ export function recommendedGameFor(category: string, seed: string): GameKind {
   return others[h % others.length] ?? preferred;
 }
 
-function clampScore(score: number): number {
+export function clampScore(score: number): number {
   return Math.max(10, Math.min(100, Math.round(score)));
 }
 
-function shuffle<T>(arr: T[]): T[] {
+export function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -65,14 +65,14 @@ function shuffle<T>(arr: T[]): T[] {
 // ms) is the optional session time limit imposed by the teacher-assigned
 // duration. When the session expires mid-round the game ends with its current
 // score so nothing is lost.
-interface GameProps {
+export interface GameProps {
   onFinish: (score: number) => void;
   expiresAt?: number;
 }
 
 // If the assigned play duration runs out, force the round to end with the
 // current score. `finish` must guard against double-finish (each game does).
-function useExpiry(expiresAt: number | undefined, finish: (score: number) => void, scoreNow: () => number) {
+export function useExpiry(expiresAt: number | undefined, finish: (score: number) => void, scoreNow: () => number) {
   useEffect(() => {
     if (!expiresAt) return;
     const t = window.setTimeout(() => finish(scoreNow()), Math.max(0, expiresAt - Date.now()));
@@ -81,7 +81,7 @@ function useExpiry(expiresAt: number | undefined, finish: (score: number) => voi
   }, [expiresAt, finish]);
 }
 
-function formatClock(seconds: number): string {
+export function formatClock(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return `${m}:${s.toString().padStart(2, "0")}`;
@@ -90,7 +90,7 @@ function formatClock(seconds: number): string {
 // ---------------------------------------------------------------------------
 // Shared game chrome (score, title, level, back).
 // ---------------------------------------------------------------------------
-function GameFrame({
+export function GameFrame({
   title,
   right,
   children,
@@ -110,7 +110,7 @@ function GameFrame({
   );
 }
 
-function LevelBadge({ level }: { level: number }) {
+export function LevelBadge({ level }: { level: number }) {
   return (
     <span
       style={{
@@ -129,7 +129,7 @@ function LevelBadge({ level }: { level: number }) {
   );
 }
 
-function LevelUpFlash({ show, note }: { show: boolean; note?: string }) {
+export function LevelUpFlash({ show, note }: { show: boolean; note?: string }) {
   if (!show) return null;
   return (
     <div
@@ -149,7 +149,7 @@ function LevelUpFlash({ show, note }: { show: boolean; note?: string }) {
   );
 }
 
-function LifeHearts({ lives }: { lives: number }) {
+export function LifeHearts({ lives }: { lives: number }) {
   return (
     <span style={{ fontSize: 14, letterSpacing: 2 }} aria-label={`${lives} lives left`}>
       {"❤️".repeat(Math.max(0, lives))}
@@ -931,7 +931,7 @@ function ScrambleGame({ onFinish, expiresAt }: GameProps) {
 
 // Tiny local button so FunGames.tsx stays self-contained (avoids pulling the
 // whole @duga/ui Modal/Button graph into every game play).
-function ButtonDuga({
+export function ButtonDuga({
   children,
   onClick,
   disabled,

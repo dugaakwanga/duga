@@ -1,7 +1,23 @@
-import { prisma, logAudit } from "@duga/core/server";
+import { prisma, logAudit, checkRateLimit } from "@duga/core/server";
+import { signGameInviteToken } from "@duga/core";
 import type { Module } from ".";
 import type { Ctx } from "@/app/api/v1/[...path]/route";
 import { can, str, num, idArray, isAssignedTo, resolveTargetStudentIds, ensureTeacher, assertFeeAccess } from "../helpers";
+
+// Fisher-Yates — used to serve questions in a fresh order each playthrough.
+function shuffled<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j]!, a[i]!];
+  }
+  return a;
+}
+
+// A GameInvite/GameLiveParticipant reference a student/school by plain id
+// column rather than a Prisma relation (see schema.prisma) so no lookup here
+// counts as protected by request scoping — every query below re-checks
+// schoolId explicitly.
 
 const GAME_LIBRARY: Array<[string, string, string, string]> = [
   ["Number Ninja", "MATH", "EASY", "Sharpen mental arithmetic — add, subtract and multiply your way to the top."],
@@ -150,10 +166,16 @@ export const gamesModule: Module = {
     can(ctx, "games:manage");
     const item = await prisma.educationalGame.findFirst({
       where: { id: ctx.id, schoolId: ctx.session.user.schoolId },
-      include: { teacher: { include: { user: { select: { firstName: true, lastName: true } } } }, progress: { include: { student: { include: { user: { select: { firstName: true, lastName: true } } } } } } },
+      include: {
+        teacher: { include: { user: { select: { firstName: true, lastName: true } } } },
+        progress: { include: { student: { include: { user: { select: { firstName: true, lastName: true } } } } } },
+        questions: { orderBy: { order: "asc" } },
+      },
     });
     if (!item) throw new Error("Game not found");
-    return item;
+    const liveSessions = await prisma.gameLiveSession.findMany({ where: { gameId: item.id }, orderBy: { startsAt: "desc" }, take: 10, include: { _count: { select: { participants: true } } } });
+    const invites = await prisma.gameInvite.findMany({ where: { gameId: item.id }, orderBy: { createdAt: "desc" }, take: 50 });
+    return { ...item, liveSessions, invites };
   },
 
   async create(ctx) {
@@ -174,6 +196,7 @@ export const gamesModule: Module = {
         title,
         description: str(ctx.body.description),
         category: str(ctx.body.category) ?? "QUIZ",
+        kind: str(ctx.body.kind) ?? "classic",
         gameUrl: str(ctx.body.gameUrl),
         difficulty: str(ctx.body.difficulty) ?? "MEDIUM",
         rewardPoints: num(ctx.body.rewardPoints) ?? 0,
@@ -185,6 +208,18 @@ export const gamesModule: Module = {
         publishedAt: isPublished ? new Date() : undefined,
         ...(isPublished
           ? { validUntil: validUntilFor(num(ctx.body.validDays) ?? 7, new Date()) }
+          : {}),
+        ...(Array.isArray(ctx.body.questions) && ctx.body.questions.length
+          ? {
+              questions: {
+                create: (ctx.body.questions as Array<Record<string, unknown>>).map((q, i) => ({
+                  question: str(q.question) ?? "",
+                  options: Array.isArray(q.options) ? q.options : [],
+                  correctIndex: num(q.correctIndex) ?? 0,
+                  order: i,
+                })),
+              },
+            }
           : {}),
       },
     });
@@ -213,6 +248,7 @@ export const gamesModule: Module = {
         title: str(body.title) ?? item.title,
         description: body.description === undefined ? item.description : str(body.description),
         category: str(body.category) ?? item.category,
+        kind: str(body.kind) ?? item.kind,
         gameUrl: body.gameUrl === undefined ? item.gameUrl : str(body.gameUrl),
         difficulty: str(body.difficulty) ?? item.difficulty,
         rewardPoints: num(body.rewardPoints) ?? item.rewardPoints,
@@ -337,19 +373,41 @@ export const gamesModule: Module = {
       return { ok: true };
     },
 
-    // Student records a play of the game and their score.
+    // Student records a play of the game and their score. Themed games (kind
+    // != "classic" with a real question bank) submit `answers` and are graded
+    // server-side against GameQuestion.correctIndex — the client score is
+    // never trusted directly. The original arcade games (kind "classic", no
+    // questions) still submit a plain `score`, unchanged from before.
     play: async (ctx) => {
       can(ctx, "games:play");
       const student = ctx.session.user.student;
       if (!student) throw new Error("Only students can play games");
-      assertFeeAccess(student);
+      await assertFeeAccess(ctx.session.user.schoolId, student, "games");
       const schoolId = ctx.session.user.schoolId;
-      const item = await prisma.educationalGame.findFirst({ where: { id: ctx.id, schoolId, isPublished: true } });
+      const rl = checkRateLimit(`games:play:${student.id}`, 30, 60_000);
+      if (!rl.allowed) {
+        const err = new Error("Too many plays in a short time. Please slow down.") as Error & { status?: number };
+        err.status = 429;
+        throw err;
+      }
+      const item = await prisma.educationalGame.findFirst({ where: { id: ctx.id, schoolId, isPublished: true }, include: { questions: true } });
       if (!item) throw new Error("Game not found or not published");
       if (isExpired(item)) throw new Error("This game has expired — it is no longer available to play");
       if (!isAssignedTo(item, student.id, student.currentClassGroupId)) throw new Error("This game is not assigned to you");
 
-      const score = num(ctx.body.score) ?? 0;
+      let score: number;
+      if (item.questions.length > 0) {
+        const answers = Array.isArray(ctx.body.answers) ? (ctx.body.answers as Array<{ questionId: string; selectedIndex: number }>) : [];
+        const questionMap = new Map(item.questions.map((q) => [q.id, q]));
+        let correct = 0;
+        for (const a of answers) {
+          const q = questionMap.get(a.questionId);
+          if (q && a.selectedIndex === q.correctIndex) correct += 1;
+        }
+        score = Math.max(0, Math.min(100, correct * 10));
+      } else {
+        score = num(ctx.body.score) ?? 0;
+      }
       const existing = await prisma.gameProgress.findUnique({ where: { gameId_studentId: { gameId: item.id, studentId: student.id } } });
       const bestScore = existing ? Math.max(existing.bestScore, score) : score;
       const firstReward = existing && existing.rewardPoints > 0 ? existing.rewardPoints : item.rewardPoints;
@@ -375,7 +433,264 @@ export const gamesModule: Module = {
         },
       });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "games.played", entityType: "GameProgress", entityId: progress.id, meta: { score, bestScore } });
-      return progress;
+      // `score` here is this attempt's result — distinct from progress.bestScore
+      // (all-time best), which is what the result screen needs to show.
+      return { ...progress, score };
+    },
+
+    // Loads a themed game for play: sanitized questions (no correctIndex) in
+    // a fresh shuffle, plus whether a teacher-scheduled live session is
+    // running right now for it.
+    start: async (ctx) => {
+      const role = ctx.session.user.role;
+      const isManagerRole = ["OWNER", "ADMIN", "TEACHER"].includes(role);
+      can(ctx, isManagerRole ? "games:manage" : "games:play");
+      const schoolId = ctx.session.user.schoolId;
+
+      // A manager previewing a game they're building skips every
+      // student-only gate (assignment, publish state, expiry, fee access) —
+      // preview must work on an unpublished draft with no target audience yet.
+      if (isManagerRole) {
+        const item = await prisma.educationalGame.findFirst({ where: { id: ctx.id, schoolId }, include: { questions: { orderBy: { order: "asc" } } } });
+        if (!item) throw new Error("Game not found");
+        if (role === "TEACHER" && item.teacherId !== ctx.session.user.teacher!.id) throw new Error("Not authorized");
+        return {
+          id: item.id,
+          title: item.title,
+          kind: item.kind,
+          difficulty: item.difficulty,
+          durationMinutes: item.durationMinutes,
+          rewardPoints: item.rewardPoints,
+          questions: shuffled(item.questions).map((q) => ({ id: q.id, question: q.question, options: q.options, correctIndex: q.correctIndex })),
+          liveSession: null,
+        };
+      }
+
+      const student = ctx.session.user.student;
+      if (!student) throw new Error("Only students can play games");
+      await assertFeeAccess(ctx.session.user.schoolId, student, "games");
+      const item = await prisma.educationalGame.findFirst({
+        where: { id: ctx.id, schoolId, isPublished: true },
+        include: { questions: { orderBy: { order: "asc" } } },
+      });
+      if (!item) throw new Error("Game not found or not published");
+      if (isExpired(item)) throw new Error("This game has expired — it is no longer available to play");
+      if (!isAssignedTo(item, student.id, student.currentClassGroupId)) throw new Error("This game is not assigned to you");
+
+      const now = new Date();
+      const liveSession = await prisma.gameLiveSession.findFirst({ where: { gameId: item.id, startsAt: { lte: now }, endsAt: { gte: now } } });
+
+      return {
+        id: item.id,
+        title: item.title,
+        kind: item.kind,
+        difficulty: item.difficulty,
+        durationMinutes: item.durationMinutes,
+        rewardPoints: item.rewardPoints,
+        // Unlike CBT/admissions questions, correctIndex is included here on
+        // purpose: the themed engines react to correctness with zero latency
+        // (a per-answer round trip would make timed play unplayable given
+        // this deployment's real-world DB latency), and games feed a fun
+        // leaderboard rather than an academic record — the `play` action
+        // still authoritatively recomputes the final score server-side
+        // regardless of what the client reports, so this can't be abused to
+        // post an impossible score, only to answer quickly and correctly.
+        questions: shuffled(item.questions).map((q) => ({ id: q.id, question: q.question, options: q.options, correctIndex: q.correctIndex })),
+        liveSession: liveSession ? { id: liveSession.id, endsAt: liveSession.endsAt } : null,
+      };
+    },
+
+    // ---- Question bank ----------------------------------------------------
+    addQuestion: async (ctx) => {
+      can(ctx, "games:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const item = await prisma.educationalGame.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!item) throw new Error("Game not found");
+      if (ctx.session.user.role === "TEACHER" && item.teacherId !== ctx.session.user.teacher!.id) throw new Error("Not authorized");
+      const question = str(ctx.body.question);
+      const options = Array.isArray(ctx.body.options) ? ctx.body.options : [];
+      if (!question || options.length < 2) throw new Error("A question and at least two options are required");
+      const count = await prisma.gameQuestion.count({ where: { gameId: item.id } });
+      return prisma.gameQuestion.create({
+        data: { gameId: item.id, question, options, correctIndex: num(ctx.body.correctIndex) ?? 0, order: count },
+      });
+    },
+
+    // Bulk-adds questions parsed client-side from an uploaded CSV, same
+    // format/flow as the CBT and admissions-test bulk imports.
+    bulkAddQuestions: async (ctx) => {
+      can(ctx, "games:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const item = await prisma.educationalGame.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!item) throw new Error("Game not found");
+      if (ctx.session.user.role === "TEACHER" && item.teacherId !== ctx.session.user.teacher!.id) throw new Error("Not authorized");
+      const rows = Array.isArray(ctx.body.questions) ? (ctx.body.questions as Array<Record<string, unknown>>) : [];
+      if (rows.length === 0) throw new Error("No questions to import");
+      const startOrder = await prisma.gameQuestion.count({ where: { gameId: item.id } });
+      const created = await prisma.$transaction(
+        rows.map((q, i) =>
+          prisma.gameQuestion.create({
+            data: {
+              gameId: item.id,
+              question: str(q.question) ?? "",
+              options: Array.isArray(q.options) ? q.options : [],
+              correctIndex: num(q.correctIndex) ?? 0,
+              order: startOrder + i,
+            },
+          }),
+        ),
+      );
+      return { ok: true, count: created.length };
+    },
+
+    updateQuestion: async (ctx) => {
+      can(ctx, "games:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const questionId = str(ctx.body.questionId);
+      if (!questionId) throw new Error("questionId is required");
+      const q = await prisma.gameQuestion.findFirst({ where: { id: questionId, game: { schoolId } } });
+      if (!q) throw new Error("Question not found");
+      const data: Record<string, unknown> = {};
+      if (str(ctx.body.question)) data.question = str(ctx.body.question);
+      if (Array.isArray(ctx.body.options)) data.options = ctx.body.options;
+      if (ctx.body.correctIndex !== undefined) data.correctIndex = num(ctx.body.correctIndex) ?? q.correctIndex;
+      return prisma.gameQuestion.update({ where: { id: questionId }, data });
+    },
+
+    deleteQuestion: async (ctx) => {
+      can(ctx, "games:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const questionId = str(ctx.body.questionId);
+      if (!questionId) throw new Error("questionId is required");
+      const q = await prisma.gameQuestion.findFirst({ where: { id: questionId, game: { schoolId } } });
+      if (!q) throw new Error("Question not found");
+      await prisma.gameQuestion.delete({ where: { id: questionId } });
+      return { ok: true };
+    },
+
+    // ---- Teacher-scheduled live sessions -----------------------------------
+    scheduleLiveSession: async (ctx) => {
+      can(ctx, "games:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const item = await prisma.educationalGame.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!item) throw new Error("Game not found");
+      if (ctx.session.user.role === "TEACHER" && item.teacherId !== ctx.session.user.teacher!.id) throw new Error("Not authorized");
+      const startsAt = str(ctx.body.startsAt) ? new Date(String(ctx.body.startsAt)) : null;
+      const endsAt = str(ctx.body.endsAt) ? new Date(String(ctx.body.endsAt)) : null;
+      if (!startsAt || !endsAt || endsAt <= startsAt) throw new Error("Provide a valid start and end time");
+      return prisma.gameLiveSession.create({ data: { schoolId, gameId: item.id, startsAt, endsAt } });
+    },
+
+    deleteLiveSession: async (ctx) => {
+      can(ctx, "games:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const sessionId = str(ctx.body.sessionId);
+      if (!sessionId) throw new Error("sessionId is required");
+      const session = await prisma.gameLiveSession.findFirst({ where: { id: sessionId, schoolId } });
+      if (!session) throw new Error("Session not found");
+      await prisma.gameLiveSession.delete({ where: { id: sessionId } });
+      return { ok: true };
+    },
+
+    // Student opts into the currently-running live session for a game —
+    // registers them as a participant so others polling pingLive see them.
+    joinLive: async (ctx) => {
+      can(ctx, "games:play");
+      const student = ctx.session.user.student;
+      if (!student) throw new Error("Only students can join a live session");
+      const schoolId = ctx.session.user.schoolId;
+      const item = await prisma.educationalGame.findFirst({ where: { id: ctx.id, schoolId, isPublished: true } });
+      if (!item || !isAssignedTo(item, student.id, student.currentClassGroupId)) throw new Error("This game is not assigned to you");
+      const now = new Date();
+      const session = await prisma.gameLiveSession.findFirst({ where: { gameId: item.id, startsAt: { lte: now }, endsAt: { gte: now } } });
+      if (!session) throw new Error("There is no live session running for this game right now");
+      await prisma.gameLiveParticipant.upsert({
+        where: { sessionId_studentId: { sessionId: session.id, studentId: student.id } },
+        update: { lastPingAt: now },
+        create: { sessionId: session.id, studentId: student.id },
+      });
+      return { sessionId: session.id, endsAt: session.endsAt };
+    },
+
+    // Pushes this student's live score/progress and pulls everyone else's —
+    // polled every few seconds by the client. This is the entire "live"
+    // mechanism: no websockets, just a cheap periodic read+write.
+    pingLive: async (ctx) => {
+      can(ctx, "games:play");
+      const student = ctx.session.user.student;
+      if (!student) throw new Error("Only students can play live");
+      const sessionId = str(ctx.body.sessionId);
+      if (!sessionId) throw new Error("sessionId is required");
+      const session = await prisma.gameLiveSession.findFirst({ where: { id: sessionId, schoolId: ctx.session.user.schoolId } });
+      if (!session) throw new Error("Session not found");
+      await prisma.gameLiveParticipant.upsert({
+        where: { sessionId_studentId: { sessionId, studentId: student.id } },
+        update: { score: num(ctx.body.score) ?? 0, progressPct: num(ctx.body.progressPct) ?? 0, lastPingAt: new Date() },
+        create: { sessionId, studentId: student.id, score: num(ctx.body.score) ?? 0, progressPct: num(ctx.body.progressPct) ?? 0 },
+      });
+      const participants = await prisma.gameLiveParticipant.findMany({ where: { sessionId } });
+      const students = await prisma.student.findMany({
+        where: { id: { in: participants.map((p) => p.studentId) } },
+        select: { id: true, user: { select: { firstName: true, lastName: true } } },
+      });
+      const byId = new Map(students.map((s) => [s.id, s]));
+      return {
+        participants: participants
+          .map((p) => ({
+            studentId: p.studentId,
+            name: byId.get(p.studentId) ? `${byId.get(p.studentId)!.user.firstName} ${byId.get(p.studentId)!.user.lastName}` : "Player",
+            score: p.score,
+            progressPct: p.progressPct,
+            finishedAt: p.finishedAt,
+          }))
+          .sort((a, b) => b.score - a.score),
+      };
+    },
+
+    // ---- Outsider "invite a friend" (trial-play → admissions funnel) ------
+    createInvite: async (ctx) => {
+      can(ctx, "games:play");
+      const student = ctx.session.user.student;
+      if (!student) throw new Error("Only students can send invites");
+      const schoolId = ctx.session.user.schoolId;
+      const rl = checkRateLimit(`games:invite:${student.id}`, 10, 60 * 60_000);
+      if (!rl.allowed) {
+        const err = new Error("Too many invites sent. Please try again later.") as Error & { status?: number };
+        err.status = 429;
+        throw err;
+      }
+      const item = await prisma.educationalGame.findFirst({ where: { id: ctx.id, schoolId, isPublished: true } });
+      if (!item || !isAssignedTo(item, student.id, student.currentClassGroupId)) throw new Error("This game is not assigned to you");
+      const guestEmail = str(ctx.body.guestEmail)?.trim().toLowerCase();
+      if (!guestEmail) throw new Error("A guest email is required");
+      const guestName = str(ctx.body.guestName);
+
+      const alreadyPlayed = await prisma.gameInvite.findFirst({ where: { schoolId, guestEmail, status: "PLAYED" } });
+      if (alreadyPlayed) throw new Error("This person has already used their free trial for this school.");
+
+      const invite = await prisma.gameInvite.create({ data: { schoolId, gameId: item.id, inviterStudentId: student.id, guestName, guestEmail } });
+      const token = await signGameInviteToken(invite.id, schoolId);
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "games.inviteCreated", entityType: "GameInvite", entityId: invite.id, meta: { guestEmail } });
+      return { id: invite.id, token, path: `/play/invite/${token}` };
+    },
+
+    // Re-signs a fresh link for an invite the student already sent (the
+    // token itself isn't stored — see auth.ts).
+    resendInviteLink: async (ctx) => {
+      can(ctx, "games:play");
+      const student = ctx.session.user.student;
+      if (!student) throw new Error("Only students can manage invites");
+      const invite = await prisma.gameInvite.findFirst({ where: { id: ctx.id, schoolId: ctx.session.user.schoolId, inviterStudentId: student.id } });
+      if (!invite) throw new Error("Invite not found");
+      const token = await signGameInviteToken(invite.id, invite.schoolId);
+      return { token, path: `/play/invite/${token}` };
+    },
+
+    myInvites: async (ctx) => {
+      can(ctx, "games:play");
+      const student = ctx.session.user.student;
+      if (!student) throw new Error("Only students can view their invites");
+      return prisma.gameInvite.findMany({ where: { schoolId: ctx.session.user.schoolId, inviterStudentId: student.id }, orderBy: { createdAt: "desc" }, take: 50 });
     },
   },
 };

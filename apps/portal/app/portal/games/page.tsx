@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { PageHeader, Card, Badge, Button, Field, Input, Textarea, Select, Modal, Alert, Spinner, EmptyState, Icon } from "@duga/ui";
 import { api } from "@/lib/client/api";
 import { FunGameLauncher, recommendedGameFor } from "@/components/FunGames";
+import { ThemedGameLauncher, THEMES, themeFor } from "@/components/GameEngines";
 
 interface GameProgressRow {
   id: string;
@@ -19,6 +20,7 @@ interface GameItem {
   title: string;
   description: string | null;
   category: string;
+  kind: string;
   gameUrl: string | null;
   difficulty: string;
   rewardPoints: number;
@@ -33,6 +35,122 @@ interface GameItem {
   avgScore?: number;
   myProgress?: GameProgressRow[];
   teacher?: { user: { firstName: string; lastName: string } };
+}
+
+interface GameQuestionRow {
+  id: string;
+  question: string;
+  options: string[];
+  correctIndex: number;
+  order: number;
+}
+
+interface LiveSessionRow {
+  id: string;
+  startsAt: string;
+  endsAt: string;
+  _count: { participants: number };
+}
+
+interface InviteRow {
+  id: string;
+  guestName: string | null;
+  guestEmail: string;
+  status: string;
+  score: number | null;
+  createdAt: string;
+}
+
+interface GameDetail extends GameItem {
+  questions: GameQuestionRow[];
+  liveSessions: LiveSessionRow[];
+  invites: InviteRow[];
+}
+
+interface QuestionDraft {
+  question: string;
+  options: string[];
+  correctIndex: number;
+  score: number;
+}
+
+const CSV_TEMPLATE = `question,optionA,optionB,optionC,optionD,correct,score
+"What is the capital of Nigeria?","Lagos","Abuja","Kano","Ibadan",B,1
+"7 + 5 = ?","10","11","12","13",C,1
+`;
+
+function downloadGameCsvTemplate() {
+  const blob = new Blob([CSV_TEMPLATE], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "game-questions-template.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Small, dependency-free CSV parser (quoted-field aware) — same shape as the
+// CBT and admissions-test bulk imports.
+function parseGameCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else field += c;
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === ",") {
+      row.push(field);
+      field = "";
+    } else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(field);
+      field = "";
+      if (row.some((f) => f.trim() !== "")) rows.push(row);
+      row = [];
+    } else {
+      field += c;
+    }
+  }
+  if (field !== "" || row.length > 0) {
+    row.push(field);
+    if (row.some((f) => f.trim() !== "")) rows.push(row);
+  }
+  return rows;
+}
+
+const OPTION_LETTERS = ["A", "B", "C", "D"];
+
+function parseGameQuestionsCsv(text: string): { questions: QuestionDraft[]; errors: string[] } {
+  const rows = parseGameCsv(text);
+  if (rows.length === 0) return { questions: [], errors: ["The file is empty."] };
+  const header = rows[0]!.map((h) => h.trim().toLowerCase());
+  const looksLikeHeader = header[0] === "question";
+  const dataRows = looksLikeHeader ? rows.slice(1) : rows;
+  const questions: QuestionDraft[] = [];
+  const errors: string[] = [];
+  dataRows.forEach((row, i) => {
+    const lineNo = i + (looksLikeHeader ? 2 : 1);
+    const [question, optA, optB, optC, optD, correctRaw, scoreRaw] = row.map((f) => f.trim());
+    if (!question) { errors.push(`Row ${lineNo}: missing question text.`); return; }
+    const options = [optA, optB, optC, optD].filter((o): o is string => !!o && o.length > 0);
+    if (options.length < 2) { errors.push(`Row ${lineNo}: needs at least 2 non-empty options.`); return; }
+    const letter = (correctRaw ?? "").toUpperCase();
+    const correctIndex = OPTION_LETTERS.indexOf(letter);
+    if (correctIndex < 0 || correctIndex >= options.length) {
+      errors.push(`Row ${lineNo}: "correct" must be a letter (A-D) matching one of the filled-in options.`);
+      return;
+    }
+    const score = Number(scoreRaw);
+    questions.push({ question, options, correctIndex, score: Number.isFinite(score) && score > 0 ? score : 1 });
+  });
+  return { questions, errors };
 }
 
 interface ApiList {
@@ -90,6 +208,19 @@ export default function GamesPage() {
   const [boardLoading, setBoardLoading] = useState(false);
   const [boardGame, setBoardGame] = useState("");
   const [board, setBoard] = useState<LeaderboardRow[] | null>(null);
+  // Manage modal (questions + live sessions + invites), manager-only
+  const [managing, setManaging] = useState<GameDetail | null>(null);
+  const [manageLoading, setManageLoading] = useState(false);
+  const [newQ, setNewQ] = useState<QuestionDraft>({ question: "", options: ["", "", "", ""], correctIndex: 0, score: 1 });
+  const [importErrors, setImportErrors] = useState<string[]>([]);
+  const [liveForm, setLiveForm] = useState<{ startsAt: string; endsAt: string }>({ startsAt: "", endsAt: "" });
+  const [saving, setSaving] = useState(false);
+  // Student "invite a friend" modal
+  const [inviteTarget, setInviteTarget] = useState<GameItem | null>(null);
+  const [inviteForm, setInviteForm] = useState<{ guestName: string; guestEmail: string }>({ guestName: "", guestEmail: "" });
+  const [inviteLink, setInviteLink] = useState<string>("");
+  const [myInvites, setMyInvites] = useState<InviteRow[] | null>(null);
+  const [invitesOpen, setInvitesOpen] = useState(false);
 
   const isManager = list?.role === "manage";
   const isParent = list?.role === "PARENT";
@@ -136,12 +267,13 @@ export default function GamesPage() {
     const studentIds = selStudentIds;
     if (classIds.length === 0 && studentIds.length === 0) return alert("Assign to at least one class or student");
     try {
-      await api("games", {
+      const created = await api<GameItem>("games", {
         method: "POST",
         body: {
           title: form.title,
           description: form.description || undefined,
           category: form.category ?? "QUIZ",
+          kind: form.kind ?? "classic",
           gameUrl: form.gameUrl || undefined,
           difficulty: form.difficulty ?? "MEDIUM",
           rewardPoints: form.rewardPoints ? Number(form.rewardPoints) : 0,
@@ -157,6 +289,10 @@ export default function GamesPage() {
       setSelClassIds([]);
       setSelStudentIds([]);
       load();
+      // Themed games need a question bank before students can actually play
+      // them — jump straight into managing questions instead of leaving the
+      // teacher to hunt for the button.
+      if (created.kind && created.kind !== "classic") await openManage(created);
     } catch (e) {
       alert((e as Error).message);
     }
@@ -171,6 +307,7 @@ export default function GamesPage() {
       title: item.title,
       description: item.description ?? "",
       category: item.category ?? "QUIZ",
+      kind: item.kind ?? "classic",
       gameUrl: item.gameUrl ?? "",
       difficulty: item.difficulty ?? "MEDIUM",
       rewardPoints: item.rewardPoints != null ? String(item.rewardPoints) : "0",
@@ -195,6 +332,7 @@ export default function GamesPage() {
           title: form.title,
           description: form.description || undefined,
           category: form.category ?? "QUIZ",
+          kind: form.kind ?? "classic",
           gameUrl: form.gameUrl || undefined,
           difficulty: form.difficulty ?? "MEDIUM",
           rewardPoints: form.rewardPoints ? Number(form.rewardPoints) : 0,
@@ -274,6 +412,15 @@ export default function GamesPage() {
     }
   }
 
+  // ThemedGameLauncher already submits the score itself (server-graded from
+  // the answers array) before calling onFinish — this just closes the modal
+  // and refreshes, unlike completeBuiltInGame which still owns the API call.
+  function completeThemedGame() {
+    setPlaying(null);
+    setPreview(false);
+    if (!preview) load();
+  }
+
   async function openLeaderboard(gameId = "") {
     setBoardGame(gameId);
     setBoard(null);
@@ -290,13 +437,153 @@ export default function GamesPage() {
     }
   }
 
+  async function openManage(item: GameItem) {
+    setManageLoading(true);
+    try {
+      const detail = await api<GameDetail>(`games/${item.id}`);
+      setManaging(detail);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setManageLoading(false);
+    }
+  }
+
+  async function refreshManaging() {
+    if (!managing) return;
+    const detail = await api<GameDetail>(`games/${managing.id}`);
+    setManaging(detail);
+  }
+
+  async function addQuestion() {
+    if (!managing) return;
+    if (!newQ.question.trim() || newQ.options.filter((o) => o.trim()).length < 2) {
+      return alert("A question and at least two options are required");
+    }
+    setSaving(true);
+    try {
+      await api(`games/${managing.id}/addQuestion`, {
+        method: "POST",
+        body: { question: newQ.question, options: newQ.options.filter((o) => o.trim()), correctIndex: newQ.correctIndex, score: newQ.score },
+      });
+      setNewQ({ question: "", options: ["", "", "", ""], correctIndex: 0, score: 1 });
+      await refreshManaging();
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleImportQuestionsFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !managing) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const { questions: imported, errors } = parseGameQuestionsCsv(String(reader.result ?? ""));
+      setImportErrors(errors);
+      if (imported.length === 0) return;
+      setSaving(true);
+      try {
+        const d = await api<{ count: number }>(`games/${managing.id}/bulkAddQuestions`, { method: "POST", body: { questions: imported } });
+        await refreshManaging();
+        load();
+        alert(`Imported ${d.count} question(s).${errors.length ? ` ${errors.length} row(s) skipped — see below.` : ""}`);
+      } catch (err) {
+        alert((err as Error).message);
+      } finally {
+        setSaving(false);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  }
+
+  async function deleteQuestion(q: GameQuestionRow) {
+    if (!managing || !confirm("Delete this question?")) return;
+    try {
+      await api(`games/${managing.id}/deleteQuestion`, { method: "POST", body: { questionId: q.id } });
+      await refreshManaging();
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
+  async function scheduleLive() {
+    if (!managing) return;
+    if (!liveForm.startsAt || !liveForm.endsAt) return alert("Choose a start and end time");
+    setSaving(true);
+    try {
+      await api(`games/${managing.id}/scheduleLiveSession`, { method: "POST", body: { startsAt: new Date(liveForm.startsAt).toISOString(), endsAt: new Date(liveForm.endsAt).toISOString() } });
+      setLiveForm({ startsAt: "", endsAt: "" });
+      await refreshManaging();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteLive(sessionId: string) {
+    if (!confirm("Cancel this live session?")) return;
+    try {
+      await api("games/deleteLiveSession", { method: "POST", body: { sessionId } });
+      await refreshManaging();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
+  function openInvite(item: GameItem) {
+    setInviteTarget(item);
+    setInviteForm({ guestName: "", guestEmail: "" });
+    setInviteLink("");
+  }
+
+  async function sendInvite() {
+    if (!inviteTarget) return;
+    if (!inviteForm.guestEmail.trim()) return alert("Enter your friend's email");
+    setSaving(true);
+    try {
+      const res = await api<{ path: string }>(`games/${inviteTarget.id}/createInvite`, { method: "POST", body: inviteForm });
+      setInviteLink(`${window.location.origin}${res.path}`);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function openMyInvites() {
+    setInvitesOpen(true);
+    try {
+      const res = await api<InviteRow[]>("games/myInvites");
+      setMyInvites(res);
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
+  async function copyInviteLink(invite: InviteRow) {
+    try {
+      const res = await api<{ path: string }>(`games/${invite.id}/resendInviteLink`, { method: "POST" });
+      const url = `${window.location.origin}${res.path}`;
+      await navigator.clipboard?.writeText(url).catch(() => undefined);
+      alert(`Link copied:\n${url}`);
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
   const leaderboardActions = (
     <div style={{ display: "flex", gap: 8 }}>
       <Button variant="outline" onClick={() => openLeaderboard()}><Icon name="trophy" size={16} /> Leaderboard</Button>
       {isManager && (
         <>
           <Button variant="outline" onClick={addLibrary}>Add 20 game templates</Button>
-          <Button onClick={() => { setForm({}); setOpen(true); }}><Icon name="plus" size={16} /> New game</Button>
+          <Button onClick={() => { setForm({ publish: "1" }); setOpen(true); }}><Icon name="plus" size={16} /> New game</Button>
         </>
       )}
     </div>
@@ -307,7 +594,16 @@ export default function GamesPage() {
       <PageHeader
         title="Educational Games"
         subtitle={isManager ? "Create and assign fun educational games, then track scores and reward points." : isParent ? "Games assigned to your children. Parents can review them but do not play or earn rewards." : "Play the games your teachers assign and earn reward points."}
-        actions={isManager ? leaderboardActions : <div style={{ display: "flex", gap: 8 }}><Button variant="outline" onClick={() => openLeaderboard()}><Icon name="trophy" size={16} /> Leaderboard</Button></div>}
+        actions={
+          isManager ? (
+            leaderboardActions
+          ) : (
+            <div style={{ display: "flex", gap: 8 }}>
+              {!isParent && <Button variant="outline" onClick={openMyInvites}>My invites</Button>}
+              <Button variant="outline" onClick={() => openLeaderboard()}><Icon name="trophy" size={16} /> Leaderboard</Button>
+            </div>
+          )
+        }
       />
       {error && <Alert tone="danger">{error}</Alert>}
       {loading ? (
@@ -323,6 +619,7 @@ export default function GamesPage() {
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
                   <Badge tone="info">{item.category}</Badge>
                   <Badge tone="neutral">{item.difficulty}</Badge>
+                  {item.kind && item.kind !== "classic" && <Badge tone="accent">{themeFor(item.kind).emoji} {themeFor(item.kind).title}</Badge>}
                   {!isParent && <Badge tone="accent">⭐ {item.rewardPoints} pts</Badge>}
                   {isManager ? (
                     <>
@@ -344,6 +641,9 @@ export default function GamesPage() {
                 {isManager ? (
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <Button size="sm" variant="outline" onClick={() => { setPreview(true); setPlaying(item); }}>Preview play</Button>
+                    {item.kind && item.kind !== "classic" && (
+                      <Button size="sm" variant="outline" loading={manageLoading} onClick={() => openManage(item)}>Questions & live</Button>
+                    )}
                     <Button size="sm" variant="outline" onClick={() => openLeaderboard(item.id)}><Icon name="trophy" size={14} /> Board</Button>
                     {item.isPublished ? (
                       <Button size="sm" variant="ghost" loading={btn[`unpublish-${item.id}`]} onClick={() => action(item, "unpublish")}>Unpublish</Button>
@@ -361,13 +661,16 @@ export default function GamesPage() {
                       {item.validUntil && new Date(item.validUntil).getTime() < Date.now() && <Badge tone="danger">Expired</Badge>}
                       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                     <Button size="sm" variant="accent" onClick={() => { setPlaying(item); }}>▶ Play a game</Button>
+                    <Button size="sm" variant="outline" onClick={() => openInvite(item)}>👋 Invite a friend</Button>
                     {item.gameUrl && (
                       <a href={item.gameUrl} target="_blank" rel="noreferrer" className="duga-btn duga-btn--outline duga-btn--sm">Open linked game</a>
                     )}
-                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                      <Input type="number" placeholder="My score" style={{ width: 110 }} value={scores[item.id] ?? ""} onChange={(e) => setScores((s) => ({ ...s, [item.id]: e.target.value }))} />
-                      <Button size="sm" variant="outline" loading={btn[`play-${item.id}`]} onClick={() => logScore(item)}>Submit score</Button>
-                    </div>
+                    {(!item.kind || item.kind === "classic") && (
+                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <Input type="number" placeholder="My score" style={{ width: 110 }} value={scores[item.id] ?? ""} onChange={(e) => setScores((s) => ({ ...s, [item.id]: e.target.value }))} />
+                        <Button size="sm" variant="outline" loading={btn[`play-${item.id}`]} onClick={() => logScore(item)}>Submit score</Button>
+                      </div>
+                    )}
                     </div>
                     </>
                 )}
@@ -383,6 +686,17 @@ export default function GamesPage() {
             <Field label="Title" required>
               <Input value={form.title ?? ""} onChange={(e) => setForm({ ...form, title: e.target.value })} />
             </Field>
+            <Field label="Game style" hint="Pick a themed game — students answer real questions to survive/win. Choose Classic to use the original 5 arcade mini-games instead (no question bank).">
+              <Select value={form.kind ?? "classic"} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
+                <option value="classic">Classic (5 arcade mini-games, no questions)</option>
+                {THEMES.map((t) => (
+                  <option key={t.key} value={t.key}>{t.emoji} {t.title}</option>
+                ))}
+              </Select>
+            </Field>
+            {form.kind && form.kind !== "classic" && (
+              <Alert tone="info">{themeFor(form.kind).tagline}</Alert>
+            )}
             <div className="duga-form-grid">
               <Field label="Category">
                 <Select value={form.category ?? "QUIZ"} onChange={(e) => setForm({ ...form, category: e.target.value })}>
@@ -506,7 +820,14 @@ export default function GamesPage() {
       </Modal>
 
       <Modal open={!!playing} onClose={() => { setPlaying(null); setPreview(false); }} title={playing ? `${playing.title}${preview ? " — preview" : ""}` : "Play a game"} wide>
-        {playing && (
+        {playing && playing.kind && playing.kind !== "classic" ? (
+          <ThemedGameLauncher
+            key={`${playing.id}-${preview ? "preview" : "play"}`}
+            gameId={playing.id}
+            preview={preview}
+            onFinish={completeThemedGame}
+          />
+        ) : playing ? (
           <FunGameLauncher
             key={`${playing.id}-${preview ? "preview" : "play"}`}
             initialKind={recommendedGameFor(playing.category, playing.id)}
@@ -514,6 +835,176 @@ export default function GamesPage() {
             preview={preview}
             onFinish={completeBuiltInGame}
           />
+        ) : null}
+      </Modal>
+
+      {/* Manage modal (manager only): questions bank, CSV import, live sessions */}
+      <Modal open={!!managing} onClose={() => setManaging(null)} title={managing ? `Manage — ${managing.title}` : ""} wide>
+        {managing && (
+          <div style={{ display: "grid", gap: 20 }}>
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+                <strong>Questions ({managing.questions.length})</strong>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <Button size="sm" variant="ghost" onClick={downloadGameCsvTemplate}><Icon name="reports" size={14} /> Download CSV template</Button>
+                  <label className="duga-btn duga-btn--sm duga-btn--outline" style={{ cursor: "pointer" }}>
+                    <Icon name="plus" size={14} /> Import CSV
+                    <input type="file" accept=".csv,text/csv" onChange={handleImportQuestionsFile} style={{ display: "none" }} />
+                  </label>
+                </div>
+              </div>
+              {importErrors.length > 0 && (
+                <Alert tone="warning">
+                  {importErrors.length} row(s) in the CSV couldn&apos;t be imported and were skipped:
+                  <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                    {importErrors.slice(0, 8).map((err, i) => <li key={i} style={{ fontSize: 12.5 }}>{err}</li>)}
+                    {importErrors.length > 8 && <li style={{ fontSize: 12.5 }}>…and {importErrors.length - 8} more.</li>}
+                  </ul>
+                </Alert>
+              )}
+              {managing.questions.length === 0 ? (
+                <p style={{ color: "var(--duga-muted)", fontSize: 13.5 }}>No questions yet — add one below or import a CSV. Students can&apos;t play until at least one question is added.</p>
+              ) : (
+                <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+                  {managing.questions.map((q, qi) => (
+                    <div key={q.id} style={{ border: "1px solid var(--duga-border)", borderRadius: 10, padding: 10 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13.5 }}>{qi + 1}. {q.question}</div>
+                        <Button size="sm" variant="ghost" onClick={() => deleteQuestion(q)}>Delete</Button>
+                      </div>
+                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 6, fontSize: 12.5 }}>
+                        {q.options.map((o, oi) => (
+                          <span key={oi} style={{ color: oi === q.correctIndex ? "var(--duga-success,#1a7f37)" : "var(--duga-muted)", fontWeight: oi === q.correctIndex ? 700 : 400 }}>
+                            {oi === q.correctIndex ? "✓ " : ""}{o}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ border: "1px dashed var(--duga-border)", borderRadius: 10, padding: 12, display: "grid", gap: 10 }}>
+                <Field label="New question">
+                  <Textarea rows={2} value={newQ.question} onChange={(e) => setNewQ({ ...newQ, question: e.target.value })} />
+                </Field>
+                {newQ.options.map((opt, oi) => (
+                  <div key={oi} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <Input
+                      placeholder={`Option ${String.fromCharCode(65 + oi)}`}
+                      value={opt}
+                      onChange={(e) => {
+                        const options = [...newQ.options];
+                        options[oi] = e.target.value;
+                        setNewQ({ ...newQ, options });
+                      }}
+                    />
+                    <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12.5, whiteSpace: "nowrap" }}>
+                      <input type="radio" checked={newQ.correctIndex === oi} onChange={() => setNewQ({ ...newQ, correctIndex: oi })} /> Correct
+                    </label>
+                  </div>
+                ))}
+                <Button size="sm" onClick={addQuestion} loading={saving}>Add question</Button>
+              </div>
+            </div>
+
+            <div>
+              <strong>Live sessions</strong>
+              <p style={{ fontSize: 12.5, color: "var(--duga-muted)", margin: "4px 0 10px" }}>
+                Students who open this game during a scheduled window see each other&apos;s live score. Outside any window, they just play solo.
+              </p>
+              {managing.liveSessions.length > 0 && (
+                <div style={{ display: "grid", gap: 6, marginBottom: 10 }}>
+                  {managing.liveSessions.map((s) => {
+                    const isNow = new Date(s.startsAt).getTime() <= Date.now() && Date.now() <= new Date(s.endsAt).getTime();
+                    return (
+                      <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12.5, border: "1px solid var(--duga-border)", borderRadius: 8, padding: "6px 10px" }}>
+                        <span>{new Date(s.startsAt).toLocaleString()} → {new Date(s.endsAt).toLocaleTimeString()} {isNow && <Badge tone="success">Live now</Badge>} · {s._count.participants} joined</span>
+                        <Button size="sm" variant="ghost" onClick={() => deleteLive(s.id)}>Cancel</Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <div className="duga-form-grid">
+                <Field label="Starts">
+                  <Input type="datetime-local" value={liveForm.startsAt} onChange={(e) => setLiveForm({ ...liveForm, startsAt: e.target.value })} />
+                </Field>
+                <Field label="Ends">
+                  <Input type="datetime-local" value={liveForm.endsAt} onChange={(e) => setLiveForm({ ...liveForm, endsAt: e.target.value })} />
+                </Field>
+              </div>
+              <Button size="sm" variant="outline" onClick={scheduleLive} loading={saving}>Schedule live session</Button>
+            </div>
+
+            <div>
+              <strong>Student invites ({managing.invites.length})</strong>
+              {managing.invites.length === 0 ? (
+                <p style={{ fontSize: 12.5, color: "var(--duga-muted)", marginTop: 6 }}>No students have invited a friend to this game yet.</p>
+              ) : (
+                <table className="duga-table" style={{ marginTop: 8 }}>
+                  <thead><tr><th>Guest</th><th>Status</th><th>Score</th></tr></thead>
+                  <tbody>
+                    {managing.invites.map((inv) => (
+                      <tr key={inv.id}>
+                        <td>{inv.guestName || inv.guestEmail}</td>
+                        <td><Badge tone={inv.status === "PLAYED" ? "success" : "neutral"}>{inv.status}</Badge></td>
+                        <td>{inv.score ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Student "invite a friend" modal */}
+      <Modal open={!!inviteTarget} onClose={() => setInviteTarget(null)} title={inviteTarget ? `Invite a friend — ${inviteTarget.title}` : ""}>
+        {inviteTarget && (
+          <div style={{ display: "grid", gap: 12 }}>
+            {inviteLink ? (
+              <>
+                <Alert tone="success">Invite created! Share this link — your friend gets one 10-minute trial, no account needed.</Alert>
+                <Input readOnly value={inviteLink} onFocus={(e) => e.currentTarget.select()} />
+                <Button onClick={() => { navigator.clipboard?.writeText(inviteLink).catch(() => undefined); }}>Copy link</Button>
+              </>
+            ) : (
+              <>
+                <Field label="Friend's name">
+                  <Input value={inviteForm.guestName} onChange={(e) => setInviteForm({ ...inviteForm, guestName: e.target.value })} placeholder="Optional" />
+                </Field>
+                <Field label="Friend's email" required>
+                  <Input type="email" value={inviteForm.guestEmail} onChange={(e) => setInviteForm({ ...inviteForm, guestEmail: e.target.value })} placeholder="friend@example.com" />
+                </Field>
+                <Alert tone="info">Your friend gets one free 10-minute trial of this game — no portal account needed. Each person can only be invited once.</Alert>
+                <Button onClick={sendInvite} loading={saving}>Send invite</Button>
+              </>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      {/* Student's own sent invites */}
+      <Modal open={invitesOpen} onClose={() => setInvitesOpen(false)} title="My invites">
+        {!myInvites ? (
+          <Spinner size={22} />
+        ) : myInvites.length === 0 ? (
+          <EmptyState title="No invites sent yet" hint="Use “Invite a friend” on any game you're playing." />
+        ) : (
+          <table className="duga-table">
+            <thead><tr><th>Guest</th><th>Status</th><th>Score</th><th></th></tr></thead>
+            <tbody>
+              {myInvites.map((inv) => (
+                <tr key={inv.id}>
+                  <td>{inv.guestName || inv.guestEmail}</td>
+                  <td><Badge tone={inv.status === "PLAYED" ? "success" : "neutral"}>{inv.status}</Badge></td>
+                  <td>{inv.score ?? "—"}</td>
+                  <td>{inv.status !== "PLAYED" && <Button size="sm" variant="ghost" onClick={() => copyInviteLink(inv)}>Copy link</Button>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </Modal>
     </div>
