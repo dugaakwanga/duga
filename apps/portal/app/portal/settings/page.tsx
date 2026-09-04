@@ -277,7 +277,7 @@ export default function SettingsPage() {
 
             <div style={{ fontSize: 13.5, fontWeight: 600, marginTop: 18, marginBottom: 8 }}>Block for students who are owing</div>
             <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginBottom: 10 }}>
-              When a student's fee-access window lapses (see Fees → Students owing), these are the things it blocks. Turn any of them off to let owing students keep using that feature anyway.
+              When a student&apos;s fee-access window lapses (see Fees → Students owing), these are the things it blocks. Turn any of them off to let owing students keep using that feature anyway.
             </div>
             <div style={{ display: "grid", gap: 10 }}>
               {[

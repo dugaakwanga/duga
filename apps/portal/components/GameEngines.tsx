@@ -121,7 +121,6 @@ function QuestionPrompt({ q, seconds, onAnswer }: { q: EngineQuestion; seconds: 
       setLeft((s) => (s <= 1 ? 0 : s - 1));
     }, 1000);
     return () => window.clearInterval(iv);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q.id, seconds]);
 
   useEffect(() => {
@@ -601,7 +600,7 @@ export function ThemedGameLauncher({
     return (
       <div style={{ display: "grid", gap: 14, textAlign: "center", padding: 24, borderRadius: 16, background: theme.bg }}>
         <div style={{ fontSize: 30 }}>🔴</div>
-        <div style={{ color: "#fff", fontWeight: 800 }}>A live session for this game is running right now — play alongside classmates and see each other's live progress?</div>
+        <div style={{ color: "#fff", fontWeight: 800 }}>A live session for this game is running right now — play alongside classmates and see each other&apos;s live progress?</div>
         <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
           <ButtonDuga onClick={joinLive}>Join live</ButtonDuga>
           <ButtonDuga variant="ghost" onClick={() => setLiveChoice("skipped")}>Play solo</ButtonDuga>

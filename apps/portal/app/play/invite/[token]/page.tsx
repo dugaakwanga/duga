@@ -105,7 +105,7 @@ export default function GameInvitePage() {
     return wrap(
       <div style={{ display: "grid", gap: 14, textAlign: "center", padding: 24, borderRadius: 16, background: theme.bg }}>
         <div style={{ fontSize: 34 }}>{theme.emoji}</div>
-        <div style={{ color: "#fff", fontWeight: 800, fontSize: 18 }}>{data.guestName ? `Hi ${data.guestName}! ` : ""}You've been invited to try {game.title}</div>
+        <div style={{ color: "#fff", fontWeight: 800, fontSize: 18 }}>{data.guestName ? `Hi ${data.guestName}! ` : ""}You&apos;ve been invited to try {game.title}</div>
         <p style={{ color: "rgba(255,255,255,.9)", margin: 0 }}>{theme.tagline}</p>
         <p style={{ color: "rgba(255,255,255,.75)", fontSize: 12.5, margin: 0 }}>You have {formatClock(data.secondsLeft ?? game.durationMinutes * 60)} — this is a one-time trial.</p>
         <div>

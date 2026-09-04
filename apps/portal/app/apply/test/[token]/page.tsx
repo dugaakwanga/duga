@@ -94,7 +94,6 @@ export default function ApplicationTestPage() {
     } finally {
       setSubmitting(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [answers, submitting, result, test, token]);
 
   useEffect(() => {

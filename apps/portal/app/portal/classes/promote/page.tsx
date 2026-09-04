@@ -220,7 +220,7 @@ export default function PromoteStudentsPage() {
 
                       {cls.topLevel ? (
                         <Alert tone="warning">
-                          This is the highest level in {cls.section}. There's no automatic next class — students here will keep their current class assignment unless marked to repeat below. Handle graduating students separately.
+                          This is the highest level in {cls.section}. There&apos;s no automatic next class — students here will keep their current class assignment unless marked to repeat below. Handle graduating students separately.
                         </Alert>
                       ) : (
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
