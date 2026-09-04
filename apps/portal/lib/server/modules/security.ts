@@ -25,8 +25,18 @@ async function notifyParents(schoolId: string, studentId: string, title: string,
   );
 }
 
+// The QR now encodes a public verify URL (.../verify/<token>) rather than a
+// bare token, so it does something useful in an ordinary camera/QR app too —
+// see app/verify/[token]. The in-app scanner decodes that same URL text, so
+// pull the token back out of it here before verifying.
+function extractGateToken(code: string): string {
+  if (!/^https?:\/\//i.test(code)) return code;
+  const parts = code.split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? code;
+}
+
 async function findStudentByCodeOrAdmission(schoolId: string, code: string) {
-  const token = await verifyGateToken(code);
+  const token = await verifyGateToken(extractGateToken(code));
   if (token && token.schoolId === schoolId) {
     return prisma.student.findFirst({ where: { id: token.sub, schoolId }, include: { user: { select: { firstName: true, lastName: true, status: true } } } });
   }

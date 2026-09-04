@@ -60,6 +60,16 @@ function imageFormat(dataUrl: string): "PNG" | "JPEG" | "WEBP" {
   return "JPEG";
 }
 
+// The QR encodes a public verify link, not the bare token — scanned by any
+// ordinary camera/QR app it opens a page confirming the student is a genuine,
+// currently active enrollment (see app/verify/[token]). Scanned by DUGA's own
+// in-app gate scanner, the same link is recognized and used for clock-in/out
+// instead of being opened (see findStudentByCodeOrAdmission in security.ts).
+function verifyUrl(token: string): string {
+  const base = (process.env.NEXT_PUBLIC_PORTAL_URL || "").replace(/\/$/, "");
+  return `${base}/verify/${token}`;
+}
+
 export interface IdCardTheme {
   primary: string;
   accent: string;
@@ -160,7 +170,7 @@ export async function downloadIdCardsPdf(
   for (const s of students) {
     const [photoDataUrl, qrDataUrl] = await Promise.all([
       toDataUrl(s.photoUrl),
-      QRCode.toDataURL(s.code, { width: 240, margin: 1, color: { dark: primary } }),
+      QRCode.toDataURL(verifyUrl(s.code), { width: 240, margin: 1, color: { dark: primary } }),
     ]);
 
     // ---- Front ----

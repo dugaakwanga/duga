@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Card, PageHeader, Field, Input, Button, Badge, Alert, Spinner, Table, EmptyState, Modal, Select } from "@duga/ui";
 import { api } from "@/lib/client/api";
@@ -66,6 +66,8 @@ export default function SettingsPage() {
   const [termOpen, setTermOpen] = useState(false);
   const [termForm, setTermForm] = useState<Record<string, string>>({});
   const [termBusy, setTermBusy] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     api<SettingsData>("settings")
@@ -77,6 +79,7 @@ export default function SettingsPage() {
           phone: d.school.phone ?? "",
           email: d.school.email ?? "",
           address: d.school.address ?? "",
+          logoUrl: d.school.logoUrl ?? "",
         });
         if (d.schoolDays) {
           setDays({ ...DEFAULT_DAYS, ...d.schoolDays.weekdays });
@@ -139,6 +142,26 @@ export default function SettingsPage() {
     }
   }
 
+  async function uploadLogo(file: File | undefined) {
+    if (!file) return;
+    setUploadingLogo(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/upload?purpose=school-logo", { method: "POST", body: fd });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Upload failed");
+      setForm((f) => ({ ...f, logoUrl: json.data.url }));
+      await api("settings", { method: "PATCH", body: { logoUrl: json.data.url } });
+      setSaved(true);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setUploadingLogo(false);
+    }
+  }
+
   function addHoliday() {
     if (!holidayForm.date || !holidayForm.name) return;
     setHolidays((h) => [...h, holidayForm]);
@@ -170,6 +193,22 @@ export default function SettingsPage() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 18 }}>
         <div>
           <Card title="School profile">
+            <Field label="School logo" hint="Shown on ID cards, report cards, and the public site. Square images work best.">
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                {form.logoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={form.logoUrl} alt="School logo" style={{ width: 56, height: 56, objectFit: "contain", borderRadius: 8, border: "1px solid var(--duga-border)", background: "#fff" }} />
+                ) : (
+                  <div style={{ width: 56, height: 56, borderRadius: 8, border: "1px dashed var(--duga-border)", display: "grid", placeItems: "center", fontSize: 11, color: "var(--duga-muted)", textAlign: "center" }}>
+                    No logo
+                  </div>
+                )}
+                <input ref={logoInputRef} type="file" accept="image/png,image/jpeg,image/webp" style={{ display: "none" }} onChange={(e) => uploadLogo(e.target.files?.[0])} />
+                <Button type="button" variant="outline" size="sm" loading={uploadingLogo} onClick={() => logoInputRef.current?.click()}>
+                  {form.logoUrl ? "Change logo" : "Upload logo"}
+                </Button>
+              </div>
+            </Field>
             <Field label="School name"><Input value={form.name ?? ""} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
             <Field label="Short name"><Input value={form.shortName ?? ""} onChange={(e) => setForm({ ...form, shortName: e.target.value })} /></Field>
             <Field label="Phone"><Input value={form.phone ?? ""} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>

@@ -44,6 +44,8 @@ export async function POST(request: NextRequest) {
       assertPermission(session.user.role, "library:manage");
     } else if (purpose === "student-photo") {
       assertPermission(session.user.role, "students:manage");
+    } else if (purpose === "school-logo") {
+      assertPermission(session.user.role, "settings:manage");
     } else if (purpose === "avatar") {
       // Only staff may set their own profile picture. Students and parents keep
       // the photo the school assigns them.
@@ -73,7 +75,7 @@ export async function POST(request: NextRequest) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const name = `${crypto.randomUUID()}.${ext(mime, purpose)}`;
-    const folder = purpose === "library" ? "library" : purpose === "avatar" ? "avatars" : purpose === "student-photo" ? "students" : "gallery";
+    const folder = purpose === "library" ? "library" : purpose === "avatar" ? "avatars" : purpose === "student-photo" ? "students" : purpose === "school-logo" ? "school" : "gallery";
     const { url: fileUrl, key, bucket } = await uploadPublicFile({
       folder,
       name,
