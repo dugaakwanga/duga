@@ -1,7 +1,7 @@
 import { prisma, initializePayment, verifyPayment, logAudit, dispatchNotification } from "@duga/core/server";
 import { generateReference, formatNaira } from "@duga/core";
 import type { Module } from ".";
-import { can, str, num, studentScope, resolveSection, financeManager } from "../helpers";
+import { can, str, num, studentScope, resolveSection, financeManager, feeInfoOf } from "../helpers";
 
 async function assertFinanceManager(ctx: { session: { user: { role: string; schoolId: string } } }) {
   if (!(await financeManager(ctx as Parameters<typeof financeManager>[0]))) {
@@ -11,14 +11,26 @@ async function assertFinanceManager(ctx: { session: { user: { role: string; scho
   }
 }
 
-// Grant only the number of days that this payment covers. Subsequent payments
-// extend from the current expiry, so an instalment never overwrites unused days.
-async function grantFeeAccessForPayment(schoolId: string, studentId: string, amount: number) {
+// Grant fee-access days for a payment. By default this is proportional
+// (amount/feeAmount*feeDays), extending from the current expiry so an
+// instalment never overwrites unused days. When a bursar explicitly declares
+// what period a payment covers (e.g. "this covers Term 2"), coversTo is used
+// instead of the proportional math — still never moving the window backward.
+async function grantFeeAccessForPayment(schoolId: string, studentId: string, amount: number, coversTo?: Date) {
   const student = await prisma.student.findFirst({ where: { id: studentId, schoolId } });
-  if (!student || Number(student.feeAmount) <= 0 || student.feeDays <= 0) return { daysGranted: 0, paidThrough: student?.feePaidThrough ?? null };
+  if (!student) return { daysGranted: 0, paidThrough: null };
+  const start = student.feePaidThrough && student.feePaidThrough > new Date() ? student.feePaidThrough : new Date();
+
+  if (coversTo) {
+    const paidThrough = coversTo > start ? coversTo : start;
+    await prisma.student.update({ where: { id: student.id }, data: { feePaidThrough: paidThrough } });
+    const daysGranted = Math.round((paidThrough.getTime() - start.getTime()) / 86400000);
+    return { daysGranted, paidThrough };
+  }
+
+  if (Number(student.feeAmount) <= 0 || student.feeDays <= 0) return { daysGranted: 0, paidThrough: student.feePaidThrough };
   const daysGranted = Math.floor((amount / Number(student.feeAmount)) * student.feeDays);
   if (daysGranted <= 0) return { daysGranted: 0, paidThrough: student.feePaidThrough };
-  const start = student.feePaidThrough && student.feePaidThrough > new Date() ? student.feePaidThrough : new Date();
   const paidThrough = new Date(start.getTime() + daysGranted * 86400000);
   await prisma.student.update({ where: { id: student.id }, data: { feePaidThrough: paidThrough } });
   return { daysGranted, paidThrough };
@@ -94,14 +106,25 @@ export const feesModule: Module = {
       orderBy: { createdAt: "desc" },
       take: 400,
     });
-    const [feeTypes, feeStructures, overrides, terms, levels, classGroups] = await Promise.all([
+    const [feeTypes, feeStructures, overrides, terms, levels, classGroups, feeConfiguredStudents] = await Promise.all([
       prisma.feeType.findMany({ where: { schoolId }, orderBy: { name: "asc" } }),
       prisma.feeStructure.findMany({ where: { schoolId }, include: { feeType: true, level: true, classGroup: { include: { level: true } }, term: true } }),
       prisma.feeOverride.findMany({ where: { schoolId, isActive: true }, include: { student: { include: { user: { select: { firstName: true, lastName: true } } } }, term: true } }),
       prisma.term.findMany({ where: { schoolId }, include: { session: true }, orderBy: [{ session: { createdAt: "desc" } }, { termNumber: "asc" }] }),
       prisma.classLevel.findMany({ where: { schoolId, ...(section ? { section } : {}) }, orderBy: [{ section: "asc" }, { order: "asc" }] }),
       prisma.classGroup.findMany({ where: { schoolId, ...(section ? { level: { section } } : {}) }, include: { level: true } }),
+      // Every student with a fee plan configured (feeAmount/feeDays > 0) — used
+      // to surface who's currently owing, independent of the per-term invoice
+      // system (a student can be "owing" on their access window even with no
+      // invoice generated yet, or vice versa).
+      prisma.student.findMany({
+        where: { schoolId, feeAmount: { gt: 0 }, feeDays: { gt: 0 }, ...studentSectionWhere, user: { status: "ACTIVE" } },
+        select: { id: true, feeAmount: true, feeDays: true, feePaidThrough: true, enrollmentDate: true, admissionNumber: true, user: { select: { firstName: true, lastName: true } } },
+      }),
     ]);
+    const owingStudents = feeConfiguredStudents
+      .map((s) => ({ ...s, fee: feeInfoOf(s) }))
+      .filter((s) => s.fee.expired);
     return {
       role,
       paymentRecordsVisible: true,
@@ -113,6 +136,7 @@ export const feesModule: Module = {
       terms,
       levels,
       classGroups,
+      owingStudents,
     };
   },
 
@@ -427,25 +451,56 @@ export const feesModule: Module = {
       return { sent };
     },
 
-    // Create a manual cash payment (admin/owner)
+    // Record an offline payment (cash, bank transfer, etc.) taken outside the
+    // app. Works two ways: against an existing invoice (reduces its balance,
+    // as before), or as a standalone payment directly against a student when
+    // there's no invoice to apply it to — either way it still advances the
+    // student's fee-access window via grantFeeAccessForPayment.
     recordManual: async (ctx) => {
       await assertFinanceManager(ctx);
       const schoolId = ctx.session.user.schoolId;
       const invoiceId = str(ctx.body.invoiceId) ?? ctx.id;
       const amount = num(ctx.body.amount);
-      if (!invoiceId || amount === undefined) throw new Error("invoiceId and amount required");
-      const invoiceRow = await prisma.invoice.findFirst({ where: { id: invoiceId, schoolId } });
-      if (!invoiceRow) throw new Error("Invoice not found");
-      if (amount <= 0 || amount > Number(invoiceRow.balance)) throw new Error("Amount must be greater than zero and no more than the outstanding balance");
+      if (amount === undefined || amount <= 0) throw new Error("A positive amount is required");
+
+      // Explicit installment coverage window, e.g. "this payment covers Term
+      // 2" — when given, this overrides the proportional amount-based
+      // calculation for how far the student's fee-access window advances.
+      const coversFromRaw = str(ctx.body.coversFrom);
+      const coversToRaw = str(ctx.body.coversTo);
+      const coversFrom = coversFromRaw ? new Date(coversFromRaw) : undefined;
+      const coversTo = coversToRaw ? new Date(coversToRaw) : undefined;
+      if (coversTo && Number.isNaN(coversTo.getTime())) throw new Error("Invalid coversTo date");
+      if (coversFrom && Number.isNaN(coversFrom.getTime())) throw new Error("Invalid coversFrom date");
+
+      let studentId: string;
+      let invoiceRow: Awaited<ReturnType<typeof prisma.invoice.findFirst>> = null;
+      if (invoiceId) {
+        invoiceRow = await prisma.invoice.findFirst({ where: { id: invoiceId, schoolId } });
+        if (!invoiceRow) throw new Error("Invoice not found");
+        if (amount > Number(invoiceRow.balance)) throw new Error("Amount must not exceed the outstanding balance on this invoice");
+        studentId = invoiceRow.studentId;
+      } else {
+        // No invoice to apply this to — a general offline payment directly
+        // against a student's fee-access window (e.g. an ad-hoc installment
+        // not tied to a specific term's invoice).
+        const bodyStudentId = str(ctx.body.studentId);
+        if (!bodyStudentId) throw new Error("Provide either invoiceId or studentId");
+        const student = await prisma.student.findFirst({ where: { id: bodyStudentId, schoolId } });
+        if (!student) throw new Error("Student not found");
+        studentId = student.id;
+      }
+
       const reference = generateReference("MAN");
       const payment = await prisma.payment.create({
         data: {
           schoolId,
-          // An invoice belongs to exactly one student; never accept a client
-          // supplied student id here, which could misapply fee access.
-          studentId: invoiceRow.studentId,
-          invoiceId,
-          termId: invoiceRow.termId ?? str(ctx.body.termId),
+          // An invoice, when given, belongs to exactly one student; never
+          // accept a client-supplied student id alongside an invoice, which
+          // could misapply fee access to the wrong student.
+          studentId,
+          invoiceId: invoiceRow?.id,
+          termId: invoiceRow?.termId ?? str(ctx.body.termId),
           amount,
           method: (str(ctx.body.method) as "CASH") ?? "CASH",
           status: "SUCCESS",
@@ -454,12 +509,14 @@ export const feesModule: Module = {
           paidAt: new Date(),
           receiptNumber: `RCPT-${reference.slice(-6)}`,
           recordedByUserId: ctx.session.user.id,
+          coversFrom,
+          coversTo,
         },
       });
-      const invoice = await refreshInvoice(invoiceId);
-      const access = await grantFeeAccessForPayment(schoolId, payment.studentId, amount);
-      if (invoice && Number(invoice.balance) > 0) await notifyParentsOfBalance(schoolId, payment.studentId, invoice);
-      await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.manualPayment", entityType: "Payment", entityId: payment.id, meta: { amount } });
+      const invoice = invoiceRow ? await refreshInvoice(invoiceRow.id) : null;
+      const access = await grantFeeAccessForPayment(schoolId, studentId, amount, coversTo);
+      if (invoice && Number(invoice.balance) > 0) await notifyParentsOfBalance(schoolId, studentId, invoice);
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.manualPayment", entityType: "Payment", entityId: payment.id, meta: { amount, coversTo: coversTo?.toISOString() } });
       return { payment, invoice, access };
     },
   },

@@ -43,8 +43,16 @@ function normalizeComponents(value: unknown): ResultComponent[] {
   return comps.length ? comps : DEFAULT_RESULT_COMPONENTS;
 }
 
-export async function getResultConfig(schoolId: string): Promise<ResultConfigShape> {
-  const row = await prisma.resultConfig.findUnique({ where: { schoolId } });
+// Each school section (Primary, Secondary, ...) can have its own result
+// configuration. A section-specific row (section = e.g. "Primary") is
+// preferred; the school-wide row (section = "") is the fallback when a
+// section has no config of its own, and the hardcoded defaults are the
+// fallback below that.
+export async function getResultConfig(schoolId: string, section?: string): Promise<ResultConfigShape> {
+  const row = section
+    ? (await prisma.resultConfig.findUnique({ where: { schoolId_section: { schoolId, section } } })) ??
+      (await prisma.resultConfig.findUnique({ where: { schoolId_section: { schoolId, section: "" } } }))
+    : await prisma.resultConfig.findUnique({ where: { schoolId_section: { schoolId, section: "" } } });
   return {
     id: row?.id ?? "",
     schoolId,
@@ -95,7 +103,7 @@ export async function collateReportCards(opts: CollateOptions) {
   });
   if (!classGroup) throw new Error("Class not found");
 
-  const config = await getResultConfig(schoolId);
+  const config = await getResultConfig(schoolId, classGroup.level.section);
 
   const classSubjects = await prisma.classSubject.findMany({
     where: { classGroupId },
@@ -109,7 +117,7 @@ export async function collateReportCards(opts: CollateOptions) {
 
   // Grading scale: use the school's default scheme, or fall back to the
   // standard WAEC-style scale when none is configured so grades are never empty.
-  const scale = await getDefaultGradingScale(schoolId);
+  const scale = await getDefaultGradingScale(schoolId, classGroup.level.section);
 
   // Subject score matrix built from per-student SubjectScore rows.
   const subjectScores: Record<string, Record<string, number>> = {};

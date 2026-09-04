@@ -13,6 +13,7 @@ const DEMO_ACCOUNTS: Record<string, { email: string; password: string; label: st
   OWNER: { email: "owner@deultimateglory.com", password: "password123", label: "Proprietor" },
   ADMIN: { email: "admin@deultimateglory.com", password: "password123", label: "Admin" },
   BURSAR: { email: "bursar@deultimateglory.com", password: "password123", label: "Bursar" },
+  SECURITY: { email: "security@deultimateglory.com", password: "password123", label: "Security" },
 };
 
 export default function AdminLoginPage() {

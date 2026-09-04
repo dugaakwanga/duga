@@ -1,5 +1,5 @@
 import { prisma } from "@duga/core/server";
-import { jitsiRoomLink, logAudit, dispatchNotification, dispatchToMany } from "@duga/core/server";
+import { jitsiRoomLink, logAudit, dispatchNotification, dispatchToMany, checkRateLimit } from "@duga/core/server";
 import type { Module } from ".";
 import type { Ctx } from "@/app/api/v1/[...path]/route";
 import { can, str, num, pick, idArray, isAssignedTo, ensureTeacher, assertFeeAccess } from "../helpers";
@@ -428,7 +428,7 @@ export const learningModule: Module = {
       await assertSubfeature(ctx, "learning:assignments");
       const student = ctx.session.user.student;
       if (!student) throw new Error("Only students can submit assignments");
-      assertFeeAccess(student);
+      await assertFeeAccess(ctx.session.user.schoolId, student, "assignments");
       const assignment = await prisma.assignment.findFirst({ where: { id: ctx.id, schoolId: ctx.session.user.schoolId, isPublished: true }, include: { classSubject: true } });
       if (!assignment || !isAssignedTo(assignment, student.id, student.currentClassGroupId)) throw new Error("Assignment not found");
       const submission = await prisma.assignmentSubmission.upsert({
@@ -475,7 +475,15 @@ export const learningModule: Module = {
       await assertSubfeature(ctx, "learning:cbt");
       const student = ctx.session.user.student;
       if (!student) throw new Error("Only students can take tests");
-      assertFeeAccess(student);
+      // Generous enough to cover the client's own retry-with-backoff on a
+      // transient failure, tight enough to block scripted abuse.
+      const rl = checkRateLimit(`submitTest:${student.id}`, 10, 60_000);
+      if (!rl.allowed) {
+        const err = new Error("Too many submission attempts. Please wait a moment and try again.") as Error & { status?: number };
+        err.status = 429;
+        throw err;
+      }
+      await assertFeeAccess(ctx.session.user.schoolId, student, "tests");
       const test = await prisma.test.findFirst({ where: { id: ctx.id, schoolId: ctx.session.user.schoolId, status: "PUBLISHED" }, include: { questions: true } });
       if (!test || !isAssignedTo(test, student.id, student.currentClassGroupId)) throw new Error("Test not found");
       if (test.startsAt && new Date() < test.startsAt) throw new Error("This test has not started yet");
@@ -555,7 +563,7 @@ export const learningModule: Module = {
       can(ctx, "live:join");
       await assertSubfeature(ctx, "learning:live");
       const student = ctx.session.user.student;
-      if (student) assertFeeAccess(student);
+      if (student) await assertFeeAccess(ctx.session.user.schoolId, student, "live");
       const live = await prisma.liveClass.findFirst({
         where: {
           id: ctx.id,

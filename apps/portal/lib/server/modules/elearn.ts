@@ -293,7 +293,7 @@ export const elearnModule: Module = {
       can(ctx, "elearn:view");
       const student = ctx.session.user.student;
       if (!student) throw new Error("Only students can start content");
-      assertFeeAccess(student);
+      await assertFeeAccess(ctx.session.user.schoolId, student, "elearn");
       const schoolId = ctx.session.user.schoolId;
       const item = await prisma.enrollmentContent.findFirst({ where: { id: ctx.id, schoolId, isPublished: true } });
       if (!item) throw new Error("Item not found or not published");
@@ -310,7 +310,7 @@ export const elearnModule: Module = {
       can(ctx, "elearn:view");
       const student = ctx.session.user.student;
       if (!student) throw new Error("Only students can complete content");
-      assertFeeAccess(student);
+      await assertFeeAccess(ctx.session.user.schoolId, student, "elearn");
       const schoolId = ctx.session.user.schoolId;
       const item = await prisma.enrollmentContent.findFirst({ where: { id: ctx.id, schoolId, isPublished: true } });
       if (!item) throw new Error("Item not found or not published");

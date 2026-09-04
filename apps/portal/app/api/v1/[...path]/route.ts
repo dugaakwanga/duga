@@ -61,7 +61,13 @@ async function handle(
     let result: unknown;
     if (method === "GET") {
       if (rest.length === 0) result = await run(mod.list!);
-      else if (rest.length === 1) result = await run(mod.get!, { id: rest[0] });
+      else if (rest.length === 1 && mod.actions?.[rest[0]!]) {
+        // Named, non-id-scoped actions (e.g. "messages/notifications") can be
+        // fetched via GET the same way they're invoked via POST — otherwise
+        // this segment always falls through to mod.get() below and is
+        // misread as a record id.
+        result = await run(mod.actions![rest[0]!]!, { action: rest[0] });
+      } else if (rest.length === 1) result = await run(mod.get!, { id: rest[0] });
       else return NextResponse.json({ error: "Not found" }, { status: 404 });
     } else if (method === "POST") {
       if (rest.length === 0) result = await run(mod.create!);

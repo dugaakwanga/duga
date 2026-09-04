@@ -18,7 +18,16 @@ export interface RestrictionsConfig {
   resultsRequirePayment: boolean;
   /** Accept new online applications on the public website. */
   applicationsOpen: boolean;
+  /** Which features are blocked for students whose fee-access window has
+   * lapsed. Subset of "tests" | "assignments" | "elearn" | "games" | "live". */
+  feeGatedFeatures: string[];
 }
+
+const DEFAULT_RESTRICTIONS: RestrictionsConfig = {
+  resultsRequirePayment: true,
+  applicationsOpen: true,
+  feeGatedFeatures: ["tests", "assignments", "elearn", "games", "live"],
+};
 
 async function readSetting<T>(schoolId: string, key: string, fallback: T): Promise<T> {
   const row = await prisma.schoolSetting.findUnique({ where: { schoolId_key: { schoolId, key } } });
@@ -54,10 +63,7 @@ export const settingsModule: Module = {
         weekdays: { monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: false, sunday: false },
         holidays: [],
       }),
-      readSetting<RestrictionsConfig>(ctx.session.user.schoolId, RESTRICTIONS_KEY, {
-        resultsRequirePayment: true,
-        applicationsOpen: true,
-      }),
+      readSetting<RestrictionsConfig>(ctx.session.user.schoolId, RESTRICTIONS_KEY, DEFAULT_RESTRICTIONS),
     ]);
     return {
       school,
@@ -169,10 +175,14 @@ export const settingsModule: Module = {
     saveRestrictions: async (ctx) => {
       can(ctx, "settings:manage");
       const schoolId = ctx.session.user.schoolId;
-      const current = await readSetting<RestrictionsConfig>(schoolId, RESTRICTIONS_KEY, { resultsRequirePayment: true, applicationsOpen: true });
+      const current = await readSetting<RestrictionsConfig>(schoolId, RESTRICTIONS_KEY, DEFAULT_RESTRICTIONS);
+      const validFeatures = new Set(["tests", "assignments", "elearn", "games", "live"]);
       const cfg: RestrictionsConfig = {
         resultsRequirePayment: typeof ctx.body.resultsRequirePayment === "boolean" ? ctx.body.resultsRequirePayment : current.resultsRequirePayment,
         applicationsOpen: typeof ctx.body.applicationsOpen === "boolean" ? ctx.body.applicationsOpen : current.applicationsOpen,
+        feeGatedFeatures: Array.isArray(ctx.body.feeGatedFeatures)
+          ? ctx.body.feeGatedFeatures.filter((f: unknown): f is string => typeof f === "string" && validFeatures.has(f))
+          : current.feeGatedFeatures,
       };
       await writeSetting(schoolId, RESTRICTIONS_KEY, cfg);
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "settings.restrictionsUpdated", entityType: "School", entityId: schoolId, meta: cfg as unknown as Record<string, unknown> });

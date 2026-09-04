@@ -329,7 +329,7 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
     try {
       await api("results/saveConfig", {
         method: "POST",
-        body: { caCap: draft.caCap, examCap: draft.examCap, components: draft.components.map((c, i) => ({ ...c, order: i })) },
+        body: { section: section ?? "", caCap: draft.caCap, examCap: draft.examCap, components: draft.components.map((c, i) => ({ ...c, order: i })) },
       });
       setConfigOpen(false);
       const d = await api<{ config: ResultConfig }>("results");
@@ -645,6 +645,11 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
             </div>
           }
         >
+          <Alert tone="info">
+            {section
+              ? `Editing the result configuration for ${section} only — other sections keep their own settings (or the school-wide default) unaffected.`
+              : "Editing the school-wide default configuration, used by any section without its own override. Switch to a specific section above to configure it independently."}
+          </Alert>
           <Alert tone="info">
             These are the score columns teachers enter and the maximums allowed. The totals are capped at the CA and Exam ceilings below.
           </Alert>

@@ -358,7 +358,10 @@ export default function ClassesPage() {
             ) : view.name === "levels" || view.name === "levels-list" ? (
               <Button variant="outline" onClick={() => openAdd("level")}><Icon name="plus" size={16} /> Add level</Button>
             ) : view.name === "sessions" ? (
-              <Button variant="outline" onClick={() => openAdd("session")}><Icon name="plus" size={16} /> Add session</Button>
+              <div style={{ display: "inline-flex", gap: 8 }}>
+                <Button variant="outline" onClick={() => router.push("/portal/classes/promote")}><Icon name="timetable" size={16} /> Promote students</Button>
+                <Button variant="outline" onClick={() => openAdd("session")}><Icon name="plus" size={16} /> Add session</Button>
+              </div>
             ) : view.name === "classes" ? (
               <Button variant="outline" onClick={() => openAdd("level")}><Icon name="plus" size={16} /> Add level</Button>
             ) : undefined

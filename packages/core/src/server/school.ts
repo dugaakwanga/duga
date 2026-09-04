@@ -19,10 +19,13 @@ export async function getCurrentTerm() {
   return prisma.term.findFirst({ where: { status: "ACTIVE" }, orderBy: { createdAt: "desc" } });
 }
 
-export async function getDefaultGradingScale(schoolId: string) {
-  const scheme = await prisma.gradingScheme.findFirst({
-    where: { schoolId, isDefault: true },
-  });
+// A section-specific default grading scheme (section = e.g. "Primary") is
+// preferred; the school-wide default (section = "") is the fallback.
+export async function getDefaultGradingScale(schoolId: string, section?: string) {
+  const scheme = section
+    ? (await prisma.gradingScheme.findFirst({ where: { schoolId, section, isDefault: true } })) ??
+      (await prisma.gradingScheme.findFirst({ where: { schoolId, section: "", isDefault: true } }))
+    : await prisma.gradingScheme.findFirst({ where: { schoolId, section: "", isDefault: true } });
   if (!scheme) {
     // fallback WAEC-ish scale
     return [

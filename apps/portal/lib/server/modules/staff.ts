@@ -39,7 +39,7 @@ export const staffModule: Module = {
       prisma.user.findMany({
         where: {
           schoolId,
-          role: { in: ["TEACHER", "ADMIN", "BURSAR", "OWNER"] },
+          role: { in: ["TEACHER", "ADMIN", "BURSAR", "OWNER", "SECURITY"] },
           status: { not: "DEACTIVATED" },
         },
         select: {
@@ -108,7 +108,7 @@ export const staffModule: Module = {
     // The teacher can be created with any single identifier — email, phone or staff number.
     if (!role || !firstName || !lastName) throw new Error("role, firstName and lastName are required");
     if (!email && !phone && !staffNumber) throw new Error("Provide at least one of email, phone number or staff ID");
-    if (!["TEACHER", "ADMIN", "BURSAR"].includes(role)) throw new Error("Invalid staff role");
+    if (!["TEACHER", "ADMIN", "BURSAR", "SECURITY"].includes(role)) throw new Error("Invalid staff role");
     assertStaffTargetAccess(ctx.session.user.role, role);
     if (tempPassword && tempPassword.length < 8) throw new Error("Temporary password must be at least 8 characters");
     if (role !== "TEACHER" && assignedSubjectIds.length) throw new Error("Only teachers can be assigned subjects");
@@ -143,7 +143,7 @@ export const staffModule: Module = {
         where: { id: existing.id },
         data: {
           status: "ACTIVE",
-          role: role as "TEACHER" | "ADMIN" | "BURSAR",
+          role: role as "TEACHER" | "ADMIN" | "BURSAR" | "SECURITY",
           firstName,
           lastName,
           email: email ?? null,
@@ -208,7 +208,7 @@ export const staffModule: Module = {
     const user = await prisma.user.create({
       data: {
         schoolId,
-        role: role as "TEACHER" | "ADMIN" | "BURSAR",
+        role: role as "TEACHER" | "ADMIN" | "BURSAR" | "SECURITY",
         email: email ?? null,
         phone,
         passwordHash: await bcrypt.hash(tempPassword ?? "password123", 10),
@@ -254,7 +254,7 @@ export const staffModule: Module = {
       include: { teacher: true, admin: true },
     });
     if (!target) throw new Error("Staff member not found");
-    if (!["TEACHER", "ADMIN", "BURSAR", "OWNER"].includes(target.role)) throw new Error("Not a staff member");
+    if (!["TEACHER", "ADMIN", "BURSAR", "OWNER", "SECURITY"].includes(target.role)) throw new Error("Not a staff member");
     assertStaffTargetAccess(ctx.session.user.role, target.role);
     if (target.role === "OWNER" && ctx.session.user.role !== "OWNER") throw new Error("Only the school owner can update the owner account");
     const data: Record<string, unknown> = {};
@@ -266,7 +266,7 @@ export const staffModule: Module = {
     if (b.avatarUrl) data.avatarUrl = String(b.avatarUrl);
     if (b.status) data.status = String(b.status);
     const newRole = str(b.role);
-    if (newRole && ["TEACHER", "ADMIN", "BURSAR"].includes(newRole) && newRole !== target.role) {
+    if (newRole && ["TEACHER", "ADMIN", "BURSAR", "SECURITY"].includes(newRole) && newRole !== target.role) {
       if (target.role === "OWNER") throw new Error("The owner account role cannot be changed");
       assertStaffTargetAccess(ctx.session.user.role, newRole);
       data.role = newRole;
@@ -385,7 +385,7 @@ export const staffModule: Module = {
       if (tempPassword.length < 8) throw new Error("Temporary password must be at least 8 characters");
       const target = await prisma.user.findFirst({ where: { id: targetId, schoolId: ctx.session.user.schoolId } });
       if (!target) throw new Error("Staff member not found");
-      if (!["TEACHER", "ADMIN", "BURSAR", "OWNER"].includes(target.role)) throw new Error("Not a staff member");
+      if (!["TEACHER", "ADMIN", "BURSAR", "OWNER", "SECURITY"].includes(target.role)) throw new Error("Not a staff member");
       assertStaffTargetAccess(ctx.session.user.role, target.role);
       if (target.role === "OWNER" && ctx.session.user.role !== "OWNER") throw new Error("Only the school owner can reset the owner password");
       await prisma.user.update({

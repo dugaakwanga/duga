@@ -21,6 +21,7 @@ interface Book {
   fileSize: number | null;
   description: string | null;
   onLoanCount?: number;
+  targetStudentIds?: string[] | null;
 }
 
 interface Loan {
@@ -65,6 +66,8 @@ export default function LibraryPage() {
   const [file, setFile] = useState<File | null>(null);
   const [cover, setCover] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const [assignTo, setAssignTo] = useState<"everyone" | "students">("everyone");
+  const [targetStudentIds, setTargetStudentIds] = useState<string[]>([]);
 
   async function load() {
     const d = await api<LibraryData>("library");
@@ -87,6 +90,8 @@ export default function LibraryPage() {
     setFile(null);
     setCover(null);
     setError(null);
+    setAssignTo("everyone");
+    setTargetStudentIds([]);
     setOpen(true);
   }
 
@@ -110,6 +115,9 @@ export default function LibraryPage() {
       fileMime: b.fileMime ?? "",
       fileSize: b.fileSize ? String(b.fileSize) : "",
     });
+    const targets = b.targetStudentIds ?? [];
+    setAssignTo(targets.length > 0 ? "students" : "everyone");
+    setTargetStudentIds(targets);
     setOpen(true);
   }
 
@@ -129,7 +137,7 @@ export default function LibraryPage() {
       if (kind === "loan" && !editing) {
         await api("library/addLoan", { method: "POST", body: form });
       } else {
-        const body: Record<string, string> = { ...form };
+        const body: Record<string, unknown> = { ...form, targetStudentIds: assignTo === "students" ? targetStudentIds : [] };
         if (file) {
           const up = await uploadFile(file);
           body.fileUrl = up.url;
@@ -207,17 +215,24 @@ export default function LibraryPage() {
             </div>
             {b.author && <div style={{ fontSize: 13, color: "var(--duga-muted)", marginTop: 6 }}>{b.author}</div>}
             {b.shelfLocation && <div style={{ fontSize: 12.5, color: "var(--duga-muted)" }}>Shelf: {b.shelfLocation}</div>}
-            {b.fileUrl && (
-              <div style={{ marginTop: 4, display: "flex", gap: 8, alignItems: "center" }}>
-                <Badge tone="info">Digital</Badge>
-                <a href={b.fileUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12.5 }}>Read book {b.fileMime ? `.${b.fileMime}` : ""} {fmtBytes(b.fileSize)}</a>
+            {(b.targetStudentIds ?? []).length > 0 && (
+              <div style={{ marginTop: 6 }}>
+                <Badge tone="accent">Given to {b.targetStudentIds!.length} student(s)</Badge>
               </div>
             )}
-            <div style={{ marginTop: 10, fontSize: 13 }}>
-              <Badge tone={b.availableCopies > 0 ? "success" : "danger"}>
-                {b.availableCopies} of {b.totalCopies} available
-              </Badge>
-            </div>
+            {b.fileUrl ? (
+              <a href={b.fileUrl} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 10 }}>
+                <Button variant="accent" size="sm" style={{ width: "100%" }}>
+                  <Icon name="notes" size={14} /> Read book {fmtBytes(b.fileSize) ? `· ${fmtBytes(b.fileSize)}` : ""}
+                </Button>
+              </a>
+            ) : (
+              <div style={{ marginTop: 10, fontSize: 13 }}>
+                <Badge tone={b.availableCopies > 0 ? "success" : "danger"}>
+                  {b.availableCopies} of {b.totalCopies} available (physical copy)
+                </Badge>
+              </div>
+            )}
             {canManageCatalogue && (
               <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
                 <Button variant="outline" size="sm" onClick={() => openEdit(b)}>Edit</Button>
@@ -322,6 +337,30 @@ export default function LibraryPage() {
             <Field label="Description">
               <Textarea rows={3} value={form.description ?? ""} onChange={(e) => setForm({ ...form, description: e.target.value })} />
             </Field>
+            <Field label="Give to" hint="Who can see and read this book in their library.">
+              <Select value={assignTo} onChange={(e) => setAssignTo(e.target.value as "everyone" | "students")}>
+                <option value="everyone">Everyone in the school</option>
+                <option value="students">Specific students</option>
+              </Select>
+            </Field>
+            {assignTo === "students" && (
+              <div style={{ border: "1px solid var(--duga-border)", borderRadius: 8, padding: 10, maxHeight: 180, overflowY: "auto" }}>
+                {(data?.students ?? []).length === 0 ? (
+                  <div style={{ fontSize: 12.5, color: "var(--duga-muted)" }}>No students found.</div>
+                ) : (
+                  (data?.students ?? []).map((s) => (
+                    <label key={s.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", fontSize: 13.5 }}>
+                      <input
+                        type="checkbox"
+                        checked={targetStudentIds.includes(s.id)}
+                        onChange={(e) => setTargetStudentIds((prev) => (e.target.checked ? [...prev, s.id] : prev.filter((id) => id !== s.id)))}
+                      />
+                      {s.user.firstName} {s.user.lastName} <span style={{ color: "var(--duga-muted)" }}>({s.admissionNumber})</span>
+                    </label>
+                  ))
+                )}
+              </div>
+            )}
           </>
         ) : (
           <>

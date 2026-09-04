@@ -43,7 +43,7 @@ export const FEATURES: FeatureDef[] = [
     id: "classes",
     label: "Classes & subjects",
     group: "Academics",
-    resources: ["classes"],
+    resources: ["classes", "promotion"],
     roles: ["ADMIN", "TEACHER", "PARENT", "STUDENT"],
   },
   {
@@ -119,7 +119,7 @@ export const FEATURES: FeatureDef[] = [
     id: "applications",
     label: "Admissions",
     group: "Operations",
-    resources: ["applications"],
+    resources: ["applications", "admissionsTest"],
     roles: ["ADMIN"],
   },
   {
@@ -183,6 +183,13 @@ export const FEATURES: FeatureDef[] = [
     label: "School settings",
     group: "Administration",
     resources: ["settings"],
+    roles: ["ADMIN"],
+  },
+  {
+    id: "security",
+    label: "Gate & security",
+    group: "Administration",
+    resources: ["security"],
     roles: ["ADMIN"],
   },
   {

@@ -46,6 +46,90 @@ interface QuestionRow {
 
 const blankQuestion = (): QuestionRow => ({ question: "", options: ["", "", "", ""], correctIndex: 0, score: 1 });
 
+const CSV_TEMPLATE = `question,optionA,optionB,optionC,optionD,correct,score
+"What is the capital of Nigeria?","Lagos","Abuja","Kano","Ibadan",B,1
+"Water boils at 100 degrees Celsius at sea level.","True","False","","",A,1
+`;
+
+function downloadCsvTemplate() {
+  const blob = new Blob([CSV_TEMPLATE], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "cbt-questions-template.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Minimal CSV parser handling quoted fields (with embedded commas / escaped
+// quotes) — deliberately small and dependency-free rather than pulling in a
+// CSV library for a single, well-defined import format.
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else field += c;
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === ",") {
+      row.push(field);
+      field = "";
+    } else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(field);
+      field = "";
+      if (row.some((f) => f.trim() !== "")) rows.push(row);
+      row = [];
+    } else {
+      field += c;
+    }
+  }
+  if (field !== "" || row.length > 0) {
+    row.push(field);
+    if (row.some((f) => f.trim() !== "")) rows.push(row);
+  }
+  return rows;
+}
+
+const OPTION_LETTERS = ["A", "B", "C", "D"];
+
+// Parses the question/optionA-D/correct/score CSV format into the same
+// QuestionRow shape the create-CBT form already uses, so bulk-imported
+// questions flow through the exact same review-and-submit path as
+// hand-typed ones — nothing bypasses validation.
+function parseQuestionsCsv(text: string): { questions: QuestionRow[]; errors: string[] } {
+  const rows = parseCsv(text);
+  if (rows.length === 0) return { questions: [], errors: ["The file is empty."] };
+  const header = rows[0]!.map((h) => h.trim().toLowerCase());
+  const looksLikeHeader = header[0] === "question";
+  const dataRows = looksLikeHeader ? rows.slice(1) : rows;
+  const questions: QuestionRow[] = [];
+  const errors: string[] = [];
+  dataRows.forEach((row, i) => {
+    const lineNo = i + (looksLikeHeader ? 2 : 1);
+    const [question, optA, optB, optC, optD, correctRaw, scoreRaw] = row.map((f) => f.trim());
+    if (!question) { errors.push(`Row ${lineNo}: missing question text.`); return; }
+    const options = [optA, optB, optC, optD].filter((o): o is string => !!o && o.length > 0);
+    if (options.length < 2) { errors.push(`Row ${lineNo}: needs at least 2 non-empty options.`); return; }
+    const letter = (correctRaw ?? "").toUpperCase();
+    const correctIndex = OPTION_LETTERS.indexOf(letter);
+    if (correctIndex < 0 || correctIndex >= options.length) {
+      errors.push(`Row ${lineNo}: "correct" must be a letter (A-D) matching one of the filled-in options.`);
+      return;
+    }
+    const score = Number(scoreRaw);
+    questions.push({ question, options, correctIndex, score: Number.isFinite(score) && score > 0 ? score : 1 });
+  });
+  return { questions, errors };
+}
+
 export default function TeacherCbtPage() {
   const [options, setOptions] = useState<ClassSubjectOption[]>([]);
   const [items, setItems] = useState<Cbt[]>([]);
@@ -56,6 +140,7 @@ export default function TeacherCbtPage() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
   const [questions, setQuestions] = useState<QuestionRow[]>([]);
+  const [importErrors, setImportErrors] = useState<string[]>([]);
   const [results, setResults] = useState<{ id: string; title: string; attempts: CbtResultRow[] } | null>(null);
   const [role, setRole] = useState<string>("");
 
@@ -168,6 +253,21 @@ async function openResults(c: Cbt) {
   }
 
   const editQ = (i: number, patch: Partial<QuestionRow>) => setQuestions((prev) => prev.map((q, idx) => (idx === i ? { ...q, ...patch } : q)));
+
+  function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const { questions: imported, errors } = parseQuestionsCsv(String(reader.result ?? ""));
+      setImportErrors(errors);
+      if (imported.length > 0) {
+        setQuestions(imported.map((q) => ({ ...q, options: [...q.options, "", "", "", ""].slice(0, Math.max(4, q.options.length)) })));
+      }
+    };
+    reader.readAsText(file);
+  }
 
   return (
     <div>
@@ -295,10 +395,26 @@ async function openResults(c: Cbt) {
           )}
 
           <div style={{ borderTop: "1px solid var(--duga-border)", paddingTop: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
               <strong>Questions ({questions.length})</strong>
-              <Button size="sm" variant="outline" onClick={() => setQuestions((prev) => [...prev, blankQuestion()])}><Icon name="plus" size={14} /> Add question</Button>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <Button size="sm" variant="ghost" onClick={downloadCsvTemplate}><Icon name="reports" size={14} /> Download CSV template</Button>
+                <label className="duga-btn duga-btn--sm duga-btn--outline" style={{ cursor: "pointer" }}>
+                  <Icon name="plus" size={14} /> Import from CSV
+                  <input type="file" accept=".csv,text/csv" onChange={handleImportFile} style={{ display: "none" }} />
+                </label>
+                <Button size="sm" variant="outline" onClick={() => setQuestions((prev) => [...prev, blankQuestion()])}><Icon name="plus" size={14} /> Add question</Button>
+              </div>
             </div>
+            {importErrors.length > 0 && (
+              <Alert tone="warning">
+                {importErrors.length} row(s) in the CSV couldn&apos;t be imported and were skipped:
+                <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                  {importErrors.slice(0, 8).map((err, i) => <li key={i} style={{ fontSize: 12.5 }}>{err}</li>)}
+                  {importErrors.length > 8 && <li style={{ fontSize: 12.5 }}>…and {importErrors.length - 8} more.</li>}
+                </ul>
+              </Alert>
+            )}
             {questions.map((q, qi) => (
               <div key={qi} style={{ border: "1px solid var(--duga-border)", borderRadius: 8, padding: 12, marginBottom: 12 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>

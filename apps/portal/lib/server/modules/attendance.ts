@@ -223,6 +223,13 @@ export const attendanceModule: Module = {
       const schoolLng = school?.gpsLng ?? schoolConfig.lng;
       const radius = schoolConfig.attendanceRadiusMeters;
       const check = withinRadiusMeters(lat, lng, schoolLat, schoolLng, radius);
+      // A proxy clock-in (an admin/owner clocking in someone without a
+      // smartphone) is a trusted manual override and isn't geofenced — the
+      // helper may reasonably be doing this from the office, not the gate.
+      // A staff member clocking in for themselves must be on school grounds.
+      if (!target.proxyByUserId && !check.within) {
+        throw new Error(`You're too far from the school to clock in (${Math.round(check.distanceM)}m away, must be within ${radius}m). Ask an admin to clock you in if this is wrong.`);
+      }
 
       const record = await prisma.staffAttendance.upsert({
         where: { userId_date: { userId: target.userId, date: todayUTC() } },
@@ -264,6 +271,9 @@ export const attendanceModule: Module = {
 
       const school = await prisma.school.findUnique({ where: { id: schoolId } });
       const check = withinRadiusMeters(lat, lng, school?.gpsLat ?? schoolConfig.lat, school?.gpsLng ?? schoolConfig.lng, schoolConfig.attendanceRadiusMeters);
+      if (!target.proxyByUserId && !check.within) {
+        throw new Error(`You're too far from the school to clock out (${Math.round(check.distanceM)}m away, must be within ${schoolConfig.attendanceRadiusMeters}m). Ask an admin to clock you out if this is wrong.`);
+      }
       const record = await prisma.staffAttendance.upsert({
         where: { userId_date: { userId: target.userId, date: todayUTC() } },
         update: { checkOutAt: new Date(), checkOutLat: lat, checkOutLng: lng, checkOutDistanceM: check.distanceM, checkOutWithinRadius: check.within },

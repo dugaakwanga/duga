@@ -26,6 +26,7 @@ interface SchoolDaysConfig {
 interface RestrictionsConfig {
   resultsRequirePayment: boolean;
   applicationsOpen: boolean;
+  feeGatedFeatures: string[];
 }
 
 interface SettingsData {
@@ -61,7 +62,7 @@ export default function SettingsPage() {
   const [days, setDays] = useState<Record<string, boolean>>(DEFAULT_DAYS);
   const [holidays, setHolidays] = useState<Array<{ date: string; name: string }>>([]);
   const [holidayForm, setHolidayForm] = useState<{ date: string; name: string }>({ date: "", name: "" });
-  const [restrictions, setRestrictions] = useState<RestrictionsConfig>({ resultsRequirePayment: true, applicationsOpen: true });
+  const [restrictions, setRestrictions] = useState<RestrictionsConfig>({ resultsRequirePayment: true, applicationsOpen: true, feeGatedFeatures: ["tests", "assignments", "elearn", "games", "live"] });
   const [termOpen, setTermOpen] = useState(false);
   const [termForm, setTermForm] = useState<Record<string, string>>({});
   const [termBusy, setTermBusy] = useState(false);
@@ -272,6 +273,38 @@ export default function SettingsPage() {
                 <span style={{ fontSize: 13.5, fontWeight: 600 }}>Accept online applications</span>
                 <Badge tone={restrictions.applicationsOpen ? "success" : "neutral"}>{restrictions.applicationsOpen ? "On" : "Off"}</Badge>
               </button>
+            </div>
+
+            <div style={{ fontSize: 13.5, fontWeight: 600, marginTop: 18, marginBottom: 8 }}>Block for students who are owing</div>
+            <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginBottom: 10 }}>
+              When a student's fee-access window lapses (see Fees → Students owing), these are the things it blocks. Turn any of them off to let owing students keep using that feature anyway.
+            </div>
+            <div style={{ display: "grid", gap: 10 }}>
+              {[
+                { key: "tests", label: "CBT / online tests" },
+                { key: "assignments", label: "Assignment submission" },
+                { key: "elearn", label: "E-learning content" },
+                { key: "games", label: "Educational games" },
+                { key: "live", label: "Live classes" },
+              ].map((f) => {
+                const on = restrictions.feeGatedFeatures.includes(f.key);
+                return (
+                  <button
+                    key={f.key}
+                    type="button"
+                    onClick={() =>
+                      setRestrictions({
+                        ...restrictions,
+                        feeGatedFeatures: on ? restrictions.feeGatedFeatures.filter((id) => id !== f.key) : [...restrictions.feeGatedFeatures, f.key],
+                      })
+                    }
+                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", border: "1px solid var(--duga-border)", borderRadius: 10, cursor: "pointer", textAlign: "left", background: "transparent" }}
+                  >
+                    <span style={{ fontSize: 13.5, fontWeight: 600 }}>{f.label}</span>
+                    <Badge tone={on ? "danger" : "neutral"}>{on ? "Blocked when owing" : "Always allowed"}</Badge>
+                  </button>
+                );
+              })}
             </div>
             <Button onClick={saveRestrictions} style={{ marginTop: 14 }}>Save restrictions</Button>
           </Card>

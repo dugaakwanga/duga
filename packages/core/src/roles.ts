@@ -4,9 +4,9 @@
 // only in the UI.
 // ----------------------------------------------------------------------------
 
-export type Role = "OWNER" | "ADMIN" | "BURSAR" | "TEACHER" | "PARENT" | "STUDENT";
+export type Role = "OWNER" | "ADMIN" | "BURSAR" | "TEACHER" | "PARENT" | "STUDENT" | "SECURITY";
 
-export const ROLES: Role[] = ["OWNER", "ADMIN", "BURSAR", "TEACHER", "PARENT", "STUDENT"];
+export const ROLES: Role[] = ["OWNER", "ADMIN", "BURSAR", "TEACHER", "PARENT", "STUDENT", "SECURITY"];
 
 export type Permission =
   // Students
@@ -86,7 +86,10 @@ export type Permission =
   // Audit
   | "audit:view"
   // AI assistant
-  | "ai:use";
+  | "ai:use"
+  // Gate / security (student clock-in/out, permitted exit, visitors)
+  | "gate:scan"
+  | "gate:view";
 
 export const PERMISSIONS: Permission[] = [
   "students:view",
@@ -147,6 +150,8 @@ export const PERMISSIONS: Permission[] = [
   "library:manage",
   "audit:view",
   "ai:use",
+  "gate:scan",
+  "gate:view",
 ];
 
 const rolePermissions: Record<Role, Permission[]> = {
@@ -204,6 +209,8 @@ const rolePermissions: Record<Role, Permission[]> = {
     "games:manage",
     "games:play",
     "ai:use",
+    "gate:scan",
+    "gate:view",
   ],
   // Bursar access is intentionally limited to finance. The owner can narrow
   // this further through the bursar permission setting in Payroll.
@@ -278,6 +285,9 @@ const rolePermissions: Record<Role, Permission[]> = {
     "library:view",
     "ai:use",
   ],
+  // Gate staff: scan students in/out, log permitted exits and visitors.
+  // Deliberately narrow — no access to grades, fees or messaging.
+  SECURITY: ["gate:scan", "gate:view"],
 };
 
 // Owner gets every permission.

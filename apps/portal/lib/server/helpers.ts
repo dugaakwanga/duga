@@ -1,6 +1,6 @@
 import { assertPermission, type Permission, type Role } from "@duga/core";
 import type { Ctx } from "@/app/api/v1/[...path]/route";
-import { prisma } from "@duga/core/server";
+import { prisma, getSetting } from "@duga/core/server";
 import type { Section } from "@/lib/sections";
 
 export function sectionOf(v: unknown): Section | undefined {
@@ -298,17 +298,39 @@ export function feeInfoOf(student: { feeAmount: { toString(): string } | string 
   };
 }
 
-// Throw 403 for STUDENT/PARENT callers when the child's fee window has lapsed.
-export function assertFeeAccess(student: { feeAmount: { toString(): string } | string | null; feeDays: number | null; feePaidThrough: Date | null }): void {
+// Which fee-gated features are currently blocked for owing students — admin
+// configurable via Settings → Restrictions (schoolSetting key "restrictions",
+// field feeGatedFeatures). Matches the historical hardcoded default so
+// existing schools see no behavior change until they opt out of one.
+export type FeeGatedFeature = "tests" | "assignments" | "elearn" | "games" | "live";
+const DEFAULT_FEE_GATED_FEATURES: FeeGatedFeature[] = ["tests", "assignments", "elearn", "games", "live"];
+
+async function isFeeGated(schoolId: string, feature: FeeGatedFeature): Promise<boolean> {
+  const restrictions = await getSetting(schoolId, "restrictions");
+  const list =
+    restrictions && typeof restrictions === "object" && Array.isArray((restrictions as { feeGatedFeatures?: unknown }).feeGatedFeatures)
+      ? ((restrictions as { feeGatedFeatures: unknown[] }).feeGatedFeatures as string[])
+      : DEFAULT_FEE_GATED_FEATURES;
+  return list.includes(feature);
+}
+
+// Throw 403 for STUDENT/PARENT callers when the child's fee window has lapsed
+// AND the school has this specific feature configured as fee-gated.
+export async function assertFeeAccess(
+  schoolId: string,
+  student: { feeAmount: { toString(): string } | string | null; feeDays: number | null; feePaidThrough: Date | null },
+  feature: FeeGatedFeature,
+): Promise<void> {
   const feeAmount = Number(student.feeAmount ?? 0);
   const configured = feeAmount > 0 && (student.feeDays ?? 0) > 0;
-  if (configured && (!student.feePaidThrough || student.feePaidThrough.getTime() < Date.now())) {
-    const err = new Error(
-      "Access suspended — payment is required or the school fee period has ended. Please contact the school to renew.",
-    ) as Error & { status?: number };
-    err.status = 403;
-    throw err;
-  }
+  const expired = configured && (!student.feePaidThrough || student.feePaidThrough.getTime() < Date.now());
+  if (!expired) return;
+  if (!(await isFeeGated(schoolId, feature))) return;
+  const err = new Error(
+    "Access suspended — payment is required or the school fee period has ended. Please contact the school to renew.",
+  ) as Error & { status?: number };
+  err.status = 403;
+  throw err;
 }
 
 /**

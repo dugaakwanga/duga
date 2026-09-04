@@ -114,7 +114,7 @@ export default function StaffClockPage() {
       if (res.withinRadius) {
         setMessage(`Clocked ${kind}${who} successfully (${res.distanceMeters} m from school).`);
       } else {
-        setMessage(`Clocked ${kind}${who}, but you were ${res.distanceMeters} m from school — outside the ${status?.radius ?? 150} m geofence. This may be flagged.`);
+        setMessage(`Clocked ${kind}${who} as a proxy override — ${res.distanceMeters} m from school, outside the ${status?.radius ?? 150} m geofence. This is recorded and flagged since it didn't go through the normal on-site check.`);
       }
       load();
     } catch (e) {

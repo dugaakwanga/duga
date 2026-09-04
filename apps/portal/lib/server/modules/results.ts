@@ -2,11 +2,11 @@ import { prisma } from "@duga/core/server";
 import { collateReportCards, resolveResultsAccess, logAudit, dispatchToMany, getDefaultGradingScale } from "@duga/core/server";
 import { getResultConfig, computeScoreTotals, type ResultComponent } from "@duga/core/server";
 import type { Module } from ".";
-import { can, str, num, studentScope, assertFeeAccess, resolveSection } from "../helpers";
+import { can, str, num, studentScope, resolveSection } from "../helpers";
 
 // Grade-point average for a card, derived from the school's grading scale.
-async function gpaCalculator(schoolId: string) {
-  const scale = await getDefaultGradingScale(schoolId);
+async function gpaCalculator(schoolId: string, section?: string) {
+  const scale = await getDefaultGradingScale(schoolId, section);
   const gpOf = new Map(scale.map((b) => [b.grade, b.gp]));
   return (items: Array<{ grade: string | null }> | null | undefined): number | null => {
     if (!items || items.length === 0) return null;
@@ -45,13 +45,13 @@ export const resultsModule: Module = {
     can(ctx, "results:view");
     const schoolId = ctx.session.user.schoolId;
     const role = ctx.session.user.role;
-    const config = await getResultConfig(schoolId);
-    const gpaOf = await gpaCalculator(schoolId);
+    const section = await resolveSection(ctx);
+    const config = await getResultConfig(schoolId, section);
+    const gpaOf = await gpaCalculator(schoolId, section);
 
     // Entry grid for teachers: return class subjects with class students
     if (role === "TEACHER") {
       const teacher = ctx.session.user.teacher!;
-      const section = await resolveSection(ctx);
       const classSubjects = await prisma.classSubject.findMany({
         where: { teacherId: teacher.id, ...(section ? { classGroup: { level: { section } } } : {}) },
         include: { subject: true, classGroup: { include: { level: true, students: { include: { user: { select: { firstName: true, lastName: true, id: true } } } } } } },
@@ -94,7 +94,6 @@ export const resultsModule: Module = {
     }
 
     // Admin / owner: only return the active section when one is selected.
-    const section = await resolveSection(ctx);
     const [reportCards, classSubjects] = await Promise.all([
       prisma.reportCard.findMany({
         where: { schoolId, ...(section ? { classGroup: { level: { section } } } : {}) },
@@ -131,8 +130,12 @@ export const resultsModule: Module = {
     if (!rc) throw new Error("Report card not found");
     // Students/parents must also pass the fee gate (published + paid/overridden).
     if (role === "STUDENT" || role === "PARENT") {
+      // resolveResultsAccess already fully governs results gating (its own
+      // resultsRequirePayment toggle + Invoice status + FeeOverride) — an
+      // additional assertFeeAccess check here used the unrelated
+      // feePaidThrough window and could block a student even when the admin
+      // had explicitly turned resultsRequirePayment off, or vice versa.
       const access = await resolveResultsAccess(rc.studentId, rc.termId);
-      assertFeeAccess(rc.student);
       if (!access.allowed) {
         const err = new Error("This report card is locked") as Error & { status?: number };
         err.status = 403;
@@ -204,7 +207,7 @@ export const resultsModule: Module = {
 
       const classSubject = await prisma.classSubject.findFirst({
         where: { id: classSubjectId, schoolId, ...(teacher ? { teacherId: teacher.id } : {}) },
-        select: { id: true, classGroupId: true },
+        select: { id: true, classGroupId: true, classGroup: { select: { level: { select: { section: true } } } } },
       });
       if (!classSubject) throw new Error(teacher ? "You can only enter scores for your own subjects" : "Class subject not found");
       const roster = await prisma.student.findMany({
@@ -220,7 +223,7 @@ export const resultsModule: Module = {
         if (locked) throw new Error("These scores have been submitted to the admin and are locked. Ask an admin to reopen them.");
       }
 
-const config = await getResultConfig(schoolId);
+      const config = await getResultConfig(schoolId, classSubject.classGroup.level.section);
       const compNames = new Set(config.components.map((c) => c.name));
 
       for (const r of rows) {
@@ -277,10 +280,12 @@ const config = await getResultConfig(schoolId);
       return { count: result.count };
     },
 
-    // Admin configures the report card contents (components + caps).
+    // Admin configures the report card contents (components + caps), either
+    // school-wide (no section given) or scoped to one section.
     saveConfig: async (ctx) => {
       can(ctx, "results:publish");
       const schoolId = ctx.session.user.schoolId;
+      const section = str(ctx.body.section) ?? "";
       const caCap = Math.max(0, num(ctx.body.caCap) ?? 40);
       const examCap = Math.max(0, num(ctx.body.examCap) ?? 60);
       const raw = Array.isArray(ctx.body.components) ? ctx.body.components : [];
@@ -300,11 +305,11 @@ const config = await getResultConfig(schoolId);
       const hasExam = components.some((c) => c.category === "EXAM");
       if (!components.length || !hasCa || !hasExam) throw new Error("Result needs at least one CA and one Exam component with a max score");
       const config = await prisma.resultConfig.upsert({
-        where: { schoolId },
+        where: { schoolId_section: { schoolId, section } },
         update: { caCap, examCap, components: components as never },
-        create: { schoolId, caCap, examCap, components: components as never },
+        create: { schoolId, section, caCap, examCap, components: components as never },
       });
-      await logAudit({ schoolId, userId: ctx.session.user.id, action: "results.configUpdated", entityType: "School", entityId: schoolId, meta: { caCap, examCap, count: components.length } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "results.configUpdated", entityType: "School", entityId: schoolId, meta: { section: section || "(school-wide)", caCap, examCap, count: components.length } });
       return config;
     },
 
@@ -326,7 +331,7 @@ const config = await getResultConfig(schoolId);
       });
       if (!cs) throw new Error("Class subject not found");
       const [config, scores] = await Promise.all([
-        getResultConfig(schoolId),
+        getResultConfig(schoolId, cs.classGroup.level.section),
         prisma.subjectScore.findMany({ where: { classSubjectId, termId: termId ?? "" } }),
       ]);
       const scoreMap = new Map(scores.map((s) => [s.studentId, s]));

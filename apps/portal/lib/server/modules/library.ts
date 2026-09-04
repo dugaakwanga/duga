@@ -1,7 +1,7 @@
 import { prisma, logAudit, dispatchNotification } from "@duga/core/server";
 import type { Module } from ".";
 import type { Ctx } from "@/app/api/v1/[...path]/route";
-import { can, str, num } from "../helpers";
+import { can, str, num, idArray, isAssignedTo } from "../helpers";
 import { removeFile } from "../storage";
 
 const loanStatus = (loan: { borrowedAt: Date; dueDate: Date | null; returnedAt: Date | null; status: string }) => {
@@ -37,7 +37,7 @@ export const libraryModule: Module = {
     const schoolId = ctx.session.user.schoolId;
     const role = ctx.session.user.role;
 
-    const books = await prisma.libraryBook.findMany({
+    const allBooks = await prisma.libraryBook.findMany({
       where: { schoolId },
       orderBy: { title: "asc" },
       include: { loans: { where: { status: { in: ["BORROWED", "OVERDUE"] }, returnedAt: null } } },
@@ -52,6 +52,18 @@ export const libraryModule: Module = {
           : role === "TEACHER"
             ? await teacherStudentIds(ctx.session.user.teacher!.id, schoolId)
             : undefined;
+
+    // A book with no assignment is visible school-wide; otherwise only to the
+    // classes/students it was actually given to — same convention as
+    // assignments, e-learning content and games.
+    let books = allBooks;
+    if (role === "STUDENT" || role === "PARENT") {
+      const students =
+        role === "STUDENT"
+          ? [ctx.session.user.student!]
+          : await prisma.student.findMany({ where: { id: { in: myIds ?? [] } } });
+      books = allBooks.filter((b) => students.some((s) => isAssignedTo(b, s.id, s.currentClassGroupId)));
+    }
 
     const loans = await prisma.bookLoan.findMany({
       where: { schoolId, ...(myIds ? { studentId: { in: myIds } } : {}) },
@@ -112,6 +124,8 @@ export const libraryModule: Module = {
           fileSize: fileSize ?? null,
           description: str(ctx.body.description),
           addedByUserId: ctx.session.user.id,
+          targetClassGroupIds: idArray(ctx.body.targetClassGroupIds),
+          targetStudentIds: idArray(ctx.body.targetStudentIds),
         },
       });
       await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "library.bookCreated", entityType: "LibraryBook", entityId: book.id, meta: { title } });
@@ -145,6 +159,8 @@ export const libraryModule: Module = {
       if (ctx.body.description !== undefined) data.description = str(ctx.body.description) ?? null;
       if (ctx.body.totalCopies !== undefined) data.totalCopies = Math.max(num(ctx.body.totalCopies) ?? existing.totalCopies, 1);
       if (ctx.body.availableCopies !== undefined) data.availableCopies = Math.max(num(ctx.body.availableCopies) ?? existing.availableCopies, 0);
+      if (ctx.body.targetClassGroupIds !== undefined) data.targetClassGroupIds = idArray(ctx.body.targetClassGroupIds);
+      if (ctx.body.targetStudentIds !== undefined) data.targetStudentIds = idArray(ctx.body.targetStudentIds);
       const book = await prisma.libraryBook.update({ where: { id: ctx.id }, data });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "library.bookUpdated", entityType: "LibraryBook", entityId: ctx.id });
       return book;

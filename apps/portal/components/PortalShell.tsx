@@ -101,6 +101,7 @@ const STAFF_NAV: NavSection[] = [
       { href: "/portal/staff", label: "Staff", icon: "staff", perm: "staff:view", feature: "staff" },
       { href: "/portal/settings", label: "School Settings", icon: "settings", perm: "settings:manage", feature: "settings" },
       { href: "/portal/audit", label: "Audit Log", icon: "audit", perm: "audit:view", feature: "audit" },
+      { href: "/portal/security", label: "Gate & Visitors", icon: "attendance", perm: "gate:view", feature: "security" },
     ],
   },
 ];
@@ -308,6 +309,7 @@ const TITLES: Array<{ match: string; title: string }> = [
   { match: "/portal/fees", title: "Fees & Payments" },
   { match: "/portal/hostel", title: "Hostel" },
   { match: "/portal/transport", title: "Transport" },
+  { match: "/portal/applications/test", title: "Entrance Test Bank" },
   { match: "/portal/applications", title: "Admissions" },
   { match: "/portal/pta", title: "PTA" },
   { match: "/portal/library", title: "Library" },
@@ -478,7 +480,7 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
-    const staffRole = user.role === "OWNER" || user.role === "ADMIN" || user.role === "BURSAR";
+    const staffRole = user.role === "OWNER" || user.role === "ADMIN" || user.role === "BURSAR" || user.role === "SECURITY";
     window.location.href = staffRole ? "/admin" : "/";
   }
 

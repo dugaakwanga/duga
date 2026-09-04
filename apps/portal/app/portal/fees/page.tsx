@@ -52,6 +52,13 @@ interface ClassGroup {
   level: { id: string; name: string };
 }
 
+interface OwingStudent {
+  id: string;
+  admissionNumber: string;
+  user: { firstName: string; lastName: string };
+  fee: { feePaidThrough: string | null; daysRemaining: number; expired: boolean };
+}
+
 function naira(v: string | number | undefined): string {
   return `₦${Number(v ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
@@ -76,6 +83,9 @@ export default function FeesPage() {
   const [form, setForm] = useState<Record<string, string>>({});
   const [paying, setPaying] = useState<string | null>(null);
   const [paymentRecordsVisible, setPaymentRecordsVisible] = useState(true);
+  const [owingStudents, setOwingStudents] = useState<OwingStudent[]>([]);
+  const [payTarget, setPayTarget] = useState<string | null>(null);
+  const [payForm, setPayForm] = useState({ amount: "", method: "CASH", coversTo: "" });
   const isStaff = role === "OWNER" || role === "BURSAR";
   const { section } = useSection();
 
@@ -91,6 +101,7 @@ export default function FeesPage() {
       levels: ClassLevel[];
       classGroups: ClassGroup[];
       paymentRecordsVisible?: boolean;
+      owingStudents?: OwingStudent[];
     }>("fees");
     setRole(d.role);
     setInvoices(d.invoices);
@@ -101,6 +112,7 @@ export default function FeesPage() {
     setLevels(d.levels ?? []);
     setClassGroups(d.classGroups ?? []);
     setPaymentRecordsVisible(d.paymentRecordsVisible !== false);
+    setOwingStudents(d.owingStudents ?? []);
   }, [section]);
 
   useEffect(() => {
@@ -132,12 +144,22 @@ export default function FeesPage() {
     }
   }
 
-  async function recordManual(invoiceId: string) {
-    const amount = window.prompt("Amount received (₦)");
-    if (!amount || Number(amount) <= 0) return alert("Enter a valid amount");
-    setPaying(invoiceId);
+  function openRecordPayment(invoiceId: string) {
+    setPayTarget(invoiceId);
+    setPayForm({ amount: "", method: "CASH", coversTo: "" });
+  }
+
+  async function submitRecordPayment() {
+    if (!payTarget) return;
+    const amount = Number(payForm.amount);
+    if (!amount || amount <= 0) return alert("Enter a valid amount");
+    setPaying(payTarget);
     try {
-      await api(`fees/${invoiceId}/recordManual`, { method: "POST", body: { amount: Number(amount) } });
+      await api(`fees/${payTarget}/recordManual`, {
+        method: "POST",
+        body: { amount, method: payForm.method, coversTo: payForm.coversTo || undefined },
+      });
+      setPayTarget(null);
       await load();
     } catch (e) {
       alert((e as Error).message);
@@ -257,6 +279,24 @@ export default function FeesPage() {
         </div>
       )}
 
+      {isStaff && owingStudents.length > 0 && (
+        <Card title={`Students owing (${owingStudents.length})`} style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 13, color: "var(--duga-muted)", marginBottom: 10 }}>
+            Their fee-access window has lapsed — whichever features are set to require payment (Settings → Restrictions) are currently blocked for them.
+          </div>
+          <Table headers={["Student", "Admission no.", "Paid through", ""]}>
+            {owingStudents.map((s) => (
+              <tr key={s.id}>
+                <td>{s.user.firstName} {s.user.lastName}</td>
+                <td>{s.admissionNumber}</td>
+                <td>{s.fee.feePaidThrough ? new Date(s.fee.feePaidThrough).toLocaleDateString() : "Never paid"}</td>
+                <td><Badge tone="danger">Owing</Badge></td>
+              </tr>
+            ))}
+          </Table>
+        </Card>
+      )}
+
       {invoices.length === 0 ? (
         <EmptyState title="No invoices yet" />
       ) : (
@@ -279,7 +319,7 @@ export default function FeesPage() {
                   )}
                   {isStaff && (
                     <div style={{ display: "flex", gap: 6 }}>
-                      <Button size="sm" variant="outline" loading={paying === i.id} onClick={() => recordManual(i.id)}>Record payment</Button>
+                      <Button size="sm" variant="outline" loading={paying === i.id} onClick={() => openRecordPayment(i.id)}>Record payment</Button>
                       <Button size="sm" variant="ghost" loading={paying === i.id} onClick={() => deleteInvoice(i.id)}>Delete</Button>
                     </div>
                   )}
@@ -428,6 +468,28 @@ export default function FeesPage() {
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <Button variant="ghost" onClick={() => { setSetupOpen(false); setEditingSetupId(null); }}>Cancel</Button>
           <Button onClick={saveSetup}>Save</Button>
+        </div>
+      </Modal>
+
+      <Modal open={!!payTarget} onClose={() => setPayTarget(null)} title="Record an offline payment">
+        <Alert tone="info">For cash, bank transfer or any payment taken outside the app.</Alert>
+        <Field label="Amount received (₦)" required>
+          <Input type="number" min={0} value={payForm.amount} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} />
+        </Field>
+        <Field label="Method">
+          <Select value={payForm.method} onChange={(e) => setPayForm({ ...payForm, method: e.target.value })}>
+            <option value="CASH">Cash</option>
+            <option value="BANK_TRANSFER">Bank transfer</option>
+            <option value="TRANSFER">Transfer</option>
+            <option value="USSD">USSD</option>
+          </Select>
+        </Field>
+        <Field label="This payment covers up to (optional)" hint="Declare exactly what period this installment covers, e.g. the end of a term. Leave blank to let the app work it out automatically from the amount and the student's fee plan.">
+          <Input type="date" value={payForm.coversTo} onChange={(e) => setPayForm({ ...payForm, coversTo: e.target.value })} />
+        </Field>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+          <Button variant="ghost" onClick={() => setPayTarget(null)}>Cancel</Button>
+          <Button onClick={submitRecordPayment} loading={paying === payTarget}>Record payment</Button>
         </div>
       </Modal>
     </div>
