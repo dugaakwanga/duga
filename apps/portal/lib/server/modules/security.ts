@@ -9,12 +9,18 @@ function todayUTC(): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
 
+// In-app only — gate events fire up to twice per student per day (arrival +
+// departure), which for a school this size can exceed Resend's free-tier
+// 100-emails/day cap before the school day is even over. Email would then
+// silently stop working for the rest of the day with no visible sign to
+// staff. In-app notifications have no such ceiling, so they're the reliable
+// channel for this specific, high-volume event type.
 async function notifyParents(schoolId: string, studentId: string, title: string, body: string) {
   const links = await prisma.studentParent.findMany({ where: { studentId }, select: { parent: { select: { userId: true } } } });
   const userIds = links.map((l) => l.parent.userId);
   await Promise.all(
     userIds.map((userId) =>
-      dispatchNotification({ schoolId, userId, type: "gate", title, body, channels: ["IN_APP", "EMAIL"] }).catch(() => undefined),
+      dispatchNotification({ schoolId, userId, type: "gate", title, body, channels: ["IN_APP"] }).catch(() => undefined),
     ),
   );
 }

@@ -44,7 +44,9 @@ export default function SecurityGatePage() {
   const [message, setMessage] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null); // soft "already clocked in" feedback
 
-  const [mode, setMode] = useState<ScanMode>(null);
+  // Defaults to Clock In so the page is immediately usable on open, like the
+  // old always-on scan field — staff can still switch to Clock Out mode.
+  const [mode, setMode] = useState<ScanMode>("IN");
   const [code, setCode] = useState("");
   const [scanning, setScanning] = useState(false);
   const scanInputRef = useRef<HTMLInputElement>(null);
