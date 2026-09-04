@@ -46,7 +46,7 @@ export interface ThemeConfig {
 }
 
 export const THEMES: ThemeConfig[] = [
-  { key: "fuelRush", title: "Fuel Rush", emoji: "🏎️", tagline: "Your tank is draining — answer fast at every pit stop to refuel.", mechanic: "gauge", gaugeLabel: "Fuel", playerEmoji: "🏎️", hazardEmoji: "⛽", bg: "linear-gradient(135deg,#f97316,#ea580c)", winMessage: "You crossed the finish line!", loseMessage: "You ran out of fuel.", sceneKind: "car", vehicleColor: "#ef4444" },
+  { key: "fuelRush", title: "Fuel Rush", emoji: "🏎️", tagline: "Race two rivals — dodge cones and hit boost gates with fast right answers to surge ahead.", mechanic: "gauge", gaugeLabel: "Fuel", playerEmoji: "🏎️", hazardEmoji: "⛽", bg: "linear-gradient(135deg,#f97316,#ea580c)", winMessage: "You crossed the finish line first!", loseMessage: "A rival crossed the finish line first.", sceneKind: "car", vehicleColor: "#ef4444" },
   { key: "deepSeaDive", title: "Deep Sea Dive", emoji: "🤿", tagline: "Oxygen is dropping fast — answer right to find your next breath of air.", mechanic: "gauge", gaugeLabel: "Oxygen", playerEmoji: "🤿", hazardEmoji: "🫧", bg: "linear-gradient(135deg,#0ea5e9,#0369a1)", winMessage: "You found the treasure and surfaced safely!", loseMessage: "You ran out of oxygen.", sceneKind: "traveller", vehicleColor: "#facc15" },
   { key: "desertCaravan", title: "Desert Caravan", emoji: "🐫", tagline: "Water is running low crossing the dunes — find the next oasis.", mechanic: "gauge", gaugeLabel: "Water", playerEmoji: "🐫", hazardEmoji: "🏜️", bg: "linear-gradient(135deg,#eab308,#b45309)", winMessage: "You reached the next town!", loseMessage: "Your caravan ran dry.", sceneKind: "traveller", vehicleColor: "#a16207" },
   { key: "marathonStamina", title: "Marathon Stamina", emoji: "🏃", tagline: "Your energy is fading — grab an energy gel with every right answer.", mechanic: "gauge", gaugeLabel: "Stamina", playerEmoji: "🏃", hazardEmoji: "💧", bg: "linear-gradient(135deg,#22c55e,#15803d)", winMessage: "You crossed the finish line first!", loseMessage: "You hit the wall and dropped out.", sceneKind: "traveller", vehicleColor: "#f97316" },
@@ -383,12 +383,309 @@ function FuelGaugeDial({ value, label }: { value: number; label: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// Gauge engine, rebuilt as an actual race: the car drives on its own (fuel
-// draining, visibly moving down the track) with no question on screen at
-// all — that only appears once fuel gets critical and the car pulls into a
-// pit stop. Answer correctly and fast: full refuel, big jump down the track,
-// back to driving. Answer wrong/late: only a token refuel and little
-// progress — two misses in a row and the tank runs dry for good.
+// Race engine (Fuel Rush): an actual controllable top-down race against two
+// AI rivals. Arrow keys / on-screen buttons change lanes to dodge cones;
+// hitting one costs ground. Periodic "boost gates" pause the player (rivals
+// keep moving!) and pose a question — answer fast and correctly for an
+// instant forward surge, miss it and get nothing while the field closes in.
+// First to the line wins.
+// ---------------------------------------------------------------------------
+const LANE_X = [18, 50, 82];
+const RACE_BASE_SPEED = 4.4; // % of race per second
+const RACE_BOOST_JUMP = 15; // instant progress gain on a correct answer
+const RACE_CRASH_PENALTY = 7;
+const RACE_LOOKAHEAD = 34; // relative progress rendered ahead of the player
+
+function CarTopDownSVG({ color, boosted }: { color: string; boosted?: boolean }) {
+  return (
+    <svg viewBox="0 0 60 104" width="46" height="80" style={{ filter: "drop-shadow(0 4px 4px rgba(0,0,0,.35))", overflow: "visible" }}>
+      {boosted && (
+        <>
+          <rect x="13" y="88" width="8" height="20" rx="2" fill="#93c5fd" opacity=".85" />
+          <rect x="39" y="88" width="8" height="20" rx="2" fill="#93c5fd" opacity=".85" />
+        </>
+      )}
+      <rect x="10" y="8" width="40" height="80" rx="14" fill={color} />
+      <rect x="16" y="20" width="28" height="20" rx="4" fill="#bfe3fb" opacity=".92" />
+      <rect x="16" y="58" width="28" height="14" rx="3" fill="rgba(15,23,42,.4)" />
+      <rect x="3" y="14" width="9" height="18" rx="2" fill="#111827" />
+      <rect x="48" y="14" width="9" height="18" rx="2" fill="#111827" />
+      <rect x="3" y="66" width="9" height="18" rx="2" fill="#111827" />
+      <rect x="48" y="66" width="9" height="18" rx="2" fill="#111827" />
+      <rect x="23" y="4" width="14" height="6" rx="2" fill="#fef08a" />
+    </svg>
+  );
+}
+
+function ConeSVG() {
+  return (
+    <svg viewBox="0 0 40 46" width="28" height="32" style={{ filter: "drop-shadow(0 3px 3px rgba(0,0,0,.3))" }}>
+      <polygon points="20,4 33,40 7,40" fill="#f97316" stroke="#c2410c" strokeWidth="1.5" />
+      <rect x="10" y="24" width="20" height="5" fill="#fff" />
+      <rect x="5" y="38" width="30" height="6" rx="1.5" fill="#9a3412" />
+    </svg>
+  );
+}
+
+function ChevronSVG({ dir }: { dir: "left" | "right" }) {
+  const points = dir === "left" ? "24,6 9,20 24,34" : "9,6 24,20 9,34";
+  return (
+    <svg viewBox="0 0 33 40" width="20" height="24">
+      <polyline points={points} fill="none" stroke="#fff" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+interface RaceOpponent {
+  id: string;
+  lane: number;
+  progress: number;
+  speed: number;
+  color: string;
+  name: string;
+}
+interface RaceObstacle {
+  id: string;
+  lane: number;
+  atProgress: number;
+  hit: boolean;
+}
+interface RaceGate {
+  id: string;
+  atProgress: number;
+  questionIndex: number;
+  consumed: boolean;
+}
+
+function RaceEngine({ theme, questions, difficulty, sessionExpiresAt, onProgress, onFinish }: EngineProps) {
+  const total = questions.length;
+  const [playerLane, setPlayerLane] = useState(1);
+  const [playerProgress, setPlayerProgress] = useState(0);
+  const [opponents, setOpponents] = useState<RaceOpponent[]>(() => [
+    { id: "o1", lane: 0, progress: 0, speed: RACE_BASE_SPEED * (0.86 + Math.random() * 0.18), color: "#2563eb", name: "Rival 1" },
+    { id: "o2", lane: 2, progress: 0, speed: RACE_BASE_SPEED * (0.86 + Math.random() * 0.18), color: "#16a34a", name: "Rival 2" },
+  ]);
+  const [obstacles, setObstacles] = useState<RaceObstacle[]>(() => {
+    if (total === 0) return [];
+    const gap = 90 / (total + 1);
+    return Array.from({ length: total }, (_, i) => ({ id: `ob${i}`, lane: Math.floor(Math.random() * 3), atProgress: gap * (i + 1) - gap * 0.4, hit: false }));
+  });
+  const [gates] = useState<RaceGate[]>(() => {
+    if (total === 0) return [];
+    const gap = 90 / (total + 1);
+    return Array.from({ length: total }, (_, i) => ({ id: `g${i}`, atProgress: gap * (i + 1), questionIndex: i, consumed: false }));
+  });
+  const [activeGateIdx, setActiveGateIdx] = useState<number | null>(null);
+  const [feedback, setFeedback] = useState<"correct" | "wrong" | "crash" | null>(null);
+  const [boosted, setBoosted] = useState(false);
+
+  const answersRef = useRef<EngineAnswer[]>([]);
+  const statsRef = useRef({ correct: 0, done: false });
+  const playerProgressRef = useRef(0);
+  const playerLaneRef = useRef(1);
+  const opponentsRef = useRef(opponents);
+  const obstaclesRef = useRef(obstacles);
+  const gatesRef = useRef(gates);
+  const activeGateRef = useRef<number | null>(null);
+  const qSeconds = questionSecondsFor(difficulty);
+  const onProgressRef = useRef(onProgress);
+  onProgressRef.current = onProgress;
+  const onFinishRef = useRef(onFinish);
+  onFinishRef.current = onFinish;
+
+  const finish = useCallback((outcome: EngineOutcome) => {
+    if (statsRef.current.done) return;
+    statsRef.current.done = true;
+    onFinishRef.current(answersRef.current, outcome, statsRef.current.correct);
+  }, []);
+
+  function moveLane(dir: -1 | 1) {
+    if (statsRef.current.done || activeGateRef.current !== null) return;
+    playerLaneRef.current = Math.max(0, Math.min(2, playerLaneRef.current + dir));
+    setPlayerLane(playerLaneRef.current);
+  }
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") moveLane(-1);
+      else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") moveLane(1);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (total === 0) return;
+    const TICK_MS = 100;
+    const iv = window.setInterval(() => {
+      if (statsRef.current.done) return;
+
+      opponentsRef.current = opponentsRef.current.map((o) => ({ ...o, progress: Math.min(100, o.progress + o.speed * (TICK_MS / 1000)) }));
+      setOpponents(opponentsRef.current);
+      if (opponentsRef.current.some((o) => o.progress >= 100)) {
+        finish("lost");
+        return;
+      }
+
+      if (activeGateRef.current === null) {
+        playerProgressRef.current = Math.min(100, playerProgressRef.current + RACE_BASE_SPEED * (TICK_MS / 1000));
+        setPlayerProgress(playerProgressRef.current);
+        onProgressRef.current?.({ correct: statsRef.current.correct, answered: answersRef.current.length, gaugeOrStep: playerProgressRef.current });
+
+        let crashed = false;
+        obstaclesRef.current = obstaclesRef.current.map((ob) => {
+          if (!ob.hit && ob.lane === playerLaneRef.current && Math.abs(ob.atProgress - playerProgressRef.current) < 1.6) {
+            crashed = true;
+            return { ...ob, hit: true };
+          }
+          return ob;
+        });
+        if (crashed) {
+          playerProgressRef.current = Math.max(0, playerProgressRef.current - RACE_CRASH_PENALTY);
+          setPlayerProgress(playerProgressRef.current);
+          setObstacles(obstaclesRef.current);
+          setFeedback("crash");
+          window.setTimeout(() => setFeedback(null), 600);
+        }
+
+        const gate = gatesRef.current.find((g) => !g.consumed && playerProgressRef.current >= g.atProgress);
+        if (gate) {
+          gate.consumed = true;
+          activeGateRef.current = gate.questionIndex;
+          setActiveGateIdx(gate.questionIndex);
+        }
+
+        if (playerProgressRef.current >= 100) {
+          finish("won");
+        }
+      }
+    }, TICK_MS);
+    return () => window.clearInterval(iv);
+  }, [total, finish]);
+
+  useEffect(() => {
+    if (!sessionExpiresAt) return;
+    const t = window.setTimeout(() => finish("timeup"), Math.max(0, sessionExpiresAt - Date.now()));
+    return () => window.clearTimeout(t);
+  }, [sessionExpiresAt, finish]);
+
+  function onAnswer(selectedIndex: number) {
+    if (statsRef.current.done || activeGateRef.current === null) return;
+    const qIdx = activeGateRef.current;
+    const q = questions[qIdx]!;
+    answersRef.current.push({ questionId: q.id, selectedIndex });
+    const isCorrect = selectedIndex === q.correctIndex;
+    if (isCorrect) {
+      statsRef.current.correct += 1;
+      playerProgressRef.current = Math.min(100, playerProgressRef.current + RACE_BOOST_JUMP);
+      setPlayerProgress(playerProgressRef.current);
+      setFeedback("correct");
+      setBoosted(true);
+      window.setTimeout(() => setBoosted(false), 800);
+    } else {
+      setFeedback("wrong");
+    }
+    window.setTimeout(() => setFeedback(null), 700);
+    activeGateRef.current = null;
+    setActiveGateIdx(null);
+    if (playerProgressRef.current >= 100) window.setTimeout(() => finish("won"), 300);
+  }
+
+  if (total === 0) {
+    return <div style={{ padding: 20, textAlign: "center", color: "#fff", background: theme.bg, borderRadius: 16, fontWeight: 700 }}>This game has no questions yet.</div>;
+  }
+
+  const q = activeGateIdx !== null ? questions[activeGateIdx] : null;
+  const racers = [{ id: "you", progress: playerProgress }, ...opponents.map((o) => ({ id: o.id, progress: o.progress }))].sort((a, b) => b.progress - a.progress);
+  const position = racers.findIndex((r) => r.id === "you") + 1;
+  const positionLabel = position === 1 ? "1st place" : position === 2 ? "2nd place" : "3rd place";
+
+  function relTop(entityProgress: number): number {
+    const rel = entityProgress - playerProgress;
+    return Math.max(-10, Math.min(96, 82 - (rel / RACE_LOOKAHEAD) * 76));
+  }
+
+  return (
+    <div style={{ display: "grid", gap: 10, padding: 16, borderRadius: 16, background: theme.bg }}>
+      <SceneStyles />
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ color: "#fff", fontWeight: 800, fontSize: 13 }}>{positionLabel}</span>
+        <span style={{ color: "#fff", fontWeight: 700, fontSize: 12 }}>{Math.round(playerProgress)}% of race</span>
+      </div>
+      <div style={{ position: "relative", height: 260, borderRadius: 14, overflow: "hidden", background: "linear-gradient(180deg,#334155,#1e293b)" }}>
+        {[0, 1].map((i) => (
+          <div
+            key={i}
+            style={{
+              position: "absolute",
+              left: `${(LANE_X[i]! + LANE_X[i + 1]!) / 2}%`,
+              top: 0,
+              bottom: 0,
+              width: 3,
+              background: "repeating-linear-gradient(180deg,#fff 0 14px,transparent 14px 28px)",
+              opacity: 0.5,
+              animation: activeGateIdx === null ? "duga-road-scroll .4s linear infinite" : undefined,
+            }}
+          />
+        ))}
+        {obstacles
+          .filter((o) => !o.hit && o.atProgress - playerProgress > -3 && o.atProgress - playerProgress < RACE_LOOKAHEAD)
+          .map((o) => (
+            <div key={o.id} style={{ position: "absolute", left: `${LANE_X[o.lane]}%`, top: `${relTop(o.atProgress)}%`, transform: "translate(-50%,-50%)", transition: "top .1s linear" }}>
+              <ConeSVG />
+            </div>
+          ))}
+        {opponents.map((o) => (
+          <div key={o.id} style={{ position: "absolute", left: `${LANE_X[o.lane]}%`, top: `${relTop(o.progress)}%`, transform: "translate(-50%,-50%)", transition: "top .1s linear" }}>
+            <CarTopDownSVG color={o.color} />
+          </div>
+        ))}
+        {gates
+          .filter((g) => !g.consumed)
+          .slice(0, 1)
+          .map((g) => {
+            const top = relTop(g.atProgress);
+            if (top < -8) return null;
+            return (
+              <div key={g.id} style={{ position: "absolute", left: 0, right: 0, top: `${top}%`, height: 10, background: "linear-gradient(90deg,#facc15,#fde047,#facc15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <span style={{ fontSize: 10, fontWeight: 900, color: "#78350f" }}>?</span>
+              </div>
+            );
+          })}
+        <div style={{ position: "absolute", left: `${LANE_X[playerLane]}%`, top: "82%", transform: "translate(-50%,-50%)", transition: "left .18s ease" }}>
+          <CarTopDownSVG color={theme.vehicleColor ?? "#ef4444"} boosted={boosted} />
+        </div>
+      </div>
+      <div style={feedbackBanner(feedback === "crash" ? "wrong" : feedback)}>
+        {feedback === "correct" ? "Speed boost — surging ahead!" : feedback === "wrong" ? "No boost this time — they're catching up!" : feedback === "crash" ? "Hit a cone — lost some ground!" : ""}
+      </div>
+      {activeGateIdx !== null && q ? (
+        <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ color: "#fff", fontWeight: 800, fontSize: 12.5, textAlign: "center" }}>BOOST GATE — answer fast to surge ahead! (rivals keep moving)</div>
+          <QuestionPrompt key={q.id} q={q} seconds={qSeconds} onAnswer={onAnswer} />
+        </div>
+      ) : (
+        <div style={{ display: "flex", justifyContent: "center", gap: 14 }}>
+          <button type="button" onClick={() => moveLane(-1)} className="duga-btn" style={{ width: 60, height: 44, display: "flex", alignItems: "center", justifyContent: "center" }} aria-label="Move left">
+            <ChevronSVG dir="left" />
+          </button>
+          <button type="button" onClick={() => moveLane(1)} className="duga-btn" style={{ width: 60, height: 44, display: "flex", alignItems: "center", justifyContent: "center" }} aria-label="Move right">
+            <ChevronSVG dir="right" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Gauge engine (the other 6 gauge-mechanic themes): the traveller moves on
+// its own (resource draining, visibly advancing) with no question on screen
+// at all — that only appears once the resource gets critical and there's a
+// stop. Answer correctly and fast: full refill, big jump forward, resume.
+// Answer wrong/late: only a token refill and little progress — two misses
+// in a row and it runs out for good.
 // ---------------------------------------------------------------------------
 const PIT_STOP_THRESHOLD = 32;
 
@@ -665,6 +962,7 @@ function ClimbEngine({ theme, questions, sessionExpiresAt, onProgress, onFinish 
 }
 
 export function ThemedGameEngine(props: EngineProps) {
+  if (props.theme.mechanic === "gauge" && props.theme.sceneKind === "car") return <RaceEngine {...props} />;
   if (props.theme.mechanic === "gauge") return <GaugeEngine {...props} />;
   if (props.theme.mechanic === "escape") return <EscapeEngine {...props} />;
   return <ClimbEngine {...props} />;
