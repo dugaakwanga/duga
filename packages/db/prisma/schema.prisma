@@ -32,6 +32,7 @@ enum Role {
   TEACHER
   PARENT
   STUDENT
+  SECURITY
 }
 
 enum Gender {
@@ -219,7 +220,7 @@ model School {
   systemLogs   SystemLog[]
   liveClasses  LiveClass[]
   tests        Test[]
-  resultConfig ResultConfig?
+  resultConfigs ResultConfig[]
   subjectScores SubjectScore[]
 
   @@index([domain])
@@ -354,6 +355,7 @@ model Student {
   contentProgress     ContentProgress[]
   gameProgress        GameProgress[]
   bookLoans           BookLoan[]
+  gateLogs            GateLog[]
 
   @@index([schoolId])
   @@unique([schoolId, admissionNumber])
@@ -803,6 +805,86 @@ model TestAttemptAnswer {
   @@index([attemptId])
 }
 
+// ----------------------------------------------------------------------------
+// ADMISSIONS CBT — a standalone question bank + attempt trail for applicants
+// who apply online and have no portal account, kept separate from the
+// curriculum Test/TestAttempt models above (which require a class/subject/
+// teacher an applicant doesn't have). schoolId/applicationId are plain
+// columns, not Prisma relations, matching how Application itself references
+// schoolId — avoids adding back-relation fields to the existing School and
+// Application models.
+// ----------------------------------------------------------------------------
+
+model AdmissionsTest {
+  id              String   @id @default(cuid())
+  schoolId        String
+  // Which applicants this test applies to: "PRIMARY" / "SECONDARY" (matches
+  // Application.section), or null to apply to every section.
+  section         String?
+  title           String
+  instruction     String?
+  durationMinutes Int      @default(30)
+  passMark        Float?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  questions AdmissionsQuestion[]
+  attempts  AdmissionsTestAttempt[]
+
+  @@index([schoolId])
+}
+
+model AdmissionsQuestion {
+  id           String       @id @default(cuid())
+  testId       String
+  type         QuestionType @default(MULTIPLE_CHOICE)
+  question     String
+  options      Json
+  correctIndex Int
+  score        Int          @default(1)
+  order        Int          @default(0)
+
+  test    AdmissionsTest          @relation(fields: [testId], references: [id], onDelete: Cascade)
+  answers AdmissionsTestAnswer[]
+
+  @@index([testId])
+}
+
+model AdmissionsTestAttempt {
+  id            String    @id @default(cuid())
+  schoolId      String
+  testId        String
+  applicationId String    @unique
+  startedAt     DateTime  @default(now())
+  submittedAt   DateTime?
+  score         Float?
+  maxScore      Int?
+  percentage    Float?
+  isSubmitted   Boolean   @default(false)
+
+  test    AdmissionsTest          @relation(fields: [testId], references: [id], onDelete: Cascade)
+  answers AdmissionsTestAnswer[]
+
+  @@index([testId])
+  @@index([schoolId])
+}
+
+model AdmissionsTestAnswer {
+  id            String  @id @default(cuid())
+  attemptId     String
+  questionId    String
+  selectedIndex Int
+  isCorrect     Boolean
+  scoreAwarded  Float
+
+  attempt  AdmissionsTestAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question AdmissionsQuestion    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([attemptId, questionId])
+  @@index([attemptId])
+}
+
 model LiveClass {
   id            String         @id @default(cuid())
   schoolId      String
@@ -917,27 +999,76 @@ model StaffAttendance {
 }
 
 // ----------------------------------------------------------------------------
+// GATE / SECURITY — student clock-in/out via QR, permitted early exit, visitors
+// ----------------------------------------------------------------------------
+
+model GateLog {
+  id                  String    @id @default(cuid())
+  schoolId            String
+  studentId           String
+  date                DateTime
+  checkInAt           DateTime?
+  checkInMethod       String?   // QR | MANUAL
+  checkInByUserId     String?
+  checkOutAt          DateTime?
+  checkOutMethod      String?   // QR | MANUAL
+  checkOutByUserId    String?
+  permittedExitAt     DateTime?
+  permittedExitReason String?
+  permittedExitByUserId String?
+  createdAt           DateTime  @default(now())
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, date])
+  @@index([schoolId, date])
+  @@index([studentId])
+}
+
+model VisitorLog {
+  id             String    @id @default(cuid())
+  schoolId       String
+  name           String
+  phone          String?
+  purpose        String?
+  hostName       String?
+  timeIn         DateTime  @default(now())
+  timeOut        DateTime?
+  recordedByUserId String
+  createdAt      DateTime  @default(now())
+
+  @@index([schoolId, timeIn])
+}
+
+// ----------------------------------------------------------------------------
 // MODULE C — RESULTS & REPORT CARDS
 // ----------------------------------------------------------------------------
 
 model GradingScheme {
   id        String   @id @default(cuid())
   schoolId  String
+  // "" means the scheme applies school-wide; a section name (e.g. "Primary")
+  // scopes it to that section only. Resolution falls back to "" when no
+  // section-specific default exists — see getDefaultGradingScale.
+  section   String   @default("")
   name      String
   isDefault Boolean  @default(false)
   scale     Json
   createdAt DateTime @default(now())
 
-  @@unique([schoolId, name])
+  @@unique([schoolId, section, name])
   @@index([schoolId])
 }
 
 // School-specific make-up of a result. Components are JSON:
 // [{ name: "CA1", category: "CA" | "EXAM", max: 10, order: 1 }, ...]
 // with caCap/examCap capping the final totals (defaults: CA 40 / Exam 60).
+// One row per (schoolId, section); section "" is the school-wide fallback
+// used when a section has no config of its own.
 model ResultConfig {
   id         String   @id @default(cuid())
-  schoolId   String   @unique
+  schoolId   String
+  section    String   @default("")
   caCap      Int      @default(40)
   examCap    Int      @default(60)
   components Json
@@ -946,6 +1077,7 @@ model ResultConfig {
 
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
+  @@unique([schoolId, section])
   @@index([schoolId])
 }
 
@@ -1287,6 +1419,12 @@ model Payment {
   paidAt       DateTime?
   receiptNumber String?
   recordedByUserId String?
+  // Explicit installment coverage window (e.g. "this payment covers Term 2").
+  // When set, this overrides the proportional amount/feeAmount*feeDays
+  // calculation for how far Student.feePaidThrough advances. Null for
+  // payments that should still use the proportional default.
+  coversFrom   DateTime?
+  coversTo     DateTime?
   meta         Json?
   createdAt    DateTime       @default(now())
 
@@ -1644,6 +1782,11 @@ model EducationalGame {
   title        String
   description  String?
   category     String   @default("QUIZ")     // QUIZ | WORD | MATH | MEMORY | PUZZLE
+  // Which of the 20 themed game engines renders this game (e.g. "fuelRush",
+  // "zombieShooter"). Existing rows default to "classic", which keeps
+  // launching the original 5 arcade mini-games unchanged — nothing published
+  // before this field existed breaks.
+  kind         String   @default("classic")
   gameUrl      String?
   difficulty   String   @default("MEDIUM")   // EASY | MEDIUM | HARD
   rewardPoints Int      @default(0)
@@ -1659,12 +1802,94 @@ model EducationalGame {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  teacher  Teacher         @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  progress GameProgress[]
+  teacher      Teacher              @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  progress     GameProgress[]
+  questions    GameQuestion[]
+  liveSessions GameLiveSession[]
+  invites      GameInvite[]
 
   @@index([schoolId])
   @@index([teacherId])
   @@index([validUntil])
+}
+
+// Per-game question bank (a themed engine is gated by these — a wrong answer
+// or a timeout has an in-game consequence). Same shape as TestQuestion /
+// AdmissionsQuestion for consistency; kept separate rather than shared since
+// each game's questions are authored and curated per game, not pooled.
+model GameQuestion {
+  id           String @id @default(cuid())
+  gameId       String
+  question     String
+  options      Json
+  correctIndex Int
+  order        Int    @default(0)
+
+  game EducationalGame @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@index([gameId])
+}
+
+// A teacher-scheduled window during which students playing this game see each
+// other's live progress (via polling — no realtime/websocket infra needed).
+// Outside any active window, students just play solo as usual.
+model GameLiveSession {
+  id        String   @id @default(cuid())
+  schoolId  String
+  gameId    String
+  startsAt  DateTime
+  endsAt    DateTime
+  createdAt DateTime @default(now())
+
+  game         EducationalGame        @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  participants GameLiveParticipant[]
+
+  @@index([gameId])
+  @@index([schoolId])
+}
+
+// studentId is a plain column (not a Prisma relation), matching how
+// Application/AdmissionsTestAttempt already reference students/schools
+// without adding back-relation fields to those core models.
+model GameLiveParticipant {
+  id          String    @id @default(cuid())
+  sessionId   String
+  studentId   String
+  score       Int       @default(0)
+  progressPct Int       @default(0)
+  joinedAt    DateTime  @default(now())
+  lastPingAt  DateTime  @default(now())
+  finishedAt  DateTime?
+
+  session GameLiveSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, studentId])
+  @@index([sessionId])
+}
+
+// An enrolled student invites someone outside the school to trial-play one
+// game — no portal account, capped at 10 minutes, one trial ever per email
+// per school (enforced in application code at play-start, not here, since a
+// duplicate invite record is harmless — only an actual second play should be
+// blocked). inviterStudentId is a plain column for the same reason as above.
+model GameInvite {
+  id               String    @id @default(cuid())
+  schoolId         String
+  gameId           String
+  inviterStudentId String
+  guestName        String?
+  guestEmail       String
+  status           String    @default("PENDING") // PENDING | PLAYED | EXPIRED
+  score            Int?
+  startedAt        DateTime?
+  playedAt         DateTime?
+  createdAt        DateTime  @default(now())
+
+  game EducationalGame @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId])
+  @@index([gameId])
+  @@index([guestEmail])
 }
 
 model GameProgress {
@@ -1765,6 +1990,11 @@ model LibraryBook {
   fileSize       Int?
   description    String?
   addedByUserId  String?
+  // Who this book/e-book is given to — empty means the whole school, matching
+  // the same assignment convention used by assignments, e-learning content
+  // and games (see isAssignedTo in apps/portal/lib/server/helpers.ts).
+  targetClassGroupIds Json?
+  targetStudentIds    Json?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
