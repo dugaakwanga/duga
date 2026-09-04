@@ -47,13 +47,18 @@ export const securityModule: Module = {
   },
 
   actions: {
-    // Scan (QR) or manually enter a student's admission number at the gate.
-    // First scan of the day = clock-in; a second scan = clock-out. Parents
-    // are emailed + notified in-app either way.
+    // Scan (camera QR) or manually enter a student's admission number at the
+    // gate. The security guard picks an explicit mode — Clock In or Clock
+    // Out — before scanning, so every scan in a session records the same
+    // direction; there is no time-of-day window and no auto-toggling on
+    // scan count. Re-scanning someone already recorded for that direction
+    // today returns status "ALREADY" instead of erroring, so a continuous
+    // scan loop doesn't stall on an accidental repeat scan.
     scan: async (ctx) => {
       can(ctx, "gate:scan");
       const schoolId = ctx.session.user.schoolId;
       const code = str(ctx.body.code);
+      const mode = ctx.body.mode === "OUT" ? "OUT" : "IN";
       if (!code) throw new Error("Scan a QR code or enter an admission number");
       const student = await findStudentByCodeOrAdmission(schoolId, code);
       if (!student) throw new Error("No matching student found");
@@ -63,7 +68,10 @@ export const securityModule: Module = {
       const existing = await prisma.gateLog.findUnique({ where: { studentId_date: { studentId: student.id, date } } });
       const name = `${student.user.firstName} ${student.user.lastName}`;
 
-      if (!existing || !existing.checkInAt) {
+      if (mode === "IN") {
+        if (existing?.checkInAt) {
+          return { status: "ALREADY" as const, direction: "IN" as const, student: name, admissionNumber: student.admissionNumber, at: existing.checkInAt };
+        }
         const log = await prisma.gateLog.upsert({
           where: { studentId_date: { studentId: student.id, date } },
           update: { checkInAt: new Date(), checkInMethod: "QR", checkInByUserId: ctx.session.user.id },
@@ -71,24 +79,24 @@ export const securityModule: Module = {
         });
         await logAudit({ schoolId, userId: ctx.session.user.id, action: "gate.checkIn", entityType: "GateLog", entityId: log.id, meta: { studentId: student.id } });
         await notifyParents(schoolId, student.id, "Arrived at school", `${name} clocked in at the school gate at ${new Date().toLocaleTimeString()}.`);
-        return { direction: "IN", student: name, admissionNumber: student.admissionNumber, at: log.checkInAt };
+        return { status: "OK" as const, direction: "IN" as const, student: name, admissionNumber: student.admissionNumber, at: log.checkInAt };
       }
 
-      if (!existing.checkOutAt) {
-        const log = await prisma.gateLog.update({
-          where: { id: existing.id },
-          data: { checkOutAt: new Date(), checkOutMethod: "QR", checkOutByUserId: ctx.session.user.id },
-        });
-        await logAudit({ schoolId, userId: ctx.session.user.id, action: "gate.checkOut", entityType: "GateLog", entityId: log.id, meta: { studentId: student.id } });
-        await notifyParents(schoolId, student.id, "Left school", `${name} clocked out at the school gate at ${new Date().toLocaleTimeString()}.`);
-        return { direction: "OUT", student: name, admissionNumber: student.admissionNumber, at: log.checkOutAt };
+      if (existing?.checkOutAt) {
+        return { status: "ALREADY" as const, direction: "OUT" as const, student: name, admissionNumber: student.admissionNumber, at: existing.checkOutAt };
       }
-
-      throw new Error(`${name} has already clocked in and out today. Use "Permitted exit" if they need to leave again.`);
+      const log = await prisma.gateLog.upsert({
+        where: { studentId_date: { studentId: student.id, date } },
+        update: { checkOutAt: new Date(), checkOutMethod: "QR", checkOutByUserId: ctx.session.user.id },
+        create: { schoolId, studentId: student.id, date, checkOutAt: new Date(), checkOutMethod: "QR", checkOutByUserId: ctx.session.user.id },
+      });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "gate.checkOut", entityType: "GateLog", entityId: log.id, meta: { studentId: student.id } });
+      await notifyParents(schoolId, student.id, "Left school", `${name} clocked out at the school gate at ${new Date().toLocaleTimeString()}.`);
+      return { status: "OK" as const, direction: "OUT" as const, student: name, admissionNumber: student.admissionNumber, at: log.checkOutAt };
     },
 
     // Early/permitted exit — a distinct, reasoned departure, separate from
-    // the routine end-of-day clock-out.
+    // the routine Clock In / Clock Out modes.
     permittedExit: async (ctx) => {
       can(ctx, "gate:scan");
       const schoolId = ctx.session.user.schoolId;
@@ -103,7 +111,7 @@ export const securityModule: Module = {
       const date = todayUTC();
       const log = await prisma.gateLog.upsert({
         where: { studentId_date: { studentId: student.id, date } },
-        update: { permittedExitAt: new Date(), permittedExitReason: reason, permittedExitByUserId: ctx.session.user.id },
+        update: { permittedExitAt: new Date(), permittedExitReason: reason, permittedExitByUserId: ctx.session.user.id, permittedReturnAt: null, permittedReturnByUserId: null },
         create: { schoolId, studentId: student.id, date, permittedExitAt: new Date(), permittedExitReason: reason, permittedExitByUserId: ctx.session.user.id },
       });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "gate.permittedExit", entityType: "GateLog", entityId: log.id, meta: { studentId: student.id, reason } });
@@ -111,22 +119,82 @@ export const securityModule: Module = {
       return { student: name, admissionNumber: student.admissionNumber, at: log.permittedExitAt };
     },
 
+    // Records the student's return after a permitted exit — a distinct event
+    // from the routine Clock In, since they never left the building via the
+    // normal gate flow that morning.
+    permittedReturn: async (ctx) => {
+      can(ctx, "gate:scan");
+      const schoolId = ctx.session.user.schoolId;
+      const code = str(ctx.body.code);
+      if (!code) throw new Error("Enter the student's admission number or scan their code");
+      const student = await findStudentByCodeOrAdmission(schoolId, code);
+      if (!student) throw new Error("No matching student found");
+      const name = `${student.user.firstName} ${student.user.lastName}`;
+
+      const date = todayUTC();
+      const existing = await prisma.gateLog.findUnique({ where: { studentId_date: { studentId: student.id, date } } });
+      if (!existing?.permittedExitAt) throw new Error(`${name} has no recorded permitted exit today.`);
+      if (existing.permittedReturnAt) throw new Error(`${name} was already marked as returned at ${existing.permittedReturnAt.toLocaleTimeString()}.`);
+
+      const log = await prisma.gateLog.update({
+        where: { id: existing.id },
+        data: { permittedReturnAt: new Date(), permittedReturnByUserId: ctx.session.user.id },
+      });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "gate.permittedReturn", entityType: "GateLog", entityId: log.id, meta: { studentId: student.id } });
+      await notifyParents(schoolId, student.id, "Returned to school", `${name} returned to school at ${new Date().toLocaleTimeString()} after their permitted exit.`);
+      return { student: name, admissionNumber: student.admissionNumber, at: log.permittedReturnAt };
+    },
+
+    // Registered staff/admin/owner accounts a visitor could be here to see —
+    // powers the "who they're visiting" search. Kept on the gate:scan
+    // permission (rather than staff:view, which SECURITY doesn't hold) since
+    // it's purely for picking a notification target, not staff management.
+    staffDirectory: async (ctx) => {
+      can(ctx, "gate:scan");
+      const schoolId = ctx.session.user.schoolId;
+      const users = await prisma.user.findMany({
+        where: { schoolId, role: { in: ["OWNER", "ADMIN", "BURSAR", "TEACHER"] }, status: "ACTIVE" },
+        select: { id: true, role: true, firstName: true, lastName: true },
+        orderBy: [{ role: "asc" }, { firstName: "asc" }],
+        take: 500,
+      });
+      return users.map((u) => ({ id: u.id, name: `${u.firstName} ${u.lastName}`, role: u.role }));
+    },
+
     logVisitor: async (ctx) => {
       can(ctx, "gate:scan");
       const schoolId = ctx.session.user.schoolId;
       const name = str(ctx.body.name);
       if (!name) throw new Error("Visitor name is required");
+      const hostUserId = str(ctx.body.hostUserId);
+      let hostName = str(ctx.body.hostName);
+      let host: { firstName: string; lastName: string } | null = null;
+      if (hostUserId) {
+        host = await prisma.user.findFirst({ where: { id: hostUserId, schoolId }, select: { firstName: true, lastName: true } });
+        if (host) hostName = `${host.firstName} ${host.lastName}`;
+      }
       const visitor = await prisma.visitorLog.create({
         data: {
           schoolId,
           name,
           phone: str(ctx.body.phone),
           purpose: str(ctx.body.purpose),
-          hostName: str(ctx.body.hostName),
+          hostName,
+          hostUserId: host ? hostUserId : null,
           recordedByUserId: ctx.session.user.id,
         },
       });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "visitor.logged", entityType: "VisitorLog", entityId: visitor.id });
+      if (host && hostUserId) {
+        await dispatchNotification({
+          schoolId,
+          userId: hostUserId,
+          type: "visitor",
+          title: "You have a visitor",
+          body: `${name} is at the gate to see you${visitor.purpose ? ` — ${visitor.purpose}` : ""}.`,
+          channels: ["IN_APP", "EMAIL"],
+        }).catch(() => undefined);
+      }
       return visitor;
     },
 

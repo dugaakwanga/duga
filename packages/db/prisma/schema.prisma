@@ -1016,6 +1016,8 @@ model GateLog {
   permittedExitAt     DateTime?
   permittedExitReason String?
   permittedExitByUserId String?
+  permittedReturnAt   DateTime?
+  permittedReturnByUserId String?
   createdAt           DateTime  @default(now())
 
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
@@ -1032,6 +1034,7 @@ model VisitorLog {
   phone          String?
   purpose        String?
   hostName       String?
+  hostUserId     String?
   timeIn         DateTime  @default(now())
   timeOut        DateTime?
   recordedByUserId String
