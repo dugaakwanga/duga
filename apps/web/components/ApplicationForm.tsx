@@ -25,6 +25,7 @@ export default function ApplicationForm() {
   const [section, setSection] = useState("SECONDARY");
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [ref, setRef] = useState("");
+  const [testPath, setTestPath] = useState("");
   const [error, setError] = useState("");
 
   const levels = section === "PRIMARY" ? LEVELS_PRIMARY : LEVELS_SECONDARY;
@@ -56,6 +57,7 @@ export default function ApplicationForm() {
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error ?? "Request failed");
       setRef(json.data?.id ?? json.reference ?? "");
+      setTestPath(json.data?.testPath ?? "");
       setStatus("sent");
     } catch (err) {
       setStatus("error");
@@ -73,6 +75,16 @@ export default function ApplicationForm() {
           {ref ? <>Your application reference is <strong>{ref}</strong>. </> : null}
           Our admissions team will contact you shortly to schedule an assessment.
         </p>
+        {testPath && (
+          <div style={{ marginTop: 16 }}>
+            <p style={{ color: "var(--duga-ink-2)", marginBottom: 10 }}>
+              You can also take the entrance test right now — no account needed.
+            </p>
+            <a href={`${portalUrl.replace(/\/$/, "")}${testPath}`} target="_blank" rel="noreferrer">
+              <Button size="lg">Take the entrance test</Button>
+            </a>
+          </div>
+        )}
       </div>
     );
   }

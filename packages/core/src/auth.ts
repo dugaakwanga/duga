@@ -93,6 +93,94 @@ export async function verifySuperAdminToken(
   }
 }
 
+export interface GateClaims {
+  sub: string; // studentId
+  schoolId: string;
+  kind: "gate";
+}
+
+// Printed on a student's ID card as a QR code — long-lived by design (an ID
+// card isn't reprinted every term) and carries only an identity, never a
+// permission; the gate scan endpoint re-checks the student's live status,
+// class and school on every scan, so revocation is "deactivate the student,"
+// not "expire the token."
+export async function signGateToken(studentId: string, schoolId: string): Promise<string> {
+  return new SignJWT({ schoolId, kind: "gate" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject(studentId)
+    .setIssuedAt()
+    .setExpirationTime("1825d")
+    .sign(secretFor("portal"));
+}
+
+export async function verifyGateToken(token: string): Promise<GateClaims | null> {
+  try {
+    const { payload } = await jwtVerify(token, secretFor("portal"));
+    if (payload.kind !== "gate" || !payload.sub || !payload.schoolId) return null;
+    return { sub: payload.sub as string, schoolId: payload.schoolId as string, kind: "gate" };
+  } catch {
+    return null;
+  }
+}
+
+export interface ApplicationTestClaims {
+  sub: string; // applicationId
+  schoolId: string;
+  kind: "application-test";
+}
+
+// Emailed/linked to an admissions applicant so they can take the school's
+// entrance CBT with no portal account. Re-issued fresh any time (e.g. an
+// admin resending the link), so nothing needs to be stored or revoked
+// server-side — the applicant's status and the attempt's isSubmitted flag
+// are the real gate, not the token itself.
+export async function signApplicationTestToken(applicationId: string, schoolId: string): Promise<string> {
+  return new SignJWT({ schoolId, kind: "application-test" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject(applicationId)
+    .setIssuedAt()
+    .setExpirationTime("90d")
+    .sign(secretFor("portal"));
+}
+
+export async function verifyApplicationTestToken(token: string): Promise<ApplicationTestClaims | null> {
+  try {
+    const { payload } = await jwtVerify(token, secretFor("portal"));
+    if (payload.kind !== "application-test" || !payload.sub || !payload.schoolId) return null;
+    return { sub: payload.sub as string, schoolId: payload.schoolId as string, kind: "application-test" };
+  } catch {
+    return null;
+  }
+}
+
+export interface GameInviteClaims {
+  sub: string; // GameInvite id
+  schoolId: string;
+  kind: "game-invite";
+}
+
+// A student's "invite a friend" link to trial-play one game with no portal
+// account. Short-lived (7 days is plenty for a friend to click it) — the real
+// one-trial-per-email limit is enforced in application code, not by the token.
+export async function signGameInviteToken(inviteId: string, schoolId: string): Promise<string> {
+  return new SignJWT({ schoolId, kind: "game-invite" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject(inviteId)
+    .setIssuedAt()
+    .setExpirationTime("7d")
+    .sign(secretFor("portal"));
+}
+
+export async function verifyGameInviteToken(token: string): Promise<GameInviteClaims | null> {
+  try {
+    const { payload } = await jwtVerify(token, secretFor("portal"));
+    if (payload.kind !== "game-invite" || !payload.sub || !payload.schoolId) return null;
+    return { sub: payload.sub as string, schoolId: payload.schoolId as string, kind: "game-invite" };
+  } catch {
+    return null;
+  }
+}
+
 export function cookieOptions(maxAgeSeconds: number) {
   const isProd = process.env.NODE_ENV === "production";
   return {

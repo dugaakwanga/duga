@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { PageHeader, Card, Badge, Table, Alert, Spinner, EmptyState, Button, Select, Field, Input, Modal, Icon } from "@duga/ui";
 import { api } from "@/lib/client/api";
 
@@ -21,6 +22,7 @@ interface Application {
   notes: string | null;
   status: string;
   submittedAt: string;
+  test: { isSubmitted: boolean; score: number | null; maxScore: number | null; percentage: number | null; submittedAt: string | null } | null;
 }
 
 interface ClassOption {
@@ -51,6 +53,7 @@ export default function ApplicationsPage() {
   const [admitForm, setAdmitForm] = useState<{ classGroupId: string; tempPassword: string }>({ classGroupId: "", tempPassword: "" });
   const [saving, setSaving] = useState(false);
   const [statusTarget, setStatusTarget] = useState<Application | null>(null);
+  const [testLink, setTestLink] = useState<{ applicantName: string; url: string } | null>(null);
 
   useEffect(() => {
     api<{ items: Application[]; counts: Array<{ status: string; _count: number }> }>("applications")
@@ -112,6 +115,15 @@ export default function ApplicationsPage() {
     setStatusTarget(null);
   }
 
+  async function viewTestLink(a: Application) {
+    try {
+      const d = await api<{ path: string }>(`applications/${a.id}/getTestLink`, { method: "POST" });
+      setTestLink({ applicantName: a.applicantName, url: `${window.location.origin}${d.path}` });
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
   const visible = filter ? items.filter((i) => i.status === filter) : items;
   const admitClasses = admitTarget
     ? classes.filter((c) => c.level.section === admitTarget.section)
@@ -119,7 +131,15 @@ export default function ApplicationsPage() {
 
   return (
     <div>
-      <PageHeader title="Admission applications" subtitle="Inbox for applications from the public website." />
+      <PageHeader
+        title="Admission applications"
+        subtitle="Inbox for applications from the public website."
+        actions={
+          <Link href="/portal/applications/test">
+            <Button variant="outline"><Icon name="notes" size={14} /> Manage entrance test</Button>
+          </Link>
+        }
+      />
       {error && <Alert tone="danger">{error}</Alert>}
       {loading ? (
         <Spinner size={28} />
@@ -160,7 +180,7 @@ export default function ApplicationsPage() {
             <EmptyState title="No applications" hint="Applications from the website will appear here." />
           ) : (
             <Card>
-              <Table headers={["Applicant", "Section", "Level", "Contact", "Submitted", "Status", "Actions"]}>
+              <Table headers={["Applicant", "Section", "Level", "Contact", "Entrance test", "Submitted", "Status", "Actions"]}>
                 {visible.map((a) => (
                   <tr key={a.id}>
                     <td>
@@ -174,6 +194,15 @@ export default function ApplicationsPage() {
                     <td>
                       {a.email}
                       <div style={{ fontSize: 12, color: "var(--duga-muted)" }}>{a.phone}</div>
+                    </td>
+                    <td>
+                      {a.test?.isSubmitted ? (
+                        <Badge tone={a.test.percentage != null && a.test.percentage >= 50 ? "success" : "warning"}>{a.test.percentage}%</Badge>
+                      ) : (
+                        <button style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--duga-primary)", fontSize: 12.5 }} onClick={() => viewTestLink(a)}>
+                          Get link
+                        </button>
+                      )}
                     </td>
                     <td>{new Date(a.submittedAt).toLocaleDateString()}</td>
                     <td><Badge tone={STATUS_TONES[a.status] ?? "neutral"}>{a.status}</Badge></td>
@@ -213,6 +242,7 @@ export default function ApplicationsPage() {
               ["Guardian relation", detail.guardianRelation ? detail.guardianRelation.toLowerCase() : "—"],
               ["Submitted", new Date(detail.submittedAt).toLocaleString()],
               ["Status", detail.status],
+              ["Entrance test", detail.test?.isSubmitted ? `${detail.test.percentage}% (${detail.test.score}/${detail.test.maxScore})` : "Not taken yet"],
             ].map(([k, v]) => (
               <div key={k} style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "7px 0", borderBottom: "1px solid var(--duga-border)" }}>
                 <span style={{ color: "var(--duga-muted)", fontSize: 13 }}>{k}</span>
@@ -275,6 +305,26 @@ export default function ApplicationsPage() {
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
               <Button variant="ghost" onClick={() => setAdmitTarget(null)}>Cancel</Button>
               <Button onClick={admit} loading={saving}>Admit student</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Entrance-test link modal */}
+      <Modal open={!!testLink} onClose={() => setTestLink(null)} title={testLink ? `Entrance test link — ${testLink.applicantName}` : ""}>
+        {testLink && (
+          <div style={{ display: "grid", gap: 14 }}>
+            <Alert tone="info">Share this link with the applicant so they can take the entrance test — no portal account needed.</Alert>
+            <Input readOnly value={testLink.url} onFocus={(e) => e.currentTarget.select()} />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <Button
+                variant="accent"
+                onClick={() => {
+                  navigator.clipboard?.writeText(testLink.url).catch(() => undefined);
+                }}
+              >
+                Copy link
+              </Button>
             </div>
           </div>
         )}

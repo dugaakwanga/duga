@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@duga/core/server";
-import { dispatchToMany } from "@duga/core/server";
+import { dispatchToMany, sendRawEmail } from "@duga/core/server";
+import { signApplicationTestToken } from "@duga/core";
 
 export async function POST(request: NextRequest) {
   try {
@@ -80,7 +81,31 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({ ok: true, data: { id: application.id, status: application.status, message: "Application received. We will contact you shortly." } });
+    // If the school has an active entrance test for this section, issue a
+    // signed link right away so the applicant can take it immediately after
+    // applying instead of waiting on a separate admin action.
+    let testPath: string | undefined;
+    const admissionsTest = await prisma.admissionsTest.findFirst({
+      where: { schoolId: school.id, isActive: true, OR: [{ section: application.section }, { section: null }] },
+      orderBy: { section: { sort: "desc", nulls: "last" } },
+    });
+    if (admissionsTest) {
+      const testToken = await signApplicationTestToken(application.id, school.id);
+      testPath = `/apply/test/${testToken}`;
+      if (email) {
+        const testUrl = `${new URL(request.url).origin}${testPath}`;
+        await sendRawEmail(
+          email,
+          "Your entrance test link",
+          `Thank you for applying, ${applicantName}. Please complete the entrance test at: ${testUrl}`,
+        ).catch(() => undefined);
+      }
+    }
+
+    return NextResponse.json({
+      ok: true,
+      data: { id: application.id, status: application.status, testPath, message: "Application received. We will contact you shortly." },
+    });
   } catch (e) {
     console.error("public apply error:", e);
     return NextResponse.json({ ok: false, error: "Could not submit application" }, { status: 500 });
