@@ -26,18 +26,35 @@ const defaults = (): FeatureConfig => ({
   family: defaultFeaturesFor("PARENT"),
 });
 
+// Feature config is read on essentially every portal page load (often twice
+// per request — see subfeaturesForRole below) but only ever changes when an
+// owner/admin explicitly edits it. A short-lived cache avoids re-querying
+// Postgres on every navigation without risking staleness beyond a few seconds.
+const FEATURE_CONFIG_TTL_MS = 30_000;
+const featureConfigCache = new Map<string, { value: FeatureConfig; expiresAt: number }>();
+
 export async function getFeatureConfig(schoolId: string): Promise<FeatureConfig> {
+  const cached = featureConfigCache.get(schoolId);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+
   const row = await prisma.schoolSetting.findUnique({ where: { schoolId_key: { schoolId, key: FEATURE_SETTING_KEY } } });
-  if (!row || !row.value || typeof row.value !== "object") return defaults();
-  const v = row.value as Partial<FeatureConfig>;
   const d = defaults();
-  return {
-    disabled: Array.isArray(v.disabled) ? v.disabled : d.disabled,
-    disabledSubs: Array.isArray(v.disabledSubs) ? v.disabledSubs : d.disabledSubs,
-    admin: Array.isArray(v.admin) ? v.admin : d.admin,
-    teacher: Array.isArray(v.teacher) ? v.teacher : d.teacher,
-    family: Array.isArray(v.family) ? v.family : d.family,
-  };
+  const value: FeatureConfig =
+    !row || !row.value || typeof row.value !== "object"
+      ? d
+      : (() => {
+          const v = row.value as Partial<FeatureConfig>;
+          return {
+            disabled: Array.isArray(v.disabled) ? v.disabled : d.disabled,
+            disabledSubs: Array.isArray(v.disabledSubs) ? v.disabledSubs : d.disabledSubs,
+            admin: Array.isArray(v.admin) ? v.admin : d.admin,
+            teacher: Array.isArray(v.teacher) ? v.teacher : d.teacher,
+            family: Array.isArray(v.family) ? v.family : d.family,
+          };
+        })();
+
+  featureConfigCache.set(schoolId, { value, expiresAt: Date.now() + FEATURE_CONFIG_TTL_MS });
+  return value;
 }
 
 async function saveFeatureConfig(schoolId: string, cfg: FeatureConfig) {
@@ -46,6 +63,9 @@ async function saveFeatureConfig(schoolId: string, cfg: FeatureConfig) {
     update: { value: cfg as unknown as never },
     create: { schoolId, key: FEATURE_SETTING_KEY, value: cfg as unknown as never },
   });
+  // Invalidate immediately so the change is visible on the next request
+  // rather than waiting out the TTL.
+  featureConfigCache.delete(schoolId);
 }
 
 /**
@@ -62,6 +82,8 @@ export async function featuresForRole(schoolId: string, role: Role): Promise<str
         ? cfg.admin
         : role === "BURSAR"
           ? ["fees", "reports", "staff", "payroll"]
+        : role === "SECURITY"
+          ? ["security"]
         : role === "TEACHER"
           ? cfg.teacher
           : cfg.family;

@@ -39,6 +39,8 @@ export default function TakeTestPage() {
   const [result, setResult] = useState<{ score: number; maxScore: number; percentage: number } | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(0);
   const endRef = useRef<number | null>(null);
+  const autoSubmitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSubmitFired = useRef(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -70,9 +72,18 @@ export default function TakeTestPage() {
     const iv = setInterval(() => {
       const left = Math.max(0, Math.round((endRef.current! - Date.now()) / 1000));
       setSecondsLeft(left);
-      if (left === 0) submit();
+      if (left === 0 && !autoSubmitFired.current) {
+        autoSubmitFired.current = true;
+        // Spread auto-submits over a few seconds instead of every student's
+        // client firing in the exact same instant when time runs out.
+        const jitterMs = Math.floor(Math.random() * 8000);
+        autoSubmitTimer.current = setTimeout(() => submit(), jitterMs);
+      }
     }, 1000);
-    return () => clearInterval(iv);
+    return () => {
+      clearInterval(iv);
+      if (autoSubmitTimer.current) clearTimeout(autoSubmitTimer.current);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [test?.id]);
 
@@ -80,16 +91,28 @@ export default function TakeTestPage() {
     if (submitting || result) return;
     setSubmitting(true);
     setError(null);
-    try {
-      const res = await api<{ attemptId: string; score: number; maxScore: number; percentage: number }>(`learning/${testId}/submitTest`, {
-        method: "POST",
-        body: { answers: Object.entries(answers).map(([questionId, selectedIndex]) => ({ questionId, selectedIndex })) },
-      });
-      setResult(res);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSubmitting(false);
+    const body = { answers: Object.entries(answers).map(([questionId, selectedIndex]) => ({ questionId, selectedIndex })) };
+    const maxAttempts = 4;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const res = await api<{ attemptId: string; score: number; maxScore: number; percentage: number }>(`learning/${testId}/submitTest`, {
+          method: "POST",
+          body,
+        });
+        setResult(res);
+        setSubmitting(false);
+        return;
+      } catch (e) {
+        if (attempt === maxAttempts) {
+          setError((e as Error).message);
+          setSubmitting(false);
+          return;
+        }
+        // Submission is idempotent (upsert) — safe to retry a transient
+        // failure (e.g. the DB connection pool briefly saturated during
+        // a burst of simultaneous submissions) with backoff.
+        await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** (attempt - 1)));
+      }
     }
   }
 

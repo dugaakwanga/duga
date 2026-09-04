@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
-import { requireSession, ForbiddenError } from "@duga/core/server";
+import { requireSession, ForbiddenError, checkRateLimit } from "@duga/core/server";
 import { assertPermission } from "@duga/core";
 import { prisma } from "@duga/core/server";
 import { uploadPublicFile } from "@/lib/server/storage";
@@ -30,6 +30,13 @@ function ext(mime: string, purpose: string): string {
 export async function POST(request: NextRequest) {
   try {
     const session = await requireSession();
+    const rl = checkRateLimit(`upload:${session.user.id}`, 20, 5 * 60_000);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { ok: false, error: "Too many uploads. Please wait a few minutes and try again." },
+        { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
+      );
+    }
     const stateUrl = new URL(request.url);
     const purpose = stateUrl.searchParams.get("purpose") ?? "gallery";
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { prisma, logAudit } from "@duga/core/server";
+import { prisma, logAudit, checkRateLimit, clientIp } from "@duga/core/server";
 import { signPortalToken, cookieOptions, getJwtLifetimeSeconds } from "@duga/core";
 import { COOKIE_NAMES } from "@duga/core";
 
@@ -27,6 +27,14 @@ function phoneVariants(raw: string): string[] {
 
 export async function POST(request: NextRequest) {
   try {
+    const rl = checkRateLimit(`login:${clientIp(request)}`, 10, 5 * 60_000);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { ok: false, error: "Too many login attempts. Please try again in a few minutes." },
+        { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
+      );
+    }
+
     const body = await request.json();
     const identifier = String(body.email ?? body.identifier ?? "").trim();
     const password = String(body.password ?? "");
@@ -84,7 +92,7 @@ export async function POST(request: NextRequest) {
     // Portal separation: admin & proprietor sign in via the admin portal;
     // students, parents & teachers sign in on the family portal.
     const bodyPortal = String(body.portal ?? "").toLowerCase();
-    const isStaffRole = user.role === "OWNER" || user.role === "ADMIN" || user.role === "BURSAR";
+    const isStaffRole = user.role === "OWNER" || user.role === "ADMIN" || user.role === "BURSAR" || user.role === "SECURITY";
     const requestedAdmin = bodyPortal === "admin";
     if (isStaffRole && !requestedAdmin) {
       return NextResponse.json({ ok: false, error: "Administrators and the proprietor sign in from the admin portal." }, { status: 403 });

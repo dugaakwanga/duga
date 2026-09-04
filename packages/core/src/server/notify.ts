@@ -61,6 +61,29 @@ async function sendEmail(opts: NotifyOptions) {
   }
 }
 
+// Send an email to an arbitrary address that isn't (yet) tied to a User row
+// — e.g. an admissions applicant who hasn't been admitted, so has no portal
+// account for dispatchNotification's user-scoped lookups to find.
+export async function sendRawEmail(to: string, subject: string, body: string): Promise<void> {
+  if (!to) return;
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.MAIL_FROM || "no-reply@deultimateglory.com";
+  try {
+    if (apiKey) {
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ from, to, subject, text: body }),
+      });
+      if (!res.ok) throw new Error(`email ${res.status}`);
+    } else {
+      console.log(`[email:dev] to=${to} subject="${subject}" body="${body}"`);
+    }
+  } catch (e) {
+    console.error("email send failed:", e);
+  }
+}
+
 async function sendSms(opts: NotifyOptions) {
   const apiKey = process.env.SMS_API_KEY;
   const provider = process.env.SMS_PROVIDER;
@@ -94,9 +117,29 @@ export async function dispatchToMany(
   userIds: string[],
   opts: Omit<NotifyOptions, "userId">,
 ): Promise<void> {
-  await Promise.all(
-    userIds.map((userId) =>
-      dispatchNotification({ ...opts, userId }).catch(() => undefined),
-    ),
-  );
+  const channels = opts.channels?.length ? opts.channels : ["IN_APP"];
+
+  if (channels.includes("IN_APP") && userIds.length) {
+    await prisma.notification.createMany({
+      data: userIds.map((userId) => ({
+        schoolId: opts.schoolId,
+        userId,
+        type: opts.type,
+        title: opts.title,
+        body: opts.body,
+        link: opts.link,
+        channel: "IN_APP" as const,
+        status: "SENT" as const,
+      })),
+    });
+  }
+
+  const outOfBandChannels = channels.filter((c) => c !== "IN_APP");
+  if (outOfBandChannels.length) {
+    await Promise.all(
+      userIds.map((userId) =>
+        dispatchNotification({ ...opts, userId, channels: outOfBandChannels as NotifyOptions["channels"] }).catch(() => undefined),
+      ),
+    );
+  }
 }

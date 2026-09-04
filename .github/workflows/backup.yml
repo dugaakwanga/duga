@@ -1,0 +1,41 @@
+name: Nightly database backup
+
+# Supabase's free tier does not include automated backups, so this workflow
+# dumps the database and uploads a compressed copy to Cloudflare R2 on a
+# schedule. Requires these repo secrets to be set (Settings -> Secrets and
+# variables -> Actions):
+#   DIRECT_URL          - Postgres direct connection string (packages/db/.env)
+#   R2_ACCOUNT_ID
+#   R2_ACCESS_KEY_ID
+#   R2_SECRET_ACCESS_KEY
+#   R2_BUCKET
+# Until those secrets exist this workflow will fail loudly rather than
+# silently skip — that's intentional, a missing backup should be visible.
+
+on:
+  schedule:
+    - cron: "17 2 * * *" # 02:17 UTC daily, off the hour to avoid provider cron spikes
+  workflow_dispatch: {}
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install postgresql-client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Dump database
+        env:
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: pg_dump "$DIRECT_URL" --no-owner --no-privileges | gzip > dump.sql.gz
+
+      - name: Upload to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          FILENAME="backups/db/$(date -u +%Y-%m-%d_%H%M%S).sql.gz"
+          aws s3 cp dump.sql.gz "s3://${{ secrets.R2_BUCKET }}/$FILENAME" \
+            --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
+          echo "Uploaded $FILENAME"
