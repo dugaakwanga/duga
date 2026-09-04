@@ -4,6 +4,22 @@ import { signGateToken } from "@duga/core";
 import type { Module } from ".";
 import { can, pick, str, num, bool, idArray, studentScope, feeInfoOf, assertContactFree, resolveSection } from "../helpers";
 
+const ID_CARD_THEME_KEY = "idCardTheme";
+
+export interface IdCardTheme {
+  primary: string;
+  accent: string;
+  background: boolean;
+}
+
+const DEFAULT_ID_CARD_THEME: IdCardTheme = { primary: "#1e3a5f", accent: "#c8a448", background: true };
+
+async function readIdCardTheme(schoolId: string): Promise<IdCardTheme> {
+  const row = await prisma.schoolSetting.findUnique({ where: { schoolId_key: { schoolId, key: ID_CARD_THEME_KEY } } });
+  if (!row || !row.value || typeof row.value !== "object") return DEFAULT_ID_CARD_THEME;
+  return { ...DEFAULT_ID_CARD_THEME, ...(row.value as object) } as IdCardTheme;
+}
+
 // Create or update the primary linked parent for a student. If an email is
 // given that matches the current parent, only name/phone are updated; otherwise
 // a new (or existing) parent account is linked and made primary.
@@ -341,9 +357,10 @@ export const studentsModule: Module = {
     },
 
     // Printable ID card data for one class (or an explicit list of students):
-    // each student's details plus a freshly-signed gate QR token, and the
-    // school's own branding — the client renders these into an actual
-    // printable-size PDF. Admin function, not a self-service gate-staff tool.
+    // each student's details plus a freshly-signed gate QR token, the
+    // school's own branding, and its saved card theme — the client renders
+    // these into an actual printable-size PDF. Admin function, not a
+    // self-service gate-staff tool.
     idCards: async (ctx) => {
       can(ctx, "students:manage");
       const schoolId = ctx.session.user.schoolId;
@@ -360,7 +377,10 @@ export const studentsModule: Module = {
         orderBy: { admissionNumber: "asc" },
       });
       if (students.length === 0) throw new Error("No active students found");
-      const school = await prisma.school.findUnique({ where: { id: schoolId }, select: { name: true, shortName: true, address: true, phone: true, logoUrl: true } });
+      const [school, theme] = await Promise.all([
+        prisma.school.findUnique({ where: { id: schoolId }, select: { name: true, shortName: true, address: true, phone: true, logoUrl: true } }),
+        readIdCardTheme(schoolId),
+      ]);
       const cards = await Promise.all(
         students.map(async (s) => ({
           studentId: s.id,
@@ -375,7 +395,30 @@ export const studentsModule: Module = {
           code: await signGateToken(s.id, schoolId),
         })),
       );
-      return { school, cards };
+      return { school, cards, theme };
+    },
+
+    idCardTheme: async (ctx) => {
+      can(ctx, "students:manage");
+      return readIdCardTheme(ctx.session.user.schoolId);
+    },
+
+    saveIdCardTheme: async (ctx) => {
+      can(ctx, "students:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const current = await readIdCardTheme(schoolId);
+      const hex = /^#[0-9a-fA-F]{6}$/;
+      const primary = typeof ctx.body.primary === "string" && hex.test(ctx.body.primary) ? ctx.body.primary : current.primary;
+      const accent = typeof ctx.body.accent === "string" && hex.test(ctx.body.accent) ? ctx.body.accent : current.accent;
+      const background = typeof ctx.body.background === "boolean" ? ctx.body.background : current.background;
+      const theme: IdCardTheme = { primary, accent, background };
+      await prisma.schoolSetting.upsert({
+        where: { schoolId_key: { schoolId, key: ID_CARD_THEME_KEY } },
+        update: { value: theme as never },
+        create: { schoolId, key: ID_CARD_THEME_KEY, value: theme as never },
+      });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "students.idCardThemeUpdated", entityType: "School", entityId: schoolId, meta: theme as unknown as Record<string, unknown> });
+      return theme;
     },
   },
 };

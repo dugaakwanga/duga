@@ -60,17 +60,44 @@ function imageFormat(dataUrl: string): "PNG" | "JPEG" | "WEBP" {
   return "JPEG";
 }
 
+export interface IdCardTheme {
+  primary: string;
+  accent: string;
+  background: boolean;
+}
+
+export const DEFAULT_ID_CARD_THEME: IdCardTheme = { primary: "#1e3a5f", accent: "#c8a448", background: true };
+
 export async function downloadIdCardsPdf(
   school: IdCardSchool,
   students: IdCardStudent[],
-  brand: { primary: string; accent: string } = { primary: "#1e3a5f", accent: "#c8a448" },
+  theme: IdCardTheme = DEFAULT_ID_CARD_THEME,
 ): Promise<void> {
   const { jsPDF } = await import("jspdf");
   const QRCode = (await import("qrcode")).default;
 
   const doc = new jsPDF({ unit: "mm", format: [CARD_W, CARD_H], orientation: "portrait" });
   const logoDataUrl = await toDataUrl(school.logoUrl);
-  const { primary, accent } = brand;
+  const { primary, accent } = theme;
+
+  // Subtle faceted-glass background — a handful of large, low-contrast
+  // triangles layered behind the content, echoing the reference badge's
+  // geometric texture without competing with the text on top of it.
+  function backgroundTexture() {
+    doc.setFillColor("#ffffff");
+    doc.rect(0, 0, CARD_W, CARD_H, "F");
+    if (!theme.background) return;
+    const light1 = "#f4f5f7";
+    const light2 = "#ececf0";
+    doc.setFillColor(light1);
+    doc.triangle(0, CARD_H * 0.34, CARD_W, CARD_H * 0.18, CARD_W, CARD_H * 0.52, "F");
+    doc.setFillColor(light2);
+    doc.triangle(0, CARD_H * 0.34, 0, CARD_H * 0.66, CARD_W * 0.58, CARD_H * 0.52, "F");
+    doc.setFillColor(light1);
+    doc.triangle(CARD_W * 0.58, CARD_H * 0.52, CARD_W, CARD_H * 0.52, CARD_W * 0.72, CARD_H * 0.86, "F");
+    doc.setFillColor(light2);
+    doc.triangle(0, CARD_H * 0.66, CARD_W * 0.42, CARD_H, 0, CARD_H, "F");
+  }
 
   // Two-tone diagonal triangle in one corner — the accent color forms a thin
   // border peeking out from behind the primary-color triangle.
@@ -96,9 +123,9 @@ export async function downloadIdCardsPdf(
   // 54mm-wide card — the full name still appears, in small print, wrapped
   // and measured dynamically so it can never overlap what follows it.
   function header() {
+    backgroundTexture();
     cornerTriangle("tl");
     cornerTriangle("br");
-    doc.setFillColor("#ffffff");
     let y = 6;
     if (logoDataUrl) {
       try {
@@ -110,7 +137,7 @@ export async function downloadIdCardsPdf(
     }
     doc.setTextColor(primary);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
+    doc.setFontSize(10);
     doc.text((school.shortName || school.name).toUpperCase(), CARD_W / 2, y + 3, { align: "center" });
     y += 6.5;
 
@@ -176,7 +203,7 @@ export async function downloadIdCardsPdf(
     y = photoCy + photoR + 5;
     doc.setTextColor(INK);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
+    doc.setFontSize(10);
     const nameLines = doc.splitTextToSize(`${s.firstName} ${s.lastName}`.toUpperCase(), CARD_W - 8);
     doc.text(nameLines, CARD_W / 2, y, { align: "center" });
     y += (nameLines.length - 1) * 4;
@@ -191,8 +218,8 @@ export async function downloadIdCardsPdf(
     doc.text(s.className ? `${s.className} · ${s.section}` : s.section, CARD_W / 2, y, { align: "center" });
 
     y += 4.5;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(7);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(6.8);
     doc.setTextColor(primary);
     doc.text(`ID ${s.admissionNumber}`, CARD_W / 2, y, { align: "center" });
 
@@ -209,7 +236,7 @@ export async function downloadIdCardsPdf(
     by += 4;
     doc.setTextColor(primary);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
+    doc.setFontSize(9);
     const headingLines = doc.splitTextToSize("TERMS & CONDITIONS", CARD_W - 10);
     doc.text(headingLines, CARD_W / 2, by, { align: "center" });
     by += (headingLines.length - 1) * 4 + 3;
@@ -228,7 +255,7 @@ export async function downloadIdCardsPdf(
     doc.text(p2, CARD_W / 2, by, { align: "center" });
     by += p2.length * lineH + 4;
 
-    doc.setFont("helvetica", "bold");
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(6.5);
     doc.setTextColor(primary);
     doc.text(`ID ${s.admissionNumber}`, CARD_W / 2, by, { align: "center" });

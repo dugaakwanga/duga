@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Card, Badge, Table, PageHeader, Button, Modal, Field, Input, Select, EmptyState, Alert, Spinner, Icon } from "@duga/ui";
 import { api } from "@/lib/client/api";
 import { useSection } from "@/components/SectionContext";
-import { downloadIdCardsPdf, type IdCardSchool, type IdCardStudent } from "@/lib/client/idCards";
+import { downloadIdCardsPdf, DEFAULT_ID_CARD_THEME, type IdCardSchool, type IdCardStudent, type IdCardTheme } from "@/lib/client/idCards";
 
 interface FeeInfo {
   feeAmount: string;
@@ -58,6 +58,9 @@ export default function StudentsPage() {
   const [newClass, setNewClass] = useState<Record<string, string>>({});
   const [creatingClass, setCreatingClass] = useState(false);
   const [printingCards, setPrintingCards] = useState<string | null>(null); // studentId, or "batch"
+  const [themeOpen, setThemeOpen] = useState(false);
+  const [theme, setTheme] = useState<IdCardTheme>(DEFAULT_ID_CARD_THEME);
+  const [themeSaving, setThemeSaving] = useState(false);
   // Drill-down navigation: overview -> a configured school section (or unassigned) -> classes -> students.
   type View = { name: "overview" } | { name: "category"; section: string } | { name: "class"; section: string; className: string };
   const [view, setView] = useState<View>({ name: "overview" });
@@ -127,12 +130,35 @@ export default function StudentsPage() {
     if (studentIds.length === 0) return;
     setPrintingCards(key);
     try {
-      const d = await api<{ school: IdCardSchool; cards: IdCardStudent[] }>("students/idCards", { method: "POST", body: { studentIds } });
-      await downloadIdCardsPdf(d.school, d.cards);
+      const d = await api<{ school: IdCardSchool; cards: IdCardStudent[]; theme: IdCardTheme }>("students/idCards", { method: "POST", body: { studentIds } });
+      await downloadIdCardsPdf(d.school, d.cards, d.theme);
     } catch (e) {
       alert((e as Error).message);
     } finally {
       setPrintingCards(null);
+    }
+  }
+
+  async function openThemeEditor() {
+    setThemeOpen(true);
+    try {
+      const t = await api<IdCardTheme>("students/idCardTheme");
+      setTheme(t);
+    } catch {
+      setTheme(DEFAULT_ID_CARD_THEME);
+    }
+  }
+
+  async function saveTheme() {
+    setThemeSaving(true);
+    try {
+      const t = await api<IdCardTheme>("students/saveIdCardTheme", { method: "POST", body: theme });
+      setTheme(t);
+      setThemeOpen(false);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setThemeSaving(false);
     }
   }
 
@@ -390,6 +416,9 @@ export default function StudentsPage() {
                   <Icon name="reports" size={14} /> Print ID cards for class
                 </Button>
               )}
+              <Button size="sm" variant="ghost" onClick={openThemeEditor}>
+                <Icon name="settings" size={14} /> Customize ID card
+              </Button>
             </div>
             <Table headers={["Adm No.", "Name", "Status", "Fee access", "Actions"]}>
               {activeClassStudents.map((s) => (
@@ -665,6 +694,34 @@ export default function StudentsPage() {
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <Button variant="ghost" onClick={() => setPromoteTarget(null)}>Cancel</Button>
           <Button onClick={savePromote} loading={saving}>Move student</Button>
+        </div>
+      </Modal>
+
+      <Modal open={themeOpen} onClose={() => setThemeOpen(false)} title="Customize ID card">
+        <div style={{ marginBottom: 12 }}>
+          <Alert tone="info">Colors and background apply to every ID card printed for this school.</Alert>
+        </div>
+        <Field label="Primary color">
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <input type="color" value={theme.primary} onChange={(e) => setTheme({ ...theme, primary: e.target.value })} style={{ width: 44, height: 34, padding: 0, border: "1px solid var(--duga-border)", borderRadius: 6, background: "none" }} />
+            <Input value={theme.primary} onChange={(e) => setTheme({ ...theme, primary: e.target.value })} style={{ maxWidth: 120 }} />
+          </div>
+        </Field>
+        <Field label="Accent color">
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <input type="color" value={theme.accent} onChange={(e) => setTheme({ ...theme, accent: e.target.value })} style={{ width: 44, height: 34, padding: 0, border: "1px solid var(--duga-border)", borderRadius: 6, background: "none" }} />
+            <Input value={theme.accent} onChange={(e) => setTheme({ ...theme, accent: e.target.value })} style={{ maxWidth: 120 }} />
+          </div>
+        </Field>
+        <Field label="Background pattern">
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}>
+            <input type="checkbox" checked={theme.background} onChange={(e) => setTheme({ ...theme, background: e.target.checked })} />
+            Show the subtle faceted background texture
+          </label>
+        </Field>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+          <Button variant="ghost" onClick={() => setThemeOpen(false)}>Cancel</Button>
+          <Button onClick={saveTheme} loading={themeSaving}>Save</Button>
         </div>
       </Modal>
     </div>
