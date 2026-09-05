@@ -1,8 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import nextDynamic from "next/dynamic";
 import { formatClock, ButtonDuga } from "./FunGames";
 import { api } from "@/lib/client/api";
+
+// Real 3D (React Three Fiber) engine for Fuel Rush — lazy-loaded so its
+// ~300KB three.js/fiber cost is only paid by students who actually open
+// this game, not by everyone visiting the Games page.
+const RaceEngine3D = nextDynamic(() => import("./games3d/RaceEngine3D").then((m) => m.RaceEngine3D), {
+  ssr: false,
+  loading: () => (
+    <div style={{ height: 320, borderRadius: 16, background: "linear-gradient(135deg,#f97316,#ea580c)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800 }}>
+      Loading 3D race…
+    </div>
+  ),
+});
 
 // ---------------------------------------------------------------------------
 // 20 themed games, built on 3 shared mechanics so each has genuinely
@@ -38,15 +51,16 @@ export interface ThemeConfig {
   bg: string;
   winMessage: string;
   loseMessage: string;
-  /** Which drawn scene the gauge mechanic renders. "car" is the fully
-   * illustrated race (Fuel Rush); "traveller" is a themed generic drawn
-   * shape for the games that don't have a bespoke illustration yet. */
-  sceneKind?: "car" | "traveller";
+  /** Which drawn scene the gauge mechanic renders. "car3d" is Fuel Rush's
+   * real 3D low-poly race (React Three Fiber); "car" is the older fully
+   * illustrated 2D race, kept available but unused now; "traveller" is a
+   * themed generic drawn shape for the games without a bespoke illustration. */
+  sceneKind?: "car" | "car3d" | "traveller";
   vehicleColor?: string;
 }
 
 export const THEMES: ThemeConfig[] = [
-  { key: "fuelRush", title: "Fuel Rush", emoji: "🏎️", tagline: "Race two rivals — dodge cones and hit boost gates with fast right answers to surge ahead.", mechanic: "gauge", gaugeLabel: "Fuel", playerEmoji: "🏎️", hazardEmoji: "⛽", bg: "linear-gradient(135deg,#f97316,#ea580c)", winMessage: "You crossed the finish line first!", loseMessage: "A rival crossed the finish line first.", sceneKind: "car", vehicleColor: "#ef4444" },
+  { key: "fuelRush", title: "Fuel Rush", emoji: "🏎️", tagline: "Race two rivals — dodge cones and hit boost gates with fast right answers to surge ahead.", mechanic: "gauge", gaugeLabel: "Fuel", playerEmoji: "🏎️", hazardEmoji: "⛽", bg: "linear-gradient(135deg,#f97316,#ea580c)", winMessage: "You crossed the finish line first!", loseMessage: "A rival crossed the finish line first.", sceneKind: "car3d", vehicleColor: "#ef4444" },
   { key: "deepSeaDive", title: "Deep Sea Dive", emoji: "🤿", tagline: "Oxygen is dropping fast — answer right to find your next breath of air.", mechanic: "gauge", gaugeLabel: "Oxygen", playerEmoji: "🤿", hazardEmoji: "🫧", bg: "linear-gradient(135deg,#0ea5e9,#0369a1)", winMessage: "You found the treasure and surfaced safely!", loseMessage: "You ran out of oxygen.", sceneKind: "traveller", vehicleColor: "#facc15" },
   { key: "desertCaravan", title: "Desert Caravan", emoji: "🐫", tagline: "Water is running low crossing the dunes — find the next oasis.", mechanic: "gauge", gaugeLabel: "Water", playerEmoji: "🐫", hazardEmoji: "🏜️", bg: "linear-gradient(135deg,#eab308,#b45309)", winMessage: "You reached the next town!", loseMessage: "Your caravan ran dry.", sceneKind: "traveller", vehicleColor: "#a16207" },
   { key: "marathonStamina", title: "Marathon Stamina", emoji: "🏃", tagline: "Your energy is fading — grab an energy gel with every right answer.", mechanic: "gauge", gaugeLabel: "Stamina", playerEmoji: "🏃", hazardEmoji: "💧", bg: "linear-gradient(135deg,#22c55e,#15803d)", winMessage: "You crossed the finish line first!", loseMessage: "You hit the wall and dropped out.", sceneKind: "traveller", vehicleColor: "#f97316" },
@@ -76,7 +90,7 @@ export function themeFor(kind: string): ThemeConfig {
 // Difficulty tuning: how many seconds per question, and how fast the
 // gauge/threat moves each second while a question is on screen.
 // ---------------------------------------------------------------------------
-function questionSecondsFor(difficulty: string): number {
+export function questionSecondsFor(difficulty: string): number {
   return difficulty === "HARD" ? 8 : difficulty === "EASY" ? 16 : 12;
 }
 function drainRateFor(difficulty: string): number {
@@ -97,7 +111,7 @@ export interface EngineAnswer {
 
 export type EngineOutcome = "won" | "lost" | "timeup";
 
-interface EngineProps {
+export interface EngineProps {
   theme: ThemeConfig;
   questions: EngineQuestion[];
   difficulty: string;
@@ -110,7 +124,7 @@ interface EngineProps {
 // Shared: one question with a per-question countdown bar. Times out to a
 // "wrong answer" (selectedIndex -1) if nothing is picked in time.
 // ---------------------------------------------------------------------------
-function QuestionPrompt({ q, seconds, onAnswer }: { q: EngineQuestion; seconds: number; onAnswer: (selectedIndex: number) => void }) {
+export function QuestionPrompt({ q, seconds, onAnswer }: { q: EngineQuestion; seconds: number; onAnswer: (selectedIndex: number) => void }) {
   const [left, setLeft] = useState(seconds);
   const answeredRef = useRef(false);
 
@@ -191,7 +205,7 @@ function GaugeBar({ label, value, emoji }: { label: string; value: number; emoji
   );
 }
 
-function feedbackBanner(state: "correct" | "wrong" | null): CSSProperties {
+export function feedbackBanner(state: "correct" | "wrong" | null): CSSProperties {
   return {
     textAlign: "center",
     fontWeight: 800,
@@ -391,10 +405,12 @@ function FuelGaugeDial({ value, label }: { value: number; label: string }) {
 // First to the line wins.
 // ---------------------------------------------------------------------------
 const LANE_X = [18, 50, 82];
-const RACE_BASE_SPEED = 4.4; // % of race per second
-const RACE_BOOST_JUMP = 15; // instant progress gain on a correct answer
-const RACE_CRASH_PENALTY = 7;
-const RACE_LOOKAHEAD = 34; // relative progress rendered ahead of the player
+// Shared with RaceEngine3D (games3d/RaceEngine3D.tsx) so the 3D version plays
+// with identical pacing/balance to this one — only the rendering differs.
+export const RACE_BASE_SPEED = 4.4; // % of race per second
+export const RACE_BOOST_JUMP = 15; // instant progress gain on a correct answer
+export const RACE_CRASH_PENALTY = 7;
+export const RACE_LOOKAHEAD = 34; // relative progress rendered ahead of the player
 
 function CarTopDownSVG({ color, boosted }: { color: string; boosted?: boolean }) {
   return (
@@ -427,7 +443,7 @@ function ConeSVG() {
   );
 }
 
-function ChevronSVG({ dir }: { dir: "left" | "right" }) {
+export function ChevronSVG({ dir }: { dir: "left" | "right" }) {
   const points = dir === "left" ? "24,6 9,20 24,34" : "9,6 24,20 9,34";
   return (
     <svg viewBox="0 0 33 40" width="20" height="24">
@@ -436,7 +452,7 @@ function ChevronSVG({ dir }: { dir: "left" | "right" }) {
   );
 }
 
-interface RaceOpponent {
+export interface RaceOpponent {
   id: string;
   lane: number;
   progress: number;
@@ -444,13 +460,13 @@ interface RaceOpponent {
   color: string;
   name: string;
 }
-interface RaceObstacle {
+export interface RaceObstacle {
   id: string;
   lane: number;
   atProgress: number;
   hit: boolean;
 }
-interface RaceGate {
+export interface RaceGate {
   id: string;
   atProgress: number;
   questionIndex: number;
@@ -962,6 +978,7 @@ function ClimbEngine({ theme, questions, sessionExpiresAt, onProgress, onFinish 
 }
 
 export function ThemedGameEngine(props: EngineProps) {
+  if (props.theme.mechanic === "gauge" && props.theme.sceneKind === "car3d") return <RaceEngine3D {...props} />;
   if (props.theme.mechanic === "gauge" && props.theme.sceneKind === "car") return <RaceEngine {...props} />;
   if (props.theme.mechanic === "gauge") return <GaugeEngine {...props} />;
   if (props.theme.mechanic === "escape") return <EscapeEngine {...props} />;
