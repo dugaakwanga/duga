@@ -48,4 +48,5 @@ export const Ruler = (p: IconProps) => base(p, <><rect x="3" y="9" width="18" he
 export const Leaf = (p: IconProps) => base(p, <><path d="M4 20C4 10 10 4 20 4c0 10-6 16-16 16Z" /><path d="M4 20c3-6 8-10 12-12" /></>);
 export const Menu = (p: IconProps) => base(p, <><path d="M4 7h16M4 12h16M4 17h10" /></>);
 export const Close = (p: IconProps) => base(p, <><path d="M6 6l12 12M18 6L6 18" /></>);
+export const ChevronDown = (p: IconProps) => base(p, <path d="M6 9l6 6 6-6" />);
 export const Play = (p: IconProps) => base(p, <><circle cx="12" cy="12" r="9" fill="currentColor" stroke="none" opacity="0.18" /><path d="M10 9l6 3-6 3V9Z" /></>);

@@ -560,14 +560,42 @@ body {
    =========================================================================== */
 .mkt-grain, .mkt-blob, .mkt-wave { display: none; }
 .mkt-main { overflow: hidden; }
-.mkt-header-top .mkt-nav a:nth-child(n + 7) { display: none; }
-.mkt-header-top .mkt-nav::after {
-  content: "More";
-  color: var(--duga-muted);
-  font-size: 12px;
+.mkt-nav-more { position: relative; }
+.mkt-nav-more__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 9px 16px;
+  font-size: 14px;
   font-weight: 700;
-  padding: 9px 8px;
+  color: var(--duga-ink-2);
+  background: none;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
 }
+.mkt-nav-more__trigger:hover,
+.mkt-nav-more__trigger[aria-expanded="true"] { background: var(--duga-primary-soft); color: var(--duga-primary); }
+.mkt-nav-more__panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 170px;
+  background: #fff;
+  border: 1px solid var(--duga-border);
+  border-radius: 14px;
+  box-shadow: 0 16px 36px -18px rgba(20,29,46,.35);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 40;
+  animation: mkt-fade-down 0.2s ease;
+}
+.mkt-nav-more__panel a { padding: 9px 12px; border-radius: 10px; font-weight: 700; font-size: 13.5px; color: var(--duga-ink-2); }
+.mkt-nav-more__panel a:hover { background: var(--duga-primary-soft); color: var(--duga-primary); }
 .mkt-hero {
   min-height: 625px;
   isolation: isolate;
@@ -620,7 +648,6 @@ body {
 .mkt-ticker-track span { font-family: var(--duga-font-sans); font-size: 14px; font-style: normal; font-weight: 750; }
 
 @media (max-width: 980px) {
-  .mkt-header-top .mkt-nav::after { display: none; }
   .mkt-hero .mkt-container { min-height: 590px; padding-top: 72px; }
 }
 @media (max-width: 560px) {
@@ -2221,7 +2248,15 @@ textarea:focus-visible {
 .mkt-header-top .mkt-logo--brand img { height: 48px; border-radius: 10px; }
 .mkt-header-top .mkt-logo--brand .mkt-logo-name { font-size: 20px; letter-spacing: -.035em; }
 .mkt-header-top .mkt-logo--brand .mkt-logo-sub { margin-top: 2px; font-size: 8px; letter-spacing: .14em; }
-.mkt-header-top .mkt-nav { display: flex; align-items: center; justify-content: center; gap: 2px; padding: 0; margin-left: auto; }
+/* Guarded to desktop widths only — unguarded, this unconditionally
+   overrode the working @media (max-width: 980px) rule above (line 2043)
+   that hides .mkt-nav in favor of the hamburger menu, since both rules
+   share the same selector specificity and this one comes later in the
+   cascade. Left unguarded, the full nav and the hamburger both rendered
+   at once on tablet/narrow-desktop widths. */
+@media (min-width: 981px) {
+  .mkt-header-top .mkt-nav { display: flex; align-items: center; justify-content: center; gap: 2px; padding: 0; margin-left: auto; }
+}
 .mkt-header-top .mkt-nav a { color: var(--duga-ink-2); padding: 9px 9px; font-size: 12px; font-weight: 700; }
 .mkt-header-top .mkt-nav a::after { bottom: 3px; }
 .mkt-header-top .mkt-header-actions { margin-left: 12px; gap: 8px; }

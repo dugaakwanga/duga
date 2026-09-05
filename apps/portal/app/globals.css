@@ -135,6 +135,11 @@
   .portal-topbar { padding: 0 14px; gap: 10px; height: 58px; }
   .portal-topbar__signout span { display: none; }
   .portal-topbar__title { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* The section switcher's label ("Section") is redundant with the select's
+     own "All sections" option and was pushing the select itself below a
+     usable width, truncating it mid-word (e.g. "All secti…"). */
+  .duga-section-switcher__label { display: none; }
+  .duga-section-switcher__select { max-width: 92px; min-width: 72px; flex-shrink: 0; }
 }
 
 .portal-sidebar-scrim {
@@ -1121,6 +1126,9 @@ body {
   background-color: var(--duga-surface-2, #eef1f6);
   border: 1px solid var(--duga-border);
   cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .duga-section-switcher__add {
   padding: 4px;
