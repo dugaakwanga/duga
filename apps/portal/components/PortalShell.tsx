@@ -186,6 +186,18 @@ const PARENT_NAV: NavSection[] = [
   },
 ];
 
+// Security-facing navigation — the gate officer only handles student
+// clock-in/out and the visitor log, never the wider school. No dashboard,
+// no school-wide progress, no student/class management.
+const SECURITY_NAV: NavSection[] = [
+  {
+    title: "Gate",
+    items: [
+      { href: "/portal/security", label: "Gate & Visitors", icon: "attendance", perm: "gate:view", feature: "security" },
+    ],
+  },
+];
+
 // Context-aware AI suggestions: they follow where the user is in the portal
 // and what they are trying to do, instead of a one-size-fits-all list.
 function aiSuggestionsFor(path: string, role: string): Array<{ label: string; prompt: string }> {
@@ -484,7 +496,7 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
     window.location.href = staffRole ? "/admin" : "/";
   }
 
-  const baseNav = user.role === "STUDENT" ? STUDENT_NAV : user.role === "PARENT" ? PARENT_NAV : STAFF_NAV;
+  const baseNav = user.role === "STUDENT" ? STUDENT_NAV : user.role === "PARENT" ? PARENT_NAV : user.role === "SECURITY" ? SECURITY_NAV : STAFF_NAV;
   const sections = baseNav
     .map((s) => ({
       ...s,

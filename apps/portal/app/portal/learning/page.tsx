@@ -160,12 +160,17 @@ export default function LearningPage() {
     }
   }
 
+  // Only teaching staff manage learning content. Parents and students are
+  // receivers here — parents view read-only, students get their own actions
+  // (join live, submit, take test) — so neither ever sees create/edit/delete.
+  const canManage = role === "TEACHER" || role === "ADMIN" || role === "OWNER";
+
   return (
     <div>
       <PageHeader
         title="Learning"
         subtitle="Lesson notes, assignments, tests and live classes."
-        actions={!isStudent ? <Button onClick={() => setOpen(true)}><Icon name="plus" size={16} /> New</Button> : undefined}
+        actions={canManage ? <Button onClick={() => setOpen(true)}><Icon name="plus" size={16} /> New</Button> : undefined}
       />
       <Tabs
         tabs={[
@@ -181,7 +186,7 @@ export default function LearningPage() {
       {loading ? (
         <Spinner size={28} />
       ) : items.length === 0 ? (
-        <EmptyState title={`No ${kind} yet`} hint="Use the New button to create one." />
+        <EmptyState title={`No ${kind} yet`} hint={canManage ? "Use the New button to create one." : `${kind} shared with you will appear here.`} />
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 16 }}>
           {items.map((item) => (
@@ -210,17 +215,17 @@ export default function LearningPage() {
                 <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
                   {isStudent ? (
                     <Button size="sm" variant="accent" loading={liveBusy === item.id} onClick={() => joinLive(item)}>Join live class</Button>
-                  ) : (
+                  ) : canManage ? (
                     <>
                       {item.joinLink && (
                         <a href={item.joinLink} target="_blank" rel="noreferrer" className="duga-btn duga-btn--accent duga-btn--sm">Open session</a>
                       )}
                       <Button size="sm" variant="outline" loading={liveBusy === item.id} onClick={() => controlLive(item, "endLive")}>End class</Button>
                     </>
-                  )}
+                  ) : null}
                 </div>
               )}
-              {kind === "live" && item.status !== "LIVE" && !isStudent && (
+              {kind === "live" && item.status !== "LIVE" && canManage && (
                 <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
                   {item.status === "SCHEDULED" && (
                     <Button size="sm" variant="accent" loading={liveBusy === item.id} onClick={() => controlLive(item, "startLive")}>Start class</Button>
@@ -245,7 +250,7 @@ export default function LearningPage() {
                   Take this test
                 </Link>
               )}
-              {!isStudent && (
+              {canManage && (
                 <div style={{ display: "flex", gap: 6, marginTop: 12 }}>
                   <Button variant="outline" size="sm" onClick={() => openEdit(item)}>Edit</Button>
                   <Button variant="ghost" size="sm" onClick={() => deleteItem(item)}>Delete</Button>

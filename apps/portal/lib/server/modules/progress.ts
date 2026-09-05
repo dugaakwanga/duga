@@ -166,10 +166,32 @@ async function feeSummary(schoolId: string, studentIds?: string[]) {
   };
 }
 
+const EMPTY_SECTIONS: SectionFlags = { fees: false, attendance: false, enrollment: false, scores: false, classes: false };
+
 export const progressModule: Module = {
   async list(ctx) {
     const schoolId = ctx.session.user.schoolId;
     const role = ctx.session.user.role;
+
+    // Security (gate officers) have no academic/financial scope at all — they
+    // must never see school-wide progress. Return an empty, well-formed shape
+    // so the page renders cleanly rather than leaking the default whole-school
+    // aggregates the fall-through would otherwise compute.
+    if (role === "SECURITY") {
+      return {
+        role,
+        scope: "own" as const,
+        sections: EMPTY_SECTIONS,
+        classes: { studentCount: 0, teacherCount: 0, classCount: 0 },
+        myClasses: [],
+        subjects: [],
+        fees: null,
+        attendance: null,
+        enrollment: null,
+        scores: null,
+        generatedAt: new Date().toISOString(),
+      };
+    }
     const teacher = ctx.session.user.teacher;
     const student = ctx.session.user.student;
     const parent = ctx.session.user.parent;
