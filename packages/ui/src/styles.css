@@ -180,6 +180,25 @@ button {
 .duga-badge--neutral { background: var(--duga-surface-2); color: var(--duga-ink-2); }
 .duga-badge--accent { background: var(--duga-accent-soft); color: var(--duga-accent-dark); }
 
+/* ---------- Progress bar ---------- */
+.duga-progress {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--duga-surface-2);
+  overflow: hidden;
+}
+.duga-progress__fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+.duga-progress__fill--success { background: var(--duga-success); }
+.duga-progress__fill--warning { background: var(--duga-warning); }
+.duga-progress__fill--danger { background: var(--duga-danger); }
+.duga-progress__fill--info { background: var(--duga-info); }
+.duga-progress__fill--neutral { background: var(--duga-ink-2); }
+.duga-progress__fill--accent { background: var(--duga-accent-dark); }
+
 /* ---------- Alert ---------- */
 .duga-alert {
   border-radius: var(--duga-radius);

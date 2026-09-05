@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PageHeader, Card, Badge, Table, Alert, Spinner, EmptyState, Button, Field, Select, Input } from "@duga/ui";
+import { PageHeader, Card, Badge, Table, Alert, Spinner, EmptyState, Button, Field, Select, Input, ProgressBar, Icon } from "@duga/ui";
 import { api } from "@/lib/client/api";
 import { useSection } from "@/components/SectionContext";
 
@@ -504,22 +504,30 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 16 }}>
                 {classSubjects.filter((cs) => cs.classGroup.id === classId).map((cs) => {
                   const status = submissions[cs.id] ?? { entered: 0, submitted: 0, total: cs.classGroup.students.length, allSubmitted: false };
+                  const pct = status.total > 0 ? Math.round((status.entered / status.total) * 100) : 0;
+                  const remaining = Math.max(0, status.total - status.entered);
+                  const tone = status.allSubmitted ? "success" : pct >= 80 ? "success" : pct >= 40 ? "warning" : "danger";
                   return (
                     <Card key={cs.id} title={cs.subject.name}>
-                      <div style={{ fontSize: 13, color: "var(--duga-muted)", marginBottom: 10 }}>
+                      <div style={{ fontSize: 13, color: "var(--duga-muted)", marginBottom: 12 }}>
                         {cs.classGroup.level.name} {cs.classGroup.name} · {cs.classGroup.students.length} students
                       </div>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
-                        {status.allSubmitted ? (
-                          <Badge tone="success">Submitted</Badge>
-                        ) : status.submitted > 0 ? (
-                          <Badge tone="warning">{status.submitted}/{status.total} submitted</Badge>
-                        ) : (
-                          <Badge tone="neutral">{status.entered}/{status.total} entered</Badge>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                        <Badge tone={tone}>{status.allSubmitted ? "Submitted" : `${pct}% marked`}</Badge>
+                      </div>
+                      <div style={{ marginBottom: 8 }}>
+                        <ProgressBar pct={pct} tone={tone} />
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12.5, marginBottom: 14 }}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--duga-muted)" }}>
+                          <Icon name="check" size={13} /> {status.entered} of {status.total} marked
+                        </span>
+                        {remaining > 0 && (
+                          <span style={{ color: "var(--duga-danger)", fontWeight: 600 }}>{remaining} remaining</span>
                         )}
                       </div>
                       <Button variant="outline" size="sm" disabled={sheetLoading} onClick={() => openSheet(cs.id)}>
-                        {status.allSubmitted ? "View results" : "Enter scores"}
+                        <Icon name="assignment" size={14} /> {status.allSubmitted ? "View results" : status.entered > 0 ? "Continue marking" : "Start marking"}
                       </Button>
                     </Card>
                   );
@@ -534,11 +542,18 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
       {(role === "ADMIN" || role === "OWNER") && submissionRows.length > 0 && (
         <Card title="Subject submissions" style={{ marginBottom: 24 }}>
           <Table headers={["Class", "Subject", "Entered", "Submitted", ""]}>
-            {submissionRows.map((row) => (
+            {submissionRows.map((row) => {
+              const pct = row.status.total > 0 ? Math.round((row.status.entered / row.status.total) * 100) : 0;
+              return (
               <tr key={row.classSubjectId}>
                 <td>{row.className}</td>
                 <td>{row.subjectName}</td>
-                <td>{row.status.entered}/{row.status.total}</td>
+                <td>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 110 }}>
+                    <div style={{ flex: 1 }}><ProgressBar pct={pct} /></div>
+                    <span style={{ fontSize: 12, color: "var(--duga-muted)", whiteSpace: "nowrap" }}>{row.status.entered}/{row.status.total}</span>
+                  </div>
+                </td>
                 <td>
                   <Badge tone={row.status.allSubmitted ? "success" : row.status.submitted > 0 ? "warning" : "neutral"}>
                     {row.status.allSubmitted ? "All submitted" : `${row.status.submitted}/${row.status.total} submitted`}
@@ -550,7 +565,8 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
                   )}
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </Table>
         </Card>
       )}

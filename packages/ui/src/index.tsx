@@ -92,6 +92,21 @@ export function Badge({ tone = "neutral", children }: { tone?: BadgeTone; childr
 }
 
 // ---------------------------------------------------------------------------
+// ProgressBar — a percentage fill bar, e.g. "how much of this has been
+// marked/graded/completed". `tone` is picked automatically from `pct` when
+// omitted (green once mostly done, amber part-way, red barely started).
+// ---------------------------------------------------------------------------
+export function ProgressBar({ pct, tone }: { pct: number; tone?: BadgeTone }) {
+  const clamped = Math.max(0, Math.min(100, pct));
+  const resolvedTone = tone ?? (clamped >= 80 ? "success" : clamped >= 40 ? "warning" : "danger");
+  return (
+    <div className="duga-progress" role="progressbar" aria-valuenow={Math.round(clamped)} aria-valuemin={0} aria-valuemax={100}>
+      <div className={`duga-progress__fill duga-progress__fill--${resolvedTone}`} style={{ width: `${clamped}%` }} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Alert
 // ---------------------------------------------------------------------------
 export function Alert({ tone = "info", children }: { tone?: "success" | "warning" | "danger" | "info"; children: ReactNode }) {
