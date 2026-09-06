@@ -17,6 +17,17 @@ const RaceEngine3D = nextDynamic(() => import("./games3d/RaceEngine3D").then((m)
   ),
 });
 
+// Real Canvas 2D horde-shooter for the shooter-themed games — lazy-loaded so
+// its game loop only ships to students who actually open one of these games.
+const ShooterEngine = nextDynamic(() => import("./games2d/ShooterEngine").then((m) => m.ShooterEngine), {
+  ssr: false,
+  loading: () => (
+    <div style={{ height: 320, borderRadius: 16, background: "linear-gradient(135deg,#4d7c0f,#1a2e05)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800 }}>
+      Loading the battlefield…
+    </div>
+  ),
+});
+
 // ---------------------------------------------------------------------------
 // 20 themed games, built on 3 shared mechanics so each has genuinely
 // different visuals/narrative while sharing one tested engine per mechanic:
@@ -55,7 +66,7 @@ export interface ThemeConfig {
    * real 3D low-poly race (React Three Fiber); "car" is the older fully
    * illustrated 2D race, kept available but unused now; "traveller" is a
    * themed generic drawn shape for the games without a bespoke illustration. */
-  sceneKind?: "car" | "car3d" | "traveller";
+  sceneKind?: "car" | "car3d" | "traveller" | "shooter";
   vehicleColor?: string;
 }
 
@@ -65,8 +76,8 @@ export const THEMES: ThemeConfig[] = [
   { key: "desertCaravan", title: "Desert Caravan", emoji: "🐫", tagline: "Water is running low crossing the dunes — find the next oasis.", mechanic: "gauge", gaugeLabel: "Water", playerEmoji: "🐫", hazardEmoji: "🏜️", bg: "linear-gradient(135deg,#eab308,#b45309)", winMessage: "You reached the next town!", loseMessage: "Your caravan ran dry.", sceneKind: "traveller", vehicleColor: "#a16207" },
   { key: "marathonStamina", title: "Marathon Stamina", emoji: "🏃", tagline: "Your energy is fading — grab an energy gel with every right answer.", mechanic: "gauge", gaugeLabel: "Stamina", playerEmoji: "🏃", hazardEmoji: "💧", bg: "linear-gradient(135deg,#22c55e,#15803d)", winMessage: "You crossed the finish line first!", loseMessage: "You hit the wall and dropped out.", sceneKind: "traveller", vehicleColor: "#f97316" },
   { key: "pirateSeaBattle", title: "Pirate Sea Battle", emoji: "🏴‍☠️", tagline: "Cannon fire is cracking your hull — patch it up before it's too late.", mechanic: "gauge", gaugeLabel: "Hull", playerEmoji: "🏴‍☠️", hazardEmoji: "💣", bg: "linear-gradient(135deg,#334155,#0f172a)", winMessage: "You sank the enemy ship!", loseMessage: "Your ship went down.", sceneKind: "traveller", vehicleColor: "#78350f" },
-  { key: "alienTurretDefense", title: "Alien Turret Defense", emoji: "👾", tagline: "Ammo is low — reload the turret by answering before the next wave.", mechanic: "gauge", gaugeLabel: "Ammo", playerEmoji: "🛰️", hazardEmoji: "👾", bg: "linear-gradient(135deg,#7c3aed,#4c1d95)", winMessage: "The alien fleet retreated!", loseMessage: "Your turret ran dry.", sceneKind: "traveller", vehicleColor: "#a3e635" },
-  { key: "zombieShooterStandoff", title: "Zombie Shooter Standoff", emoji: "🧟", tagline: "The horde is closing in and you're low on ammo — reload fast.", mechanic: "gauge", gaugeLabel: "Ammo", playerEmoji: "🔫", hazardEmoji: "🧟", bg: "linear-gradient(135deg,#4d7c0f,#1a2e05)", winMessage: "You held the line!", loseMessage: "You were overrun.", sceneKind: "traveller", vehicleColor: "#84cc16" },
+  { key: "alienTurretDefense", title: "Alien Turret Defense", emoji: "👾", tagline: "Auto-fire on the alien wave — when ammo runs dry, answer fast to reload the turret.", mechanic: "gauge", gaugeLabel: "Ammo", playerEmoji: "🛰️", hazardEmoji: "👾", bg: "linear-gradient(135deg,#7c3aed,#4c1d95)", winMessage: "The alien fleet retreated!", loseMessage: "Your turret was overrun.", sceneKind: "shooter", vehicleColor: "#a3e635" },
+  { key: "zombieShooterStandoff", title: "Zombie Shooter Standoff", emoji: "🧟", tagline: "Gun down the advancing horde — when the clip empties, answer questions to reload and hold the line.", mechanic: "gauge", gaugeLabel: "Ammo", playerEmoji: "🔫", hazardEmoji: "🧟", bg: "linear-gradient(135deg,#4d7c0f,#1a2e05)", winMessage: "You held the line!", loseMessage: "You were overrun.", sceneKind: "shooter", vehicleColor: "#84cc16" },
   { key: "zombieCorridor", title: "Zombie Corridor", emoji: "🏃‍♂️", tagline: "Zombies are gaining on you down the hallway — answer to pull ahead.", mechanic: "escape", gaugeLabel: "Distance", playerEmoji: "🏃‍♂️", hazardEmoji: "🧟", bg: "linear-gradient(135deg,#57534e,#1c1917)", winMessage: "You escaped through the exit!", loseMessage: "The zombies caught you." },
   { key: "volcanoEscape", title: "Volcano Escape", emoji: "🌋", tagline: "Lava is rising beneath you — climb to the next platform to stay ahead.", mechanic: "escape", gaugeLabel: "Lava level", playerEmoji: "🧗", hazardEmoji: "🌋", bg: "linear-gradient(135deg,#dc2626,#7c2d12)", winMessage: "You reached safety at the summit!", loseMessage: "The lava caught up with you." },
   { key: "iceCaveFlood", title: "Ice Cave Flood", emoji: "🧊", tagline: "The cave is flooding — melt a path out before the water reaches the top.", mechanic: "escape", gaugeLabel: "Water level", playerEmoji: "⛏️", hazardEmoji: "🌊", bg: "linear-gradient(135deg,#38bdf8,#0c4a6e)", winMessage: "You escaped the flooding cave!", loseMessage: "The water reached the ceiling." },
@@ -978,6 +989,7 @@ function ClimbEngine({ theme, questions, sessionExpiresAt, onProgress, onFinish 
 }
 
 export function ThemedGameEngine(props: EngineProps) {
+  if (props.theme.sceneKind === "shooter") return <ShooterEngine {...props} />;
   if (props.theme.mechanic === "gauge" && props.theme.sceneKind === "car3d") return <RaceEngine3D {...props} />;
   if (props.theme.mechanic === "gauge" && props.theme.sceneKind === "car") return <RaceEngine {...props} />;
   if (props.theme.mechanic === "gauge") return <GaugeEngine {...props} />;
