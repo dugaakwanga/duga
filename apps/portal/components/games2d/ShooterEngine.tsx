@@ -50,6 +50,22 @@ export function ShooterEngine({ theme, questions, difficulty, sessionExpiresAt, 
   const [batchTick, setBatchTick] = useState(0);
   const reloadBatchRef = useRef<number[]>([]);
 
+  // Real CC0 top-down sprites (Kenney) loaded once and drawn rotated to face
+  // the right way — player up-field, zombies down toward the base.
+  const spritesRef = useRef<{ player: HTMLImageElement; zombieA: HTMLImageElement; zombieB: HTMLImageElement } | null>(null);
+  useEffect(() => {
+    const mk = (src: string) => {
+      const img = new Image();
+      img.src = src;
+      return img;
+    };
+    spritesRef.current = {
+      player: mk("/games/shooter/player.png"),
+      zombieA: mk("/games/shooter/zombie_a.png"),
+      zombieB: mk("/games/shooter/zombie_b.png"),
+    };
+  }, []);
+
   const simRef = useRef<ShooterState>(createShooterState());
   const questionsUsedRef = useRef(0);
   const answersRef = useRef<EngineAnswer[]>([]);
@@ -178,7 +194,7 @@ export function ShooterEngine({ theme, questions, difficulty, sessionExpiresAt, 
         onProgressRef.current?.({ correct: correctRef.current, answered: answersRef.current.length, gaugeOrStep: s.kills });
       }
 
-      draw(cx, w, h, s, enemyColor);
+      draw(cx, w, h, s, enemyColor, spritesRef.current);
       raf = requestAnimationFrame(frame);
     }
 
@@ -251,8 +267,10 @@ export function ShooterEngine({ theme, questions, difficulty, sessionExpiresAt, 
   );
 }
 
+type Sprites = { player: HTMLImageElement; zombieA: HTMLImageElement; zombieB: HTMLImageElement } | null;
+
 // --- rendering (reads sim state, never mutates it) ---
-function draw(cx: CanvasRenderingContext2D, w: number, h: number, s: ShooterState, enemyColor: string) {
+function draw(cx: CanvasRenderingContext2D, w: number, h: number, s: ShooterState, enemyColor: string, sprites: Sprites) {
   const px = w / 2;
   const py = h * PLAYER_Y_FRAC;
   const baseLine = h * BASE_LINE_FRAC;
@@ -281,21 +299,37 @@ function draw(cx: CanvasRenderingContext2D, w: number, h: number, s: ShooterStat
   cx.stroke();
   cx.setLineDash([]);
 
+  const spritesReady = !!sprites && sprites.player.complete && sprites.zombieA.complete && sprites.zombieB.complete && sprites.zombieA.naturalWidth > 0;
+
   for (const e of s.enemies) {
     cx.save();
     cx.translate(e.x, e.y);
+    // ground shadow
     cx.fillStyle = "rgba(0,0,0,.22)";
     cx.beginPath();
-    cx.ellipse(0, ENEMY_RADIUS - 2, ENEMY_RADIUS * 0.8, ENEMY_RADIUS * 0.35, 0, 0, Math.PI * 2);
+    cx.ellipse(0, ENEMY_RADIUS - 2, ENEMY_RADIUS * 0.85, ENEMY_RADIUS * 0.35, 0, 0, Math.PI * 2);
     cx.fill();
-    cx.fillStyle = e.hitFlash > 0 ? "#fff" : enemyColor;
-    cx.beginPath();
-    cx.arc(0, 0, ENEMY_RADIUS, 0, Math.PI * 2);
-    cx.fill();
-    cx.fillStyle = e.hitFlash > 0 ? "#fff" : "#b91c1c";
-    cx.beginPath();
-    cx.arc(0, -ENEMY_RADIUS * 0.55, ENEMY_RADIUS * 0.5, 0, Math.PI * 2);
-    cx.fill();
+    if (spritesReady && sprites) {
+      // zombies shuffle down toward the base: face down (+90°) with a small
+      // two-frame walk + sway from the wobble the sim already tracks.
+      const frameImg = Math.floor(e.wobble / 0.35) % 2 === 0 ? sprites.zombieA : sprites.zombieB;
+      const sway = Math.sin(e.wobble) * 0.12;
+      cx.rotate(Math.PI / 2 + sway);
+      const eh = ENEMY_RADIUS * 2.5;
+      const ew = (frameImg.naturalWidth / frameImg.naturalHeight) * eh;
+      cx.drawImage(frameImg, -ew / 2, -eh / 2, ew, eh);
+      if (e.hitFlash > 0) {
+        cx.globalCompositeOperation = "source-atop";
+        cx.fillStyle = "rgba(255,255,255,0.8)";
+        cx.fillRect(-ew / 2, -eh / 2, ew, eh);
+        cx.globalCompositeOperation = "source-over";
+      }
+    } else {
+      cx.fillStyle = e.hitFlash > 0 ? "#fff" : enemyColor;
+      cx.beginPath();
+      cx.arc(0, 0, ENEMY_RADIUS, 0, Math.PI * 2);
+      cx.fill();
+    }
     cx.restore();
   }
 
@@ -321,20 +355,24 @@ function draw(cx: CanvasRenderingContext2D, w: number, h: number, s: ShooterStat
 
   cx.save();
   cx.translate(px, py);
-  cx.fillStyle = "rgba(0,0,0,.25)";
+  cx.fillStyle = "rgba(0,0,0,.28)";
   cx.beginPath();
-  cx.ellipse(0, 16, 20, 7, 0, 0, Math.PI * 2);
+  cx.ellipse(0, 14, 22, 8, 0, 0, Math.PI * 2);
   cx.fill();
-  cx.fillStyle = "#1e40af";
-  cx.beginPath();
-  cx.arc(0, 0, 17, 0, Math.PI * 2);
-  cx.fill();
-  cx.fillStyle = "#93c5fd";
-  cx.beginPath();
-  cx.arc(0, -6, 8, 0, Math.PI * 2);
-  cx.fill();
-  cx.fillStyle = "#334155";
-  cx.fillRect(-4, -30, 8, 20);
+  if (spritesReady && sprites) {
+    // soldier aims up-field toward the horde: face up (−90°).
+    cx.rotate(-Math.PI / 2);
+    const ph = 54;
+    const pw = (sprites.player.naturalWidth / sprites.player.naturalHeight) * ph;
+    cx.drawImage(sprites.player, -pw / 2, -ph / 2, pw, ph);
+  } else {
+    cx.fillStyle = "#1e40af";
+    cx.beginPath();
+    cx.arc(0, 0, 17, 0, Math.PI * 2);
+    cx.fill();
+    cx.fillStyle = "#334155";
+    cx.fillRect(-4, -30, 8, 20);
+  }
   cx.restore();
 
   cx.restore();
