@@ -97,6 +97,27 @@ function computeTotals(r: EntryRow, config: ResultConfig) {
   return { ca, exam, total: ca + exam };
 }
 
+// Orders class names like "Primary 1 A", "Primary 10 A" the way a human
+// would (numerically), rather than the lexicographic sort that would put
+// "Primary 10" before "Primary 2".
+function classNameCompare(a: string, b: string): number {
+  const parts = (s: string) => s.match(/\d+|\D+/g) ?? [s];
+  const pa = parts(a);
+  const pb = parts(b);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] ?? "";
+    const y = pb[i] ?? "";
+    const nx = Number(x);
+    const ny = Number(y);
+    if (!Number.isNaN(nx) && !Number.isNaN(ny) && x !== "" && y !== "") {
+      if (nx !== ny) return nx - ny;
+    } else if (x !== y) {
+      return x.localeCompare(y);
+    }
+  }
+  return 0;
+}
+
 function gradeOf(score: number): string {
   if (score >= 75) return "A1";
   if (score >= 70) return "B2";
@@ -522,12 +543,29 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
   const displayedCards = cards.filter((rc) => (!printClassId || rc.classGroupId === printClassId) && (!printTermId || rc.termId === printTermId));
   const printClasses = Array.from(new Map(cards.filter((rc) => rc.classGroupId && rc.classGroup).map((rc) => [rc.classGroupId!, rc.classGroup!])).entries());
   const printTerms = Array.from(new Map(cards.filter((rc) => rc.termId && rc.term).map((rc) => [rc.termId!, rc.term!])).entries());
+  const cardsByClass = Array.from(
+    displayedCards.reduce((map, rc) => {
+      const className = rc.classGroup ? `${rc.classGroup.level.name} ${rc.classGroup.name}` : "Unassigned";
+      const list = map.get(className) ?? [];
+      list.push(rc);
+      map.set(className, list);
+      return map;
+    }, new Map<string, ReportCard[]>()),
+  ).sort(([a], [b]) => classNameCompare(a, b));
 
   const submissionRows: SubmissionRow[] = [];
   for (const cs of classSubjects) {
     const status = submissions[cs.id] ?? { entered: 0, submitted: 0, total: cs.classGroup.students.length, allSubmitted: false };
     submissionRows.push({ classSubjectId: cs.id, subjectName: cs.subject.name, className: `${cs.classGroup.level.name} ${cs.classGroup.name}`, status });
   }
+  const submissionsByClass = Array.from(
+    submissionRows.reduce((map, row) => {
+      const list = map.get(row.className) ?? [];
+      list.push(row);
+      map.set(row.className, list);
+      return map;
+    }, new Map<string, SubmissionRow[]>()),
+  ).sort(([a], [b]) => classNameCompare(a, b));
 
   return (
     <div>
@@ -691,36 +729,66 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
         </div>
       )}
 
-      {/* Admin submissions overview */}
+      {/* Admin submissions overview — grouped by class rather than one long
+          flat table of every class×subject combination in the school. */}
       {(role === "ADMIN" || role === "OWNER") && submissionRows.length > 0 && (
-        <Card title="Subject submissions" style={{ marginBottom: 24 }}>
-          <Table headers={["Class", "Subject", "Entered", "Submitted", ""]}>
-            {submissionRows.map((row) => {
-              const pct = row.status.total > 0 ? Math.round((row.status.entered / row.status.total) * 100) : 0;
-              return (
-              <tr key={row.classSubjectId}>
-                <td>{row.className}</td>
-                <td>{row.subjectName}</td>
-                <td>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 110 }}>
-                    <div style={{ flex: 1 }}><ProgressBar pct={pct} /></div>
-                    <span style={{ fontSize: 12, color: "var(--duga-muted)", whiteSpace: "nowrap" }}>{row.status.entered}/{row.status.total}</span>
-                  </div>
-                </td>
-                <td>
-                  <Badge tone={row.status.allSubmitted ? "success" : row.status.submitted > 0 ? "warning" : "neutral"}>
-                    {row.status.allSubmitted ? "All submitted" : `${row.status.submitted}/${row.status.total} submitted`}
+        <Card title={`Subject submissions (${submissionsByClass.length} classes)`} style={{ marginBottom: 24 }}>
+          {submissionsByClass.map(([className, rows]) => {
+            const fullySubmitted = rows.filter((r) => r.status.allSubmitted).length;
+            return (
+              <details key={className} open={submissionsByClass.length <= 3} style={{ marginBottom: 10 }}>
+                <summary
+                  style={{
+                    cursor: "pointer",
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    background: "var(--duga-surface-2, #f4f6f9)",
+                    fontWeight: 700,
+                    fontSize: 14,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                  }}
+                >
+                  {className}
+                  <span style={{ fontWeight: 400, fontSize: 12.5, color: "var(--duga-muted)" }}>
+                    {rows.length} subject{rows.length === 1 ? "" : "s"}
+                  </span>
+                  <Badge tone={fullySubmitted === rows.length ? "success" : fullySubmitted > 0 ? "warning" : "neutral"}>
+                    {fullySubmitted}/{rows.length} fully submitted
                   </Badge>
-                </td>
-                <td>
-                  {row.status.submitted > 0 && (
-                    <Button size="sm" variant="ghost" onClick={() => reopenSubject(row.classSubjectId)}>Reopen</Button>
-                  )}
-                </td>
-              </tr>
-              );
-            })}
-          </Table>
+                </summary>
+                <div style={{ marginTop: 8 }}>
+                  <Table headers={["Subject", "Entered", "Submitted", ""]}>
+                    {rows.map((row) => {
+                      const pct = row.status.total > 0 ? Math.round((row.status.entered / row.status.total) * 100) : 0;
+                      return (
+                        <tr key={row.classSubjectId}>
+                          <td>{row.subjectName}</td>
+                          <td>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 110 }}>
+                              <div style={{ flex: 1 }}><ProgressBar pct={pct} /></div>
+                              <span style={{ fontSize: 12, color: "var(--duga-muted)", whiteSpace: "nowrap" }}>{row.status.entered}/{row.status.total}</span>
+                            </div>
+                          </td>
+                          <td>
+                            <Badge tone={row.status.allSubmitted ? "success" : row.status.submitted > 0 ? "warning" : "neutral"}>
+                              {row.status.allSubmitted ? "All submitted" : `${row.status.submitted}/${row.status.total} submitted`}
+                            </Badge>
+                          </td>
+                          <td>
+                            {row.status.submitted > 0 && (
+                              <Button size="sm" variant="ghost" onClick={() => reopenSubject(row.classSubjectId)}>Reopen</Button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </Table>
+                </div>
+              </details>
+            );
+          })}
         </Card>
       )}
 
@@ -782,29 +850,58 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
             <Field label="Term to print"><Select value={printTermId} onChange={(e) => setPrintTermId(e.target.value)}><option value="">All terms</option>{printTerms.map(([id, term]) => <option key={id} value={id}>{term.name}</option>)}</Select></Field>
             <Button variant="outline" onClick={() => printCards(displayedCards)}>Print selected results</Button>
           </div>
-          <Table headers={["Student", "Class", "Term", "Average", "Position", "Status", ""]}>
-            {displayedCards.map((rc) => (
-              <tr key={rc.id}>
-                <td>{rc.student.user.firstName} {rc.student.user.lastName}</td>
-                <td>{rc.classGroup ? `${rc.classGroup.level.name} ${rc.classGroup.name}` : "—"}</td>
-                <td>{rc.term?.name}</td>
-                <td>{rc.average !== null ? Number(rc.average).toFixed(1) : "—"}</td>
-                <td>{rc.position ?? "—"}</td>
-                <td><Badge tone={rc.isPublished ? "success" : "neutral"}>{rc.isPublished ? "Published" : "Draft"}</Badge></td>
-                <td>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <Button size="sm" variant="outline" onClick={() => printCards([rc])}>Print</Button>
-                    <Button size="sm" variant="outline" loading={downloadingId === rc.id} onClick={() => downloadPdf(rc)}>PDF</Button>
-                    {!rc.isPublished && (role === "ADMIN" || role === "OWNER") && rc.termId && (
-                      <Button size="sm" variant="accent" onClick={() => publishStudent(rc)}>Publish</Button>
-                    )}
-                    {(role === "TEACHER" || role === "ADMIN" || role === "OWNER") && <Button size="sm" variant="ghost" onClick={() => editDetails(rc)}>Rate extras</Button>}
-                    {(role === "TEACHER" || role === "ADMIN" || role === "OWNER") && <Button size="sm" variant="outline" onClick={() => draftRemark(rc)}>Draft remark</Button>}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </Table>
+          {cardsByClass.map(([className, rows]) => {
+            const publishedCount = rows.filter((rc) => rc.isPublished).length;
+            return (
+              <details key={className} open={cardsByClass.length <= 3} style={{ marginBottom: 10 }}>
+                <summary
+                  style={{
+                    cursor: "pointer",
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    background: "var(--duga-surface-2, #f4f6f9)",
+                    fontWeight: 700,
+                    fontSize: 14,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                  }}
+                >
+                  {className}
+                  <span style={{ fontWeight: 400, fontSize: 12.5, color: "var(--duga-muted)" }}>
+                    {rows.length} student{rows.length === 1 ? "" : "s"}
+                  </span>
+                  <Badge tone={publishedCount === rows.length ? "success" : publishedCount > 0 ? "warning" : "neutral"}>
+                    {publishedCount}/{rows.length} published
+                  </Badge>
+                </summary>
+                <div style={{ marginTop: 8 }}>
+                  <Table headers={["Student", "Term", "Average", "Position", "Status", ""]}>
+                    {rows.map((rc) => (
+                      <tr key={rc.id}>
+                        <td>{rc.student.user.firstName} {rc.student.user.lastName}</td>
+                        <td>{rc.term?.name}</td>
+                        <td>{rc.average !== null ? Number(rc.average).toFixed(1) : "—"}</td>
+                        <td>{rc.position ?? "—"}</td>
+                        <td><Badge tone={rc.isPublished ? "success" : "neutral"}>{rc.isPublished ? "Published" : "Draft"}</Badge></td>
+                        <td>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <Button size="sm" variant="outline" onClick={() => printCards([rc])}>Print</Button>
+                            <Button size="sm" variant="outline" loading={downloadingId === rc.id} onClick={() => downloadPdf(rc)}>PDF</Button>
+                            {!rc.isPublished && (role === "ADMIN" || role === "OWNER") && rc.termId && (
+                              <Button size="sm" variant="accent" onClick={() => publishStudent(rc)}>Publish</Button>
+                            )}
+                            {(role === "TEACHER" || role === "ADMIN" || role === "OWNER") && <Button size="sm" variant="ghost" onClick={() => editDetails(rc)}>Rate extras</Button>}
+                            {(role === "TEACHER" || role === "ADMIN" || role === "OWNER") && <Button size="sm" variant="outline" onClick={() => draftRemark(rc)}>Draft remark</Button>}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </Table>
+                </div>
+              </details>
+            );
+          })}
         </Card>
       )}
 

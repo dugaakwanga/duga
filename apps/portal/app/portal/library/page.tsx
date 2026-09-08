@@ -202,75 +202,126 @@ export default function LibraryPage() {
         }
       />
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))", gap: 12, marginBottom: 20 }}>
-        {(data.books ?? []).map((b) => (
-          <div key={b.id} style={{ border: "1px solid var(--duga-border)", borderRadius: 12, padding: 14 }}>
-            {b.coverUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={b.coverUrl} alt={b.title} style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 8, marginBottom: 10, background: "var(--duga-surface)" }} />
-            )}
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-              <strong style={{ fontSize: 14.5, lineHeight: 1.3 }}>{b.title}</strong>
-              <Badge tone="accent">{b.category}</Badge>
+      {/* Catalogue grouped by category rather than one long unsorted grid. */}
+      {BOOK_CATEGORIES.filter((cat) => (data.books ?? []).some((b) => b.category === cat)).map((cat) => {
+        const rows = (data.books ?? []).filter((b) => b.category === cat);
+        return (
+          <details key={cat} open style={{ marginBottom: 14 }}>
+            <summary
+              style={{
+                cursor: "pointer",
+                padding: "10px 12px",
+                borderRadius: 8,
+                background: "var(--duga-surface-2, #f4f6f9)",
+                fontWeight: 700,
+                fontSize: 14,
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                marginBottom: 10,
+              }}
+            >
+              {cat}
+              <span style={{ fontWeight: 400, fontSize: 12.5, color: "var(--duga-muted)" }}>
+                {rows.length} book{rows.length === 1 ? "" : "s"}
+              </span>
+            </summary>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))", gap: 12 }}>
+              {rows.map((b) => (
+                <div key={b.id} style={{ border: "1px solid var(--duga-border)", borderRadius: 12, padding: 14 }}>
+                  {b.coverUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={b.coverUrl} alt={b.title} style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 8, marginBottom: 10, background: "var(--duga-surface)" }} />
+                  )}
+                  <strong style={{ fontSize: 14.5, lineHeight: 1.3 }}>{b.title}</strong>
+                  {b.author && <div style={{ fontSize: 13, color: "var(--duga-muted)", marginTop: 6 }}>{b.author}</div>}
+                  {b.shelfLocation && <div style={{ fontSize: 12.5, color: "var(--duga-muted)" }}>Shelf: {b.shelfLocation}</div>}
+                  {(b.targetStudentIds ?? []).length > 0 && (
+                    <div style={{ marginTop: 6 }}>
+                      <Badge tone="accent">Given to {b.targetStudentIds!.length} student(s)</Badge>
+                    </div>
+                  )}
+                  {b.fileUrl ? (
+                    <a href={b.fileUrl} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 10 }}>
+                      <Button variant="accent" size="sm" style={{ width: "100%" }}>
+                        <Icon name="notes" size={14} /> Read book {fmtBytes(b.fileSize) ? `· ${fmtBytes(b.fileSize)}` : ""}
+                      </Button>
+                    </a>
+                  ) : (
+                    <div style={{ marginTop: 10, fontSize: 13 }}>
+                      <Badge tone={b.availableCopies > 0 ? "success" : "danger"}>
+                        {b.availableCopies} of {b.totalCopies} available (physical copy)
+                      </Badge>
+                    </div>
+                  )}
+                  {canManageCatalogue && (
+                    <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+                      <Button variant="outline" size="sm" onClick={() => openEdit(b)}>Edit</Button>
+                      <Button variant="ghost" size="sm" onClick={() => run(b.id, "deleteBook")}>Delete</Button>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
-            {b.author && <div style={{ fontSize: 13, color: "var(--duga-muted)", marginTop: 6 }}>{b.author}</div>}
-            {b.shelfLocation && <div style={{ fontSize: 12.5, color: "var(--duga-muted)" }}>Shelf: {b.shelfLocation}</div>}
-            {(b.targetStudentIds ?? []).length > 0 && (
-              <div style={{ marginTop: 6 }}>
-                <Badge tone="accent">Given to {b.targetStudentIds!.length} student(s)</Badge>
-              </div>
-            )}
-            {b.fileUrl ? (
-              <a href={b.fileUrl} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 10 }}>
-                <Button variant="accent" size="sm" style={{ width: "100%" }}>
-                  <Icon name="notes" size={14} /> Read book {fmtBytes(b.fileSize) ? `· ${fmtBytes(b.fileSize)}` : ""}
-                </Button>
-              </a>
-            ) : (
-              <div style={{ marginTop: 10, fontSize: 13 }}>
-                <Badge tone={b.availableCopies > 0 ? "success" : "danger"}>
-                  {b.availableCopies} of {b.totalCopies} available (physical copy)
-                </Badge>
-              </div>
-            )}
-            {canManageCatalogue && (
-              <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-                <Button variant="outline" size="sm" onClick={() => openEdit(b)}>Edit</Button>
-                <Button variant="ghost" size="sm" onClick={() => run(b.id, "deleteBook")}>Delete</Button>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+          </details>
+        );
+      })}
 
       <Card title="Borrowing records">
         {(data.loans ?? []).length === 0 ? (
           <EmptyState title="No loans yet" hint="Issue a book to a student to start tracking loans." />
         ) : (
-          <Table headers={["Book", "Student", "Borrowed", "Due", "Status", canIssueBooks ? "" : null].filter(Boolean) as React.ReactNode[]}>
-            {(data.loans ?? []).map((l) => (
-              <tr key={l.id}>
-                <td>{l.book.title}</td>
-                <td>{l.student.user.firstName} {l.student.user.lastName}</td>
-                <td>{new Date(l.borrowedAt).toLocaleDateString()}</td>
-                <td>{l.dueDate ? new Date(l.dueDate).toLocaleDateString() : "—"}</td>
-                <td><Badge tone={tone(l.status)}>{l.status}</Badge></td>
-                {canIssueBooks && (
-                  <td>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      {l.status !== "RETURNED" && l.status !== "LOST" && (
-                        <>
-                          <Button variant="outline" size="sm" onClick={() => run(l.id, "returnBook")}>Return</Button>
-                          <Button variant="ghost" size="sm" onClick={() => run(l.id, "markLost")}>Lost</Button>
-                        </>
-                      )}
-                      <Button variant="ghost" size="sm" onClick={() => run(l.id, "deleteLoan")}>Delete</Button>
-                    </div>
-                  </td>
-                )}
-              </tr>
-            ))}
-          </Table>
+          (["OVERDUE", "BORROWED", "RETURNED", "LOST"] as const).flatMap((status) => {
+            const rows = (data.loans ?? []).filter((l) => l.status === status);
+            if (!rows.length) return [];
+            return [
+              <details key={status} open={status === "OVERDUE" || status === "BORROWED"} style={{ marginBottom: 10 }}>
+                <summary
+                  style={{
+                    cursor: "pointer",
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    background: "var(--duga-surface-2, #f4f6f9)",
+                    fontWeight: 700,
+                    fontSize: 14,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                  }}
+                >
+                  <Badge tone={tone(status)}>{status}</Badge>
+                  <span style={{ fontWeight: 400, fontSize: 12.5, color: "var(--duga-muted)" }}>
+                    {rows.length} loan{rows.length === 1 ? "" : "s"}
+                  </span>
+                </summary>
+                <div style={{ marginTop: 8 }}>
+                  <Table headers={["Book", "Student", "Borrowed", "Due", canIssueBooks ? "" : null].filter(Boolean) as React.ReactNode[]}>
+                    {rows.map((l) => (
+                      <tr key={l.id}>
+                        <td>{l.book.title}</td>
+                        <td>{l.student.user.firstName} {l.student.user.lastName}</td>
+                        <td>{new Date(l.borrowedAt).toLocaleDateString()}</td>
+                        <td>{l.dueDate ? new Date(l.dueDate).toLocaleDateString() : "—"}</td>
+                        {canIssueBooks && (
+                          <td>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              {l.status !== "RETURNED" && l.status !== "LOST" && (
+                                <>
+                                  <Button variant="outline" size="sm" onClick={() => run(l.id, "returnBook")}>Return</Button>
+                                  <Button variant="ghost" size="sm" onClick={() => run(l.id, "markLost")}>Lost</Button>
+                                </>
+                              )}
+                              <Button variant="ghost" size="sm" onClick={() => run(l.id, "deleteLoan")}>Delete</Button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </Table>
+                </div>
+              </details>,
+            ];
+          })
         )}
       </Card>
 

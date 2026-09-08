@@ -183,46 +183,74 @@ export default function StaffPage() {
         <EmptyState title="No staff" />
       ) : (
         <Card>
-          <Table headers={["Name", "Role", "Designation", "Email", "Staff no.", "Status", ""]}>
-            {items.map((u) => (
-              <tr key={u.id}>
-                <td>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    {u.avatarUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={u.avatarUrl} alt="" style={{ width: 34, height: 34, borderRadius: "50%", objectFit: "cover", border: "1px solid var(--duga-border)" }} />
-                    ) : (
-                      <div style={{ width: 34, height: 34, borderRadius: "50%", background: "linear-gradient(135deg, var(--duga-primary), var(--duga-gold))", color: "#fff", display: "grid", placeItems: "center", fontWeight: 700, fontSize: 12, flexShrink: 0 }}>
-                        {`${u.firstName[0] ?? ""}${u.lastName[0] ?? ""}`.toUpperCase()}
-                      </div>
-                    )}
-                    <span>{u.firstName} {u.lastName}</span>
-                  </div>
-                </td>
-                <td><Badge tone={u.role === "OWNER" ? "accent" : u.role === "ADMIN" ? "info" : "neutral"}>{u.role.toLowerCase()}</Badge></td>
-                <td>{u.teacher?.designation ?? u.admin?.designation ?? "—"}</td>
-                <td>{u.email || "—"}</td>
-                <td>{u.teacher?.staffNumber ?? u.admin?.staffNumber ?? "—"}</td>
-                <td><Badge tone={u.status === "ACTIVE" ? "success" : "danger"}>{u.status}</Badge></td>
-                <td>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    {currentRole === "OWNER" && u.role !== "OWNER" && (
-                      <Button size="sm" variant="accent" onClick={() => openRole(u)}>Change role</Button>
-                    )}
-                    {canManage(u) && (
-                      <Button size="sm" variant="ghost" onClick={() => { setResetTarget(u); setTempPassword(""); setResetError(null); }}>
-                        Set password
-                      </Button>
-                    )}
-                    {canManage(u) && <Button size="sm" variant="outline" onClick={() => openEdit(u)}>Edit</Button>}
-                    {canManage(u) && u.role !== "OWNER" && (
-                      <Button size="sm" variant="ghost" onClick={() => removeStaff(u)}>Remove</Button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </Table>
+          {(["OWNER", "ADMIN", "BURSAR", "SECURITY", "TEACHER"] as const).flatMap((r) => {
+            const rows = items.filter((u) => u.role === r);
+            if (!rows.length) return [];
+            return [
+              <details key={r} open style={{ marginBottom: 10 }}>
+                <summary
+                  style={{
+                    cursor: "pointer",
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    background: "var(--duga-surface-2, #f4f6f9)",
+                    fontWeight: 700,
+                    fontSize: 14,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    textTransform: "capitalize",
+                  }}
+                >
+                  {r.toLowerCase()}
+                  <span style={{ fontWeight: 400, fontSize: 12.5, color: "var(--duga-muted)", textTransform: "none" }}>
+                    {rows.length}
+                  </span>
+                </summary>
+                <div style={{ marginTop: 8 }}>
+                  <Table headers={["Name", "Designation", "Email", "Staff no.", "Status", ""]}>
+                    {rows.map((u) => (
+                      <tr key={u.id}>
+                        <td>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            {u.avatarUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={u.avatarUrl} alt="" style={{ width: 34, height: 34, borderRadius: "50%", objectFit: "cover", border: "1px solid var(--duga-border)" }} />
+                            ) : (
+                              <div style={{ width: 34, height: 34, borderRadius: "50%", background: "linear-gradient(135deg, var(--duga-primary), var(--duga-gold))", color: "#fff", display: "grid", placeItems: "center", fontWeight: 700, fontSize: 12, flexShrink: 0 }}>
+                                {`${u.firstName[0] ?? ""}${u.lastName[0] ?? ""}`.toUpperCase()}
+                              </div>
+                            )}
+                            <span>{u.firstName} {u.lastName}</span>
+                          </div>
+                        </td>
+                        <td>{u.teacher?.designation ?? u.admin?.designation ?? "—"}</td>
+                        <td>{u.email || "—"}</td>
+                        <td>{u.teacher?.staffNumber ?? u.admin?.staffNumber ?? "—"}</td>
+                        <td><Badge tone={u.status === "ACTIVE" ? "success" : "danger"}>{u.status}</Badge></td>
+                        <td>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            {currentRole === "OWNER" && u.role !== "OWNER" && (
+                              <Button size="sm" variant="accent" onClick={() => openRole(u)}>Change role</Button>
+                            )}
+                            {canManage(u) && (
+                              <Button size="sm" variant="ghost" onClick={() => { setResetTarget(u); setTempPassword(""); setResetError(null); }}>
+                                Set password
+                              </Button>
+                            )}
+                            {canManage(u) && <Button size="sm" variant="outline" onClick={() => openEdit(u)}>Edit</Button>}
+                            {canManage(u) && u.role !== "OWNER" && (
+                              <Button size="sm" variant="ghost" onClick={() => removeStaff(u)}>Remove</Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </Table>
+                </div>
+              </details>,
+            ];
+          })}
         </Card>
       )}
 

@@ -436,7 +436,9 @@ export default function FeesPage() {
 
       {invoices.length === 0 ? (
         <EmptyState title="No invoices yet" />
-      ) : (
+      ) : !isStaff ? (
+        // Students/parents typically have a handful of invoices — a flat
+        // table is fine and avoids an unnecessary extra click to expand.
         <Card>
           <Table headers={paymentRecordsVisible ? ["Invoice", "Student", "Term", "Amount", "Paid", "Balance", "Status", ""] : ["Invoice", "Student", "Term", "Amount", "Balance", "Status", ""]}>
             {invoices.map((i) => (
@@ -452,25 +454,82 @@ export default function FeesPage() {
                 </td>
                 <td>
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    {i.status !== "PAID" && i.status !== "OVERPAID" && (role === "STUDENT" || role === "PARENT") && (
+                    {i.status !== "PAID" && i.status !== "OVERPAID" && (
                       <Button size="sm" loading={paying === i.id} onClick={() => pay(i.id)}>Pay</Button>
                     )}
-                    {(i.installmentPlan || isStaff) && (
-                      <Button size="sm" variant="outline" onClick={() => setInstallmentTarget(i)}>
-                        {i.installmentPlan ? "Installments" : "Set up installments"}
-                      </Button>
-                    )}
-                    {isStaff && (
-                      <>
-                        <Button size="sm" variant="outline" loading={paying === i.id} onClick={() => openRecordPayment(i.id)}>Record payment</Button>
-                        <Button size="sm" variant="ghost" loading={paying === i.id} onClick={() => deleteInvoice(i.id)}>Delete</Button>
-                      </>
+                    {i.installmentPlan && (
+                      <Button size="sm" variant="outline" onClick={() => setInstallmentTarget(i)}>Installments</Button>
                     )}
                   </div>
                 </td>
               </tr>
             ))}
           </Table>
+        </Card>
+      ) : (
+        // Staff: every invoice in the school in one place — group by term so
+        // a bursar can find "this term's invoices" instead of scanning a
+        // single table mixing every term ever billed.
+        <Card>
+          {Array.from(
+            invoices.reduce((map, i) => {
+              const key = i.term?.name ?? "No term";
+              const list = map.get(key) ?? [];
+              list.push(i);
+              map.set(key, list);
+              return map;
+            }, new Map<string, Invoice[]>()),
+          ).map(([termName, rows]) => {
+            const balance = rows.reduce((a, i) => a + Number(i.balance), 0);
+            return (
+              <details key={termName} open={invoices.length <= 20} style={{ marginBottom: 10 }}>
+                <summary
+                  style={{
+                    cursor: "pointer",
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    background: "var(--duga-surface-2, #f4f6f9)",
+                    fontWeight: 700,
+                    fontSize: 14,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                  }}
+                >
+                  {termName}
+                  <span style={{ fontWeight: 400, fontSize: 12.5, color: "var(--duga-muted)" }}>
+                    {rows.length} invoice{rows.length === 1 ? "" : "s"}
+                  </span>
+                  {paymentRecordsVisible && <Badge tone={balance > 0 ? "danger" : "success"}>{naira(balance)} outstanding</Badge>}
+                </summary>
+                <div style={{ marginTop: 8 }}>
+                  <Table headers={paymentRecordsVisible ? ["Invoice", "Student", "Amount", "Paid", "Balance", "Status", ""] : ["Invoice", "Student", "Amount", "Balance", "Status", ""]}>
+                    {rows.map((i) => (
+                      <tr key={i.id}>
+                        <td>{i.invoiceNumber}</td>
+                        <td>{i.student ? `${i.student.user.firstName} ${i.student.user.lastName}` : "—"}</td>
+                        <td>{naira(i.totalAmount)}</td>
+                        {paymentRecordsVisible && <td>{naira(i.paidAmount)}</td>}
+                        <td>{naira(i.balance)}</td>
+                        <td>
+                          <Badge tone={i.status === "PAID" || i.status === "OVERPAID" ? "success" : i.status === "PARTIAL" ? "warning" : "danger"}>{i.status}</Badge>
+                        </td>
+                        <td>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            <Button size="sm" variant="outline" onClick={() => setInstallmentTarget(i)}>
+                              {i.installmentPlan ? "Installments" : "Set up installments"}
+                            </Button>
+                            <Button size="sm" variant="outline" loading={paying === i.id} onClick={() => openRecordPayment(i.id)}>Record payment</Button>
+                            <Button size="sm" variant="ghost" loading={paying === i.id} onClick={() => deleteInvoice(i.id)}>Delete</Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </Table>
+                </div>
+              </details>
+            );
+          })}
         </Card>
       )}
 

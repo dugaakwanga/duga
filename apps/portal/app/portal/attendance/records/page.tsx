@@ -66,35 +66,69 @@ export default function StaffClockRecordsPage() {
         <EmptyState title="No clock records" hint="Staff records appear once staff clock in or out." />
       ) : (
         <Card>
-          <Table headers={["Staff", "Date", "Clock in", "In-distance", "Clock out", "Out-distance"]}>
-            {items.map((r) => (
-              <tr key={r.id}>
-                <td>
-                  {r.user.firstName} {r.user.lastName}
-                  <div style={{ fontSize: 11.5, color: "var(--duga-muted)", textTransform: "capitalize" }}>{r.user.role.toLowerCase()}</div>
-                </td>
-                <td>{new Date(r.date).toISOString().slice(0, 10)}</td>
-                <td>{t(r.checkInAt)}</td>
-                <td>
-                  {r.checkInDistanceM != null && (
-                    <Badge tone={r.checkInWithinRadius ? "success" : "danger"}>
-                      {r.checkInDistanceM} m · {inGeofence(r.checkInWithinRadius)}
-                    </Badge>
-                  )}
-                  {r.checkInDistanceM == null && "—"}
-                </td>
-                <td>{t(r.checkOutAt)}</td>
-                <td>
-                  {r.checkOutDistanceM != null && (
-                    <Badge tone={r.checkOutWithinRadius ? "success" : "danger"}>
-                      {r.checkOutDistanceM} m · {inGeofence(r.checkOutWithinRadius)}
-                    </Badge>
-                  )}
-                  {r.checkOutDistanceM == null && "—"}
-                </td>
-              </tr>
-            ))}
-          </Table>
+          {Array.from(
+            items.reduce((map, r) => {
+              const key = `${r.user.firstName} ${r.user.lastName}`;
+              const list = map.get(key) ?? [];
+              list.push(r);
+              map.set(key, list);
+              return map;
+            }, new Map<string, StaffRecordRow[]>()),
+          )
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([name, rows]) => {
+              const flagged = rows.filter((r) => r.checkInWithinRadius === false || r.checkOutWithinRadius === false).length;
+              return (
+                <details key={name} open={items.length <= 30} style={{ marginBottom: 10 }}>
+                  <summary
+                    style={{
+                      cursor: "pointer",
+                      padding: "10px 12px",
+                      borderRadius: 8,
+                      background: "var(--duga-surface-2, #f4f6f9)",
+                      fontWeight: 700,
+                      fontSize: 14,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                    }}
+                  >
+                    {name}
+                    <span style={{ fontWeight: 400, fontSize: 12.5, color: "var(--duga-muted)", textTransform: "capitalize" }}>
+                      {rows[0]!.user.role.toLowerCase()} · {rows.length} day{rows.length === 1 ? "" : "s"}
+                    </span>
+                    {flagged > 0 && <Badge tone="danger">{flagged} flagged</Badge>}
+                  </summary>
+                  <div style={{ marginTop: 8 }}>
+                    <Table headers={["Date", "Clock in", "In-distance", "Clock out", "Out-distance"]}>
+                      {rows.map((r) => (
+                        <tr key={r.id}>
+                          <td>{new Date(r.date).toISOString().slice(0, 10)}</td>
+                          <td>{t(r.checkInAt)}</td>
+                          <td>
+                            {r.checkInDistanceM != null && (
+                              <Badge tone={r.checkInWithinRadius ? "success" : "danger"}>
+                                {r.checkInDistanceM} m · {inGeofence(r.checkInWithinRadius)}
+                              </Badge>
+                            )}
+                            {r.checkInDistanceM == null && "—"}
+                          </td>
+                          <td>{t(r.checkOutAt)}</td>
+                          <td>
+                            {r.checkOutDistanceM != null && (
+                              <Badge tone={r.checkOutWithinRadius ? "success" : "danger"}>
+                                {r.checkOutDistanceM} m · {inGeofence(r.checkOutWithinRadius)}
+                              </Badge>
+                            )}
+                            {r.checkOutDistanceM == null && "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </Table>
+                  </div>
+                </details>
+              );
+            })}
         </Card>
       )}
     </div>
