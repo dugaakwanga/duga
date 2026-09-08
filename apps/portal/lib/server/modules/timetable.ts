@@ -248,9 +248,9 @@ export const timetableModule: Module = {
           teachers: await prisma.teacher.findMany({ where: { schoolId, user: { status: "ACTIVE" } }, select: { id: true, user: { select: { firstName: true, lastName: true } } }, orderBy: { user: { firstName: "asc" } }, take: 300 }),
           terms: await prisma.term.findMany({ where: { schoolId }, orderBy: { name: "asc" }, take: 100 }),
         }
-      : {};
+      : undefined;
 
-    return { grid, examTimetable, refs };
+    return { role, grid, examTimetable, refs };
   },
 
   actions: {

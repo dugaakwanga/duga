@@ -27,6 +27,7 @@ interface ExamEntry {
 }
 
 interface TimetableData {
+  role: string;
   grid: Array<{ day: string; index: number; entries: Entry[] }>;
   examTimetable: ExamEntry[];
   refs?: {
@@ -50,7 +51,11 @@ export default function TimetablePage() {
   const [publishing, setPublishing] = useState(false);
   const [generating, setGenerating] = useState(false);
 
-  const isAdmin = !!data?.refs;
+  // Was previously `!!data?.refs` — the server always includes a `refs` key
+  // (an empty object for non-managers), so that check was always truthy and
+  // every role saw the Owner/Admin-only timetable controls. Derive it from
+  // the role itself instead, same as every other page in the portal.
+  const isAdmin = data?.role === "OWNER" || data?.role === "ADMIN";
 
   const load = useCallback(() => {
     return api<TimetableData>("timetable")
