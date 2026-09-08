@@ -3,6 +3,7 @@ import { collateReportCards, resolveResultsAccess, logAudit, dispatchToMany, get
 import { getResultConfig, computeScoreTotals, type ResultComponent } from "@duga/core/server";
 import type { Module } from ".";
 import { can, str, num, studentScope, resolveSection } from "../helpers";
+import { assessmentWindowOpen } from "./calendar";
 
 // Grade-point average for a card, derived from the school's grading scale.
 async function gpaCalculator(schoolId: string, section?: string) {
@@ -15,6 +16,30 @@ async function gpaCalculator(schoolId: string, section?: string) {
       .filter((g): g is number => typeof g === "number");
     if (gps.length === 0) return null;
     return Math.round((gps.reduce((a, b) => a + b, 0) / gps.length) * 100) / 100;
+  };
+}
+
+// Small, cheap fetch bundled into report-card responses so the client-side
+// PDF renderer has everything it needs (school letterhead + which sections
+// to render) without a separate round trip.
+async function schoolAndReportCardConfig(schoolId: string, section?: string) {
+  const [school, sectionConfig, fallbackConfig] = await Promise.all([
+    prisma.school.findUnique({ where: { id: schoolId }, select: { name: true, shortName: true, address: true, logoUrl: true } }),
+    section ? prisma.reportCardConfig.findUnique({ where: { schoolId_section: { schoolId, section } } }) : Promise.resolve(null),
+    prisma.reportCardConfig.findUnique({ where: { schoolId_section: { schoolId, section: "" } } }),
+  ]);
+  const row = sectionConfig ?? fallbackConfig;
+  return {
+    school,
+    reportCardConfig: {
+      showCognitive: row?.showCognitive ?? true,
+      showPsychomotor: row?.showPsychomotor ?? true,
+      showAffective: row?.showAffective ?? true,
+      showAttendance: row?.showAttendance ?? true,
+      showLogo: row?.showLogo ?? true,
+      showWatermark: row?.showWatermark ?? false,
+      signatureLabels: Array.isArray(row?.signatureLabels) ? row.signatureLabels : ["Class Teacher", "Principal"],
+    },
   };
 }
 
@@ -90,7 +115,8 @@ export const resultsModule: Module = {
           items,
         });
       }
-      return { role, reportCards: gated };
+      const { school, reportCardConfig } = await schoolAndReportCardConfig(schoolId, section);
+      return { role, reportCards: gated, school, reportCardConfig };
     }
 
     // Admin / owner: only return the active section when one is selected.
@@ -107,7 +133,8 @@ export const resultsModule: Module = {
       }),
     ]);
     const submissions = await submissionSummary(schoolId, classSubjects);
-    return { role, reportCards: reportCards.map((rc) => ({ ...rc, gpa: gpaOf(rc.items) })), config, submissions };
+    const { school, reportCardConfig } = await schoolAndReportCardConfig(schoolId, section);
+    return { role, reportCards: reportCards.map((rc) => ({ ...rc, gpa: gpaOf(rc.items) })), config, submissions, school, reportCardConfig };
   },
 
   async get(ctx) {
@@ -128,6 +155,7 @@ export const resultsModule: Module = {
       },
     });
     if (!rc) throw new Error("Report card not found");
+    const { school, reportCardConfig } = await schoolAndReportCardConfig(ctx.session.user.schoolId, ctx.session.user.student?.section);
     // Students/parents must also pass the fee gate (published + paid/overridden).
     if (role === "STUDENT" || role === "PARENT") {
       // resolveResultsAccess already fully governs results gating (its own
@@ -159,11 +187,11 @@ export const resultsModule: Module = {
           err.status = 403;
           throw err;
         }
-        return { ...rc, items: ownItems, gpa: (await gpaCalculator(ctx.session.user.schoolId))(ownItems) };
+        return { ...rc, items: ownItems, gpa: (await gpaCalculator(ctx.session.user.schoolId))(ownItems), school, reportCardConfig };
       }
-      return { ...rc, gpa: (await gpaCalculator(ctx.session.user.schoolId))(rc.items) };
+      return { ...rc, gpa: (await gpaCalculator(ctx.session.user.schoolId))(rc.items), school, reportCardConfig };
     }
-    return { ...rc, gpa: (await gpaCalculator(ctx.session.user.schoolId))(rc.items) };
+    return { ...rc, gpa: (await gpaCalculator(ctx.session.user.schoolId))(rc.items), school, reportCardConfig };
   },
 
   actions: {
@@ -217,10 +245,14 @@ export const resultsModule: Module = {
       const rosterIds = new Set(roster.map((student) => student.id));
       if (rows.some((row) => !rosterIds.has(row.studentId))) throw new Error("Scores can only be entered for active students in this class");
 
-      // Locked once submitted (until an admin reopens).
+      // Locked once submitted (until an admin reopens), and outside the
+      // calendar's results-entry window (owner/admin can still enter/correct
+      // scores outside the window — only teacher entry is auto-locked).
       if (teacher) {
         const locked = await prisma.subjectScore.findFirst({ where: { classSubjectId, termId, submitted: true }, take: 1 });
         if (locked) throw new Error("These scores have been submitted to the admin and are locked. Ask an admin to reopen them.");
+        const windowOpen = await assessmentWindowOpen(schoolId, "RESULTS", { classSubjectId, section: classSubject.classGroup.level.section });
+        if (!windowOpen) throw new Error("The results entry window is closed for this term.");
       }
 
       const config = await getResultConfig(schoolId, classSubject.classGroup.level.section);
@@ -253,14 +285,32 @@ export const resultsModule: Module = {
       const classSubjectId = str(ctx.body.classSubjectId);
       const termId = str(ctx.body.termId);
       if (!classSubjectId || !termId) throw new Error("classSubjectId and termId required");
+      let own: { id: string; subject: { name: string }; classGroup: { name: string; level: { name: string; section: string } } } | null = null;
       if (teacher) {
-        const own = await prisma.classSubject.findFirst({ where: { id: classSubjectId, teacherId: teacher.id } });
+        own = await prisma.classSubject.findFirst({
+          where: { id: classSubjectId, teacherId: teacher.id },
+          select: { id: true, subject: { select: { name: true } }, classGroup: { select: { name: true, level: { select: { name: true, section: true } } } } },
+        });
         if (!own) throw new Error("You can only submit scores for your own subjects");
+        const windowOpen = await assessmentWindowOpen(schoolId, "RESULTS", { classSubjectId, section: own.classGroup.level.section });
+        if (!windowOpen) throw new Error("The results entry window is closed for this term.");
       }
       const result = await prisma.subjectScore.updateMany({
         where: { schoolId, classSubjectId, termId },
         data: { submitted: true, submittedAt: new Date() },
       });
+
+      // Let the admin/owner team know a subject is ready for review — they
+      // previously had no signal that a teacher had submitted scores.
+      const reviewers = await prisma.user.findMany({ where: { schoolId, role: { in: ["OWNER", "ADMIN"] }, status: "ACTIVE" }, select: { id: true } });
+      if (reviewers.length) {
+        const label = own ? `${own.subject.name} — ${own.classGroup.level.name} ${own.classGroup.name}` : "A subject";
+        await dispatchToMany(
+          reviewers.map((r) => r.id),
+          { schoolId, type: "results", title: "Results submitted for review", body: `${label} results have been submitted and are ready to review.`, link: "/portal/results" },
+        );
+      }
+
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "results.scoresSubmitted", entityType: "ClassSubject", entityId: classSubjectId, meta: { termId, count: result.count } });
       return { count: result.count };
     },
@@ -310,6 +360,43 @@ export const resultsModule: Module = {
         create: { schoolId, section, caCap, examCap, components: components as never },
       });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "results.configUpdated", entityType: "School", entityId: schoolId, meta: { section: section || "(school-wide)", caCap, examCap, count: components.length } });
+      return config;
+    },
+
+    // The report-card visual builder: which sections render on a printed
+    // report card, and its signature lines. Readable by everyone with
+    // reportcards:view (the PDF renderer needs it); editable by OWNER/ADMIN.
+    getReportCardConfig: async (ctx) => {
+      can(ctx, "reportcards:view");
+      const schoolId = ctx.session.user.schoolId;
+      const section = (await resolveSection(ctx)) ?? str(ctx.query.get("section")) ?? undefined;
+      const { reportCardConfig } = await schoolAndReportCardConfig(schoolId, section);
+      return reportCardConfig;
+    },
+
+    saveReportCardConfig: async (ctx) => {
+      can(ctx, "results:publish");
+      const schoolId = ctx.session.user.schoolId;
+      const section = str(ctx.body.section) ?? "";
+      const bool = (v: unknown, fallback: boolean) => (typeof v === "boolean" ? v : fallback);
+      const signatureLabels = Array.isArray(ctx.body.signatureLabels)
+        ? (ctx.body.signatureLabels as unknown[]).map((s) => String(s).trim()).filter(Boolean).slice(0, 4)
+        : ["Class Teacher", "Principal"];
+      const data = {
+        showCognitive: bool(ctx.body.showCognitive, true),
+        showPsychomotor: bool(ctx.body.showPsychomotor, true),
+        showAffective: bool(ctx.body.showAffective, true),
+        showAttendance: bool(ctx.body.showAttendance, true),
+        showLogo: bool(ctx.body.showLogo, true),
+        showWatermark: bool(ctx.body.showWatermark, false),
+        signatureLabels: signatureLabels.length ? (signatureLabels as never) : (["Class Teacher", "Principal"] as never),
+      };
+      const config = await prisma.reportCardConfig.upsert({
+        where: { schoolId_section: { schoolId, section } },
+        update: data,
+        create: { schoolId, section, ...data },
+      });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "results.reportCardConfigUpdated", entityType: "School", entityId: schoolId, meta: { section: section || "(school-wide)" } });
       return config;
     },
 

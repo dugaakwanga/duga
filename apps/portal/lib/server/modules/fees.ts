@@ -68,6 +68,17 @@ async function refreshInvoice(invoiceId: string) {
   return prisma.invoice.update({ where: { id: invoiceId }, data: { paidAmount: paid, balance: Math.max(balance, 0), status } });
 }
 
+// Recompute one installment's paid amount / status from its successful
+// payments, flagging it OVERDUE once its due date has passed unpaid.
+async function refreshInstallment(installmentId: string) {
+  const installment = await prisma.installment.findUnique({ where: { id: installmentId }, include: { payments: true } });
+  if (!installment) return installment;
+  const paid = installment.payments.filter((p) => p.status === "SUCCESS").reduce((a, p) => a + Number(p.amount), 0);
+  const remaining = Number(installment.amount) - paid;
+  const status = remaining <= 0 ? "PAID" : paid > 0 ? "PARTIAL" : installment.dueDate < new Date() ? "OVERDUE" : "PENDING";
+  return prisma.installment.update({ where: { id: installmentId }, data: { paidAmount: paid, status } });
+}
+
 export const feesModule: Module = {
   async list(ctx) {
     can(ctx, "fees:view");
@@ -77,7 +88,7 @@ export const feesModule: Module = {
     if (role === "STUDENT") {
       const invoices = await prisma.invoice.findMany({
         where: { schoolId, studentId: ctx.session.user.student!.id },
-        include: { items: true, payments: { orderBy: { createdAt: "desc" } }, term: true },
+        include: { items: true, payments: { orderBy: { createdAt: "desc" } }, term: true, installmentPlan: { include: { installments: { orderBy: { sequence: "asc" } } } } },
         orderBy: { createdAt: "desc" },
       });
       return { role, invoices };
@@ -86,7 +97,7 @@ export const feesModule: Module = {
       const links = await prisma.studentParent.findMany({ where: { parentId: ctx.session.user.parent!.id }, select: { studentId: true } });
       const invoices = await prisma.invoice.findMany({
         where: { schoolId, studentId: { in: links.map((l) => l.studentId) } },
-        include: { items: true, student: { include: { user: { select: { firstName: true, lastName: true } } } }, payments: { orderBy: { createdAt: "desc" } }, term: true },
+        include: { items: true, student: { include: { user: { select: { firstName: true, lastName: true } } } }, payments: { orderBy: { createdAt: "desc" } }, term: true, installmentPlan: { include: { installments: { orderBy: { sequence: "asc" } } } } },
         orderBy: { createdAt: "desc" },
       });
       return { role, invoices };
@@ -102,7 +113,7 @@ export const feesModule: Module = {
     const { totalAmount, paidAmount, balance } = agg._sum;
     const invoices = await prisma.invoice.findMany({
       where: { schoolId, ...studentSectionWhere },
-      include: { student: { include: { user: { select: { firstName: true, lastName: true } } } }, term: true, payments: true, items: true },
+      include: { student: { include: { user: { select: { firstName: true, lastName: true } } } }, term: true, payments: true, items: true, installmentPlan: { include: { installments: { orderBy: { sequence: "asc" } } } } },
       orderBy: { createdAt: "desc" },
       take: 400,
     });
@@ -151,7 +162,7 @@ export const feesModule: Module = {
         // Students/parents can only reach their own invoices.
         ...(role === "STUDENT" || role === "PARENT" ? await studentScope(ctx) : {}),
       },
-      include: { items: true, payments: true, student: { include: { user: { select: { firstName: true, lastName: true } } } }, term: true },
+      include: { items: true, payments: true, student: { include: { user: { select: { firstName: true, lastName: true } } } }, term: true, installmentPlan: { include: { installments: { orderBy: { sequence: "asc" } } } } },
     });
     if (!invoice) throw new Error("Invoice not found");
     return invoice;
@@ -222,6 +233,65 @@ export const feesModule: Module = {
       }
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.invoicesGenerated", entityType: "Invoice", meta: { termId, classGroupId, created } });
       return { created };
+    },
+
+    // Split an invoice's total into N dated tranches, prorated evenly across
+    // its term's calendar (or ~30-day steps when the term has no dates set)
+    // unless the bursar supplies custom per-tranche amounts.
+    createInstallmentPlan: async (ctx) => {
+      await assertFinanceManager(ctx);
+      const schoolId = ctx.session.user.schoolId;
+      const invoiceId = str(ctx.body.invoiceId) ?? ctx.id;
+      const installmentCount = Math.max(2, Math.min(12, Math.trunc(num(ctx.body.installmentCount) ?? 0)));
+      if (!invoiceId) throw new Error("invoiceId required");
+      if (!num(ctx.body.installmentCount)) throw new Error("installmentCount must be at least 2");
+      const invoice = await prisma.invoice.findFirst({ where: { id: invoiceId, schoolId }, include: { term: true, installmentPlan: true } });
+      if (!invoice) throw new Error("Invoice not found");
+      if (invoice.installmentPlan) throw new Error("This invoice already has an installment plan");
+
+      const total = Number(invoice.totalAmount);
+      const customAmounts = Array.isArray(ctx.body.amounts) ? (ctx.body.amounts as unknown[]).map((a) => Number(a)) : null;
+      let amounts: number[];
+      if (customAmounts && customAmounts.length === installmentCount && customAmounts.every((a) => Number.isFinite(a) && a > 0)) {
+        const sum = Math.round(customAmounts.reduce((a, b) => a + b, 0) * 100) / 100;
+        if (Math.abs(sum - total) > 1) throw new Error("Custom installment amounts must sum to the invoice total");
+        amounts = customAmounts;
+      } else {
+        const base = Math.floor((total / installmentCount) * 100) / 100;
+        amounts = Array.from({ length: installmentCount }, (_, i) =>
+          i === installmentCount - 1 ? Math.round((total - base * (installmentCount - 1)) * 100) / 100 : base,
+        );
+      }
+
+      const start = invoice.term?.startDate ?? new Date();
+      const end = invoice.term?.endDate && invoice.term.endDate > start ? invoice.term.endDate : new Date(start.getTime() + installmentCount * 30 * 86400000);
+      const span = end.getTime() - start.getTime();
+      const dueDates = Array.from({ length: installmentCount }, (_, i) => new Date(start.getTime() + (span * (i + 1)) / installmentCount));
+
+      const plan = await prisma.installmentPlan.create({
+        data: {
+          schoolId,
+          invoiceId,
+          totalAmount: total,
+          installmentCount,
+          createdByUserId: ctx.session.user.id,
+          installments: { create: amounts.map((amount, i) => ({ sequence: i + 1, amount, dueDate: dueDates[i]! })) },
+        },
+        include: { installments: { orderBy: { sequence: "asc" } } },
+      });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.installmentPlanCreated", entityType: "InstallmentPlan", entityId: plan.id, meta: { invoiceId, installmentCount } });
+      return plan;
+    },
+
+    deleteInstallmentPlan: async (ctx) => {
+      await assertFinanceManager(ctx);
+      const schoolId = ctx.session.user.schoolId;
+      const plan = await prisma.installmentPlan.findFirst({ where: { id: ctx.id, schoolId }, include: { installments: { include: { payments: true } } } });
+      if (!plan) throw new Error("Installment plan not found");
+      if (plan.installments.some((i) => i.payments.length > 0)) throw new Error("This plan has recorded payments — remove them first");
+      await prisma.installmentPlan.delete({ where: { id: ctx.id } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.installmentPlanDeleted", entityType: "InstallmentPlan", entityId: ctx.id });
+      return { ok: true };
     },
 
     addFeeType: async (ctx) => {
@@ -342,8 +412,17 @@ export const feesModule: Module = {
         if (!linked) throw new Error("Not your invoice");
       }
 
-      const payAmount = amount ?? Number(invoice.balance);
-      if (payAmount <= 0) throw new Error("Invoice already settled");
+      // Optional: pay one tranche of the invoice's installment plan.
+      const installmentId = str(ctx.body.installmentId);
+      let installmentRow: Awaited<ReturnType<typeof prisma.installment.findFirst>> = null;
+      if (installmentId) {
+        installmentRow = await prisma.installment.findFirst({ where: { id: installmentId, plan: { invoiceId: invoice.id } } });
+        if (!installmentRow) throw new Error("Installment not found on this invoice");
+      }
+      const remainingCap = installmentRow ? Number(installmentRow.amount) - Number(installmentRow.paidAmount) : Number(invoice.balance);
+      const payAmount = amount ?? remainingCap;
+      if (payAmount <= 0) throw new Error(installmentRow ? "This installment is already settled" : "Invoice already settled");
+      if (payAmount > remainingCap) throw new Error(installmentRow ? "Payment amount cannot exceed this installment's outstanding balance" : "Payment amount cannot exceed the outstanding balance");
       if (payAmount > Number(invoice.balance)) throw new Error("Payment amount cannot exceed the outstanding balance");
       const reference = generateReference("PYM");
 
@@ -359,6 +438,7 @@ export const feesModule: Module = {
           reference,
           gateway: "PAYSTACK",
           meta: { initiator: ctx.session.user.id },
+          installmentId: installmentRow?.id,
         },
       });
 
@@ -366,8 +446,9 @@ export const feesModule: Module = {
         // Development mock: treat as success immediately and return a mock URL.
         await prisma.payment.update({ where: { id: payment.id }, data: { status: "SUCCESS", paidAt: new Date(), gatewayRef: `MOCK-${reference}`, receiptNumber: `RCPT-${reference.slice(-6)}` } });
         const access = await grantFeeAccessForPayment(schoolId, invoice.studentId, payAmount);
-        await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.paymentMocked", entityType: "Payment", entityId: payment.id, meta: { reference, amount: payAmount } });
+        await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.paymentMocked", entityType: "Payment", entityId: payment.id, meta: { reference, amount: payAmount, installmentId: installmentRow?.id } });
         const updated = await refreshInvoice(invoice.id);
+        if (installmentRow) await refreshInstallment(installmentRow.id);
         if (Number(updated?.balance ?? 0) > 0 && updated) await notifyParentsOfBalance(schoolId, invoice.studentId, updated);
         const student = await prisma.student.findUnique({ where: { id: invoice.studentId }, include: { user: true } });
         if (student) {
@@ -414,6 +495,7 @@ export const feesModule: Module = {
       }
 
       const invoice = await refreshInvoice(payment.invoiceId!);
+      if (payment.installmentId) await refreshInstallment(payment.installmentId);
       const access = await grantFeeAccessForPayment(ctx.session.user.schoolId, payment.studentId, Number(payment.amount));
       if (invoice && Number(invoice.balance) > 0) await notifyParentsOfBalance(ctx.session.user.schoolId, payment.studentId, invoice);
       await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "fees.paymentVerified", entityType: "Payment", entityId: payment.id, meta: { reference } });
@@ -473,12 +555,23 @@ export const feesModule: Module = {
       if (coversTo && Number.isNaN(coversTo.getTime())) throw new Error("Invalid coversTo date");
       if (coversFrom && Number.isNaN(coversFrom.getTime())) throw new Error("Invalid coversFrom date");
 
+      // Optional: apply this payment against one tranche of the invoice's
+      // installment plan instead of the invoice as a whole.
+      const installmentId = str(ctx.body.installmentId);
+      let installmentRow: Awaited<ReturnType<typeof prisma.installment.findFirst>> = null;
+
       let studentId: string;
       let invoiceRow: Awaited<ReturnType<typeof prisma.invoice.findFirst>> = null;
       if (invoiceId) {
         invoiceRow = await prisma.invoice.findFirst({ where: { id: invoiceId, schoolId } });
         if (!invoiceRow) throw new Error("Invoice not found");
         if (amount > Number(invoiceRow.balance)) throw new Error("Amount must not exceed the outstanding balance on this invoice");
+        if (installmentId) {
+          installmentRow = await prisma.installment.findFirst({ where: { id: installmentId, plan: { invoiceId: invoiceRow.id } } });
+          if (!installmentRow) throw new Error("Installment not found on this invoice");
+          const remaining = Number(installmentRow.amount) - Number(installmentRow.paidAmount);
+          if (amount > remaining) throw new Error("Amount must not exceed the outstanding balance on this installment");
+        }
         studentId = invoiceRow.studentId;
       } else {
         // No invoice to apply this to — a general offline payment directly
@@ -511,13 +604,15 @@ export const feesModule: Module = {
           recordedByUserId: ctx.session.user.id,
           coversFrom,
           coversTo,
+          installmentId: installmentRow?.id,
         },
       });
       const invoice = invoiceRow ? await refreshInvoice(invoiceRow.id) : null;
+      const installment = installmentRow ? await refreshInstallment(installmentRow.id) : null;
       const access = await grantFeeAccessForPayment(schoolId, studentId, amount, coversTo);
       if (invoice && Number(invoice.balance) > 0) await notifyParentsOfBalance(schoolId, studentId, invoice);
-      await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.manualPayment", entityType: "Payment", entityId: payment.id, meta: { amount, coversTo: coversTo?.toISOString() } });
-      return { payment, invoice, access };
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.manualPayment", entityType: "Payment", entityId: payment.id, meta: { amount, coversTo: coversTo?.toISOString(), installmentId: installmentRow?.id } });
+      return { payment, invoice, installment, access };
     },
   },
 };

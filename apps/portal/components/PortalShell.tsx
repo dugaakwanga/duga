@@ -40,6 +40,7 @@ const STAFF_NAV: NavSection[] = [
     items: [
       { href: "/portal/students", label: "Students", icon: "students", perm: "students:view", feature: "students" },
       { href: "/portal/classes", label: "Classes", icon: "classes", perm: "classes:view", feature: "classes" },
+      { href: "/portal/calendar", label: "Calendar", icon: "timetable", perm: "calendar:view" },
       { href: "/portal/timetable", label: "Timetable", icon: "timetable", perm: "timetable:view", feature: "timetable" },
       { href: "/portal/learning", label: "Learning", icon: "notes", perm: "learning:view", feature: "learning" },
       { href: "/portal/attendance", label: "Attendance", icon: "attendance", perm: "attendance:view", feature: "attendance" },
@@ -131,6 +132,7 @@ const STUDENT_NAV: NavSection[] = [
       { href: "/portal/results", label: "My Results", icon: "results", perm: "results:view", feature: "results" },
       { href: "/portal/attendance", label: "My Attendance", icon: "attendance", perm: "attendance:view", feature: "attendance" },
       { href: "/portal/timetable", label: "My Timetable", icon: "timetable", perm: "timetable:view", feature: "timetable" },
+      { href: "/portal/calendar", label: "School Calendar", icon: "timetable", perm: "calendar:view" },
       { href: "/portal/fees", label: "My Fees", icon: "fees", perm: "fees:view", feature: "fees", subfeature: "finance" },
       { href: "/portal/pta", label: "PTA", icon: "announcements", perm: "pta:view", feature: "pta" },
       { href: "/portal/library", label: "Library", icon: "notes", perm: "library:view", feature: "library" },
@@ -163,6 +165,7 @@ const PARENT_NAV: NavSection[] = [
       { href: "/portal/results", label: "Results & Report Cards", icon: "results", perm: "results:view", feature: "results" },
       { href: "/portal/attendance", label: "Attendance", icon: "attendance", perm: "attendance:view", feature: "attendance" },
       { href: "/portal/timetable", label: "Timetable", icon: "timetable", perm: "timetable:view", feature: "timetable" },
+      { href: "/portal/calendar", label: "School Calendar", icon: "timetable", perm: "calendar:view" },
       { href: "/portal/fees", label: "Fees & Payments", icon: "fees", perm: "fees:view", feature: "fees", subfeature: "finance" },
     ],
   },

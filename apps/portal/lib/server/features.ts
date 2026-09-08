@@ -81,7 +81,7 @@ export async function featuresForRole(schoolId: string, role: Role): Promise<str
       : role === "ADMIN"
         ? cfg.admin
         : role === "BURSAR"
-          ? ["fees", "reports", "staff", "payroll"]
+          ? ["fees", "reports", "staff", "payroll", "students", "classes"]
         : role === "SECURITY"
           ? ["security"]
         : role === "TEACHER"

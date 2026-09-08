@@ -89,7 +89,10 @@ export type Permission =
   | "ai:use"
   // Gate / security (student clock-in/out, permitted exit, visitors)
   | "gate:scan"
-  | "gate:view";
+  | "gate:view"
+  // Central school calendar (term dates, holidays, assessment windows)
+  | "calendar:view"
+  | "calendar:manage";
 
 export const PERMISSIONS: Permission[] = [
   "students:view",
@@ -152,6 +155,8 @@ export const PERMISSIONS: Permission[] = [
   "ai:use",
   "gate:scan",
   "gate:view",
+  "calendar:view",
+  "calendar:manage",
 ];
 
 const rolePermissions: Record<Role, Permission[]> = {
@@ -211,10 +216,26 @@ const rolePermissions: Record<Role, Permission[]> = {
     "ai:use",
     "gate:scan",
     "gate:view",
+    "calendar:view",
+    "calendar:manage",
   ],
-  // Bursar access is intentionally limited to finance. The owner can narrow
-  // this further through the bursar permission setting in Payroll.
-  BURSAR: ["fees:view", "fees:manage", "fees:collect", "financials:view", "payroll:view", "payroll:manage", "ai:use"],
+  // Bursar access is intentionally limited to finance, plus view-only
+  // students/classes for billing, invoicing and clearance tracking (never
+  // add/edit/delete — "manage" permissions are deliberately withheld). The
+  // owner can narrow this further through the bursar permission setting in
+  // Payroll.
+  BURSAR: [
+    "students:view",
+    "classes:view",
+    "fees:view",
+    "fees:manage",
+    "fees:collect",
+    "financials:view",
+    "payroll:view",
+    "payroll:manage",
+    "ai:use",
+    "calendar:view",
+  ],
   TEACHER: [
     "learning:manage",
     "learning:view",
@@ -241,7 +262,11 @@ const rolePermissions: Record<Role, Permission[]> = {
     "library:view",
     "library:manage",
     "ai:use",
+    "calendar:view",
   ],
+  // Parents may track their children's learning but must never be able to
+  // submit assignments, take CBT tests, or join live classroom sessions —
+  // those are student-only actions per the RBAC spec.
   PARENT: [
     "students:view",
     "learning:view",
@@ -255,14 +280,12 @@ const rolePermissions: Record<Role, Permission[]> = {
     "timetable:view",
     "hostel:view",
     "transport:view",
-    "live:join",
-    "tests:take",
-    "assignments:submit",
     "elearn:view",
     "games:play",
     "pta:view",
     "library:view",
     "ai:use",
+    "calendar:view",
   ],
   STUDENT: [
     "learning:view",
@@ -284,9 +307,14 @@ const rolePermissions: Record<Role, Permission[]> = {
     "pta:view",
     "library:view",
     "ai:use",
+    "calendar:view",
   ],
   // Gate staff: scan students in/out, log permitted exits and visitors.
-  // Deliberately narrow — no access to grades, fees or messaging.
+  // Deliberately narrow — no access to grades, fees or messaging. Identity
+  // verification uses the gate module's own admission-number lookup (see
+  // security.ts), not the generic students:view permission — that would also
+  // expose class drill-downs and fee data the spec keeps off-limits to
+  // Security.
   SECURITY: ["gate:scan", "gate:view"],
 };
 

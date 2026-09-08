@@ -14,7 +14,7 @@ interface StaffUser {
   status: string;
   firstName: string;
   lastName: string;
-  teacher?: { staffNumber: string; specialty: string | null; subjectIds?: string[] | null; sections?: string[] | null; designation: string | null } | null;
+  teacher?: { staffNumber: string; specialty: string | null; subjectIds?: string[] | null; sections?: string[] | null; designation: string | null; maxPeriodsPerDay?: number | null } | null;
   admin?: { designation: string | null; sections?: string[] | null; staffNumber?: string | null } | null;
 }
 interface Subject { id: string; name: string; section: string }
@@ -46,6 +46,9 @@ export default function StaffPage() {
   const [roleSaving, setRoleSaving] = useState(false);
   const [roleError, setRoleError] = useState<string | null>(null);
   const canManage = (user: StaffUser) => currentRole === "OWNER" || !["OWNER", "ADMIN", "BURSAR"].includes(user.role);
+  // Only OWNER/ADMIN hold "staff:manage" — everyone else who can reach this
+  // page (e.g. BURSAR, per its view-only staff list) must never see "Add staff".
+  const canAddStaff = currentRole === "OWNER" || currentRole === "ADMIN";
 
   async function load() {
     setLoading(true);
@@ -103,6 +106,7 @@ export default function StaffPage() {
       phone: u.phone ?? "",
       specialty: u.teacher?.specialty ?? "",
       designation: u.teacher?.designation ?? u.admin?.designation ?? "",
+      maxPeriodsPerDay: u.teacher?.maxPeriodsPerDay != null ? String(u.teacher.maxPeriodsPerDay) : "",
     });
     setSelectedSubjectIds(u.teacher?.subjectIds ?? []);
     setSelectedSections(u.teacher?.sections ?? u.admin?.sections ?? []);
@@ -169,7 +173,7 @@ export default function StaffPage() {
       <PageHeader
         title="Staff"
         subtitle="Teachers, administrators, bursars and the proprietor."
-        actions={<Button onClick={() => { setEditing(null); setForm({}); setSelectedSubjectIds([]); setSelectedSections([]); setOpen(true); }}><Icon name="plus" size={16} /> Add staff</Button>}
+        actions={canAddStaff ? <Button onClick={() => { setEditing(null); setForm({}); setSelectedSubjectIds([]); setSelectedSections([]); setOpen(true); }}><Icon name="plus" size={16} /> Add staff</Button> : undefined}
       />
       {error && <Alert tone="danger">{error}</Alert>}
       {notice && <Alert tone="success">{notice}</Alert>}
@@ -297,6 +301,11 @@ export default function StaffPage() {
           <Field label="Specialty">
             <Input value={form.specialty ?? ""} onChange={(e) => setForm({ ...form, specialty: e.target.value })} />
           </Field>
+          {(form.role === "TEACHER" || editing?.role === "TEACHER") && (
+            <Field label="Max periods per day" hint="Used by the AI timetable generator to spread this teacher's periods out. Leave blank for no extra cap.">
+              <Input type="number" min={1} max={12} value={form.maxPeriodsPerDay ?? ""} onChange={(e) => setForm({ ...form, maxPeriodsPerDay: e.target.value })} placeholder="No cap" />
+            </Field>
+          )}
           {((form.role === "TEACHER" || editing?.role === "TEACHER") || (currentRole === "OWNER" && [form.role, editing?.role].some((role) => role === "ADMIN" || role === "BURSAR"))) && (
             <div className="staff-subject-picker">
               <div className="staff-subject-picker__heading">

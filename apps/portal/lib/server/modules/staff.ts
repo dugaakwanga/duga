@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@duga/core/server";
 import { logAudit } from "@duga/core/server";
 import type { Module } from ".";
-import { can, str, assertContactFree, resolveSection, sectionArray, sectionsOfAdmin, sectionsOfTeacher } from "../helpers";
+import { can, str, num, assertContactFree, resolveSection, sectionArray, sectionsOfAdmin, sectionsOfTeacher } from "../helpers";
 
 function assertStaffTargetAccess(actorRole: string, targetRole: string) {
   if (actorRole !== "OWNER" && ["OWNER", "ADMIN", "BURSAR"].includes(targetRole)) {
@@ -308,6 +308,13 @@ export const staffModule: Module = {
         }
         if (b.specialty) await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { specialty: String(b.specialty) } });
         if (b.designation) await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { designation: String(b.designation) } });
+        // Cap used by the AI timetable generator to spread this teacher's
+        // periods across the week rather than stacking them on one day.
+        if (b.maxPeriodsPerDay !== undefined) {
+          const cap = num(b.maxPeriodsPerDay);
+          if (cap !== undefined && (cap < 1 || cap > 12)) throw new Error("Max periods per day must be between 1 and 12");
+          await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { maxPeriodsPerDay: cap ?? null } });
+        }
       }
       if (b.subjectIds !== undefined) {
         const effectiveSections = b.sections !== undefined ? assignedSections : sectionArray(target.teacher?.sections);

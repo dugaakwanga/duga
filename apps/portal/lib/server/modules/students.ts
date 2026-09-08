@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { prisma } from "@duga/core/server";
-import { signGateToken } from "@duga/core";
+import { signGateToken, hasPermission } from "@duga/core";
 import type { Module } from ".";
 import { can, pick, str, num, bool, idArray, studentScope, feeInfoOf, assertContactFree, resolveSection } from "../helpers";
 
@@ -122,7 +122,12 @@ export const studentsModule: Module = {
       orderBy: { admissionNumber: "asc" },
       take: 300,
     });
-    return { items: students.map((s) => ({ ...s, fee: feeInfoOf(s) })), total: students.length };
+    return {
+      items: students.map((s) => ({ ...s, fee: feeInfoOf(s) })),
+      total: students.length,
+      role: ctx.session.user.role,
+      canManage: hasPermission(ctx.session.user.role, "students:manage"),
+    };
   },
 
   async get(ctx) {

@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PageHeader, Card, Badge, Table, Alert, Spinner, EmptyState, Button, Field, Select, Input, ProgressBar, Icon } from "@duga/ui";
 import { api } from "@/lib/client/api";
 import { useSection } from "@/components/SectionContext";
+import { downloadReportCardPdf, type ReportCardPdfConfig, type ReportCardPdfSchool } from "@/lib/client/reportCardPdf";
 
 interface ResultComponent {
   name: string;
@@ -35,7 +36,7 @@ interface ReportCard {
   classGroup: { level: { name: string }; name: string } | null;
   access?: "granted" | "locked";
   gatedReason?: string | null;
-  items?: Array<{ id: string; subject: { name: string }; ca: number | null; exam: number | null; total: number | null; grade: string | null }> | null;
+  items?: Array<{ id: string; subject: { name: string }; ca: number | null; exam: number | null; total: number | null; grade: string | null; remark?: string | null; position?: number | null }> | null;
   psychomotor?: Record<string, string> | null;
   coCurricular?: Record<string, string> | null;
   attendanceRemark?: string | null;
@@ -130,6 +131,25 @@ export default function ResultsPage() {
   const [configOpen, setConfigOpen] = useState(false);
   const [draft, setDraft] = useState<{ caCap: number; examCap: number; components: ResultComponent[] }>({ caCap: 40, examCap: 60, components: [] });
 
+  // Report card builder: which sections render on the downloaded PDF, plus
+  // the school letterhead needed to render it.
+  const [school, setSchool] = useState<ReportCardPdfSchool | null>(null);
+  const [reportCardConfig, setReportCardConfig] = useState<ReportCardPdfConfig | null>(null);
+  const [builderOpen, setBuilderOpen] = useState(false);
+  const [builderDraft, setBuilderDraft] = useState<ReportCardPdfConfig | null>(null);
+  const [builderSaving, setBuilderSaving] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  // Auto-save drafts while a teacher is entering scores — the entry grid
+  // previously only held edits in local state with no save path at all
+  // until "Submit to admin" (which just flips a lock flag on rows that,
+  // without this, were never created). A short debounce after the last
+  // keystroke persists the draft via the same saveScores action, independent
+  // of the explicit submit step.
+  const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipNextAutoSave = useRef(false);
+
   function esc(value: unknown) {
     return String(value ?? "—").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] ?? c));
   }
@@ -214,6 +234,50 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
     popup.document.close();
   }
 
+  async function downloadPdf(rc: ReportCard) {
+    if (!school || !reportCardConfig) return alert("Report card settings are still loading — try again in a moment.");
+    setDownloadingId(rc.id);
+    try {
+      await downloadReportCardPdf(school, reportCardConfig, {
+        student: rc.student.user,
+        className: rc.classGroup ? `${rc.classGroup.level.name} ${rc.classGroup.name}` : null,
+        term: rc.term,
+        average: rc.average,
+        position: rc.position,
+        classSize: rc.classSize ?? null,
+        gpa: rc.gpa ?? null,
+        items: rc.items ? rc.items.map((i) => ({ ...i, remark: i.remark ?? null, position: i.position ?? null })) : null,
+        psychomotor: rc.psychomotor ?? null,
+        coCurricular: rc.coCurricular ?? null,
+        attendanceRemark: rc.attendanceRemark ?? null,
+        remark: rc.remark ?? null,
+      });
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setDownloadingId(null);
+    }
+  }
+
+  function openBuilder() {
+    setBuilderDraft(reportCardConfig ?? { showCognitive: true, showPsychomotor: true, showAffective: true, showAttendance: true, showLogo: true, showWatermark: false, signatureLabels: ["Class Teacher", "Principal"] });
+    setBuilderOpen(true);
+  }
+
+  async function saveBuilder() {
+    if (!builderDraft) return;
+    setBuilderSaving(true);
+    try {
+      await api("results/saveReportCardConfig", { method: "POST", body: builderDraft });
+      setReportCardConfig(builderDraft);
+      setBuilderOpen(false);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setBuilderSaving(false);
+    }
+  }
+
   async function editDetails(rc: ReportCard) {
     const psychomotorText = window.prompt("Psychomotor ratings (one per line: Skill: Rating)", Object.entries(rc.psychomotor ?? {}).map(([k, v]) => `${k}: ${v}`).join("\n"));
     if (psychomotorText === null) return;
@@ -252,7 +316,7 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
 
   useEffect(() => {
     void section;
-    api<{ role: string; reportCards?: ReportCard[]; classSubjects?: TeacherClassSubject[]; terms?: TermOption[]; activeTermId?: string; config?: ResultConfig; submissions?: Record<string, SubStatus> }>("results")
+    api<{ role: string; reportCards?: ReportCard[]; classSubjects?: TeacherClassSubject[]; terms?: TermOption[]; activeTermId?: string; config?: ResultConfig; submissions?: Record<string, SubStatus>; school?: ReportCardPdfSchool; reportCardConfig?: ReportCardPdfConfig }>("results")
       .then((d) => {
         setRole(d.role);
         setCards(d.reportCards ?? []);
@@ -261,6 +325,8 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
         setActiveTermId(d.activeTermId ?? "");
         setConfig(d.config ?? null);
         setSubmissions(d.submissions ?? {});
+        setSchool(d.school ?? null);
+        setReportCardConfig(d.reportCardConfig ?? null);
         const focus = new URLSearchParams(window.location.search).get("classSubject");
         if (focus && d.role === "TEACHER" && d.activeTermId) openSheet(focus, d.activeTermId);
       })
@@ -282,6 +348,8 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
         method: "POST",
         body: { classSubjectId: csId, termId },
       });
+      skipNextAutoSave.current = true;
+      setAutoSaveStatus("idle");
       setSheet(data);
       setConfig(data.config);
     } catch (e) {
@@ -290,6 +358,40 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
       setSheetLoading(false);
     }
   }
+
+  // Debounced auto-save: 1.5s after the last edit, persist every row's
+  // current scores as a draft (submitted stays false — only the explicit
+  // "Submit to admin" button locks them). Skipped for the load that just
+  // populated the sheet, and once it's already submitted/locked.
+  useEffect(() => {
+    if (!sheet || sheet.submitted) return;
+    if (skipNextAutoSave.current) {
+      skipNextAutoSave.current = false;
+      return;
+    }
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(async () => {
+      setAutoSaveStatus("saving");
+      try {
+        await api("results/saveScores", {
+          method: "POST",
+          loading: false,
+          body: {
+            classSubjectId: sheet.classSubject.id,
+            termId: activeTermId,
+            rows: sheet.rows.map((r) => ({ studentId: r.studentId, scores: r.scores })),
+          },
+        });
+        setAutoSaveStatus("saved");
+      } catch {
+        setAutoSaveStatus("error");
+      }
+    }, 1500);
+    return () => {
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sheet?.rows]);
 
   function setRow(r: EntryRow, comp: string, val: string) {
     if (!sheet) return;
@@ -306,6 +408,14 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
     setError(null);
     setRankMsg("");
     try {
+      // Flush the latest edits first — submitting shouldn't race the
+      // debounced auto-save and lock in stale (or no) scores.
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+      await api("results/saveScores", {
+        method: "POST",
+        loading: false,
+        body: { classSubjectId: sheet.classSubject.id, termId: activeTermId, rows: sheet.rows.map((r) => ({ studentId: r.studentId, scores: r.scores })) },
+      });
       await api("results/submitScores", { method: "POST", body: { classSubjectId: sheet.classSubject.id, termId: activeTermId } });
       setSheet((s) => (s ? { ...s, submitted: true, rows: s.rows.map((r) => ({ ...r, submitted: true })) } : s));
       setRankMsg("Submitted to the admin. Scores for this subject are now locked.");
@@ -397,9 +507,14 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
         subtitle="Educators enter subject scores, submit them to the administration, and the admin publishes report cards per student."
         actions={
           role === "ADMIN" || role === "OWNER" ? (
-            <Button variant="outline" onClick={openConfig}>
-              Configure result contents
-            </Button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Button variant="outline" onClick={openBuilder}>
+                Report card builder
+              </Button>
+              <Button variant="outline" onClick={openConfig}>
+                Configure result contents
+              </Button>
+            </div>
           ) : undefined
         }
       />
@@ -414,8 +529,11 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
                 <Badge tone="success">Submitted to admin</Badge>
               ) : (
                 <>
+                  {autoSaveStatus === "saving" && <span style={{ fontSize: 12, color: "var(--duga-muted)" }}>Saving draft…</span>}
+                  {autoSaveStatus === "saved" && <span style={{ fontSize: 12, color: "var(--duga-muted)" }}>Draft saved</span>}
+                  {autoSaveStatus === "error" && <span style={{ fontSize: 12, color: "var(--duga-danger, #b91c1c)" }}>Draft not saved — check your connection</span>}
                   <Button variant="accent" size="sm" onClick={submitSheet} disabled={saving || sheetLoading}>
-                    {saving ? "Saving…" : "Submit to admin"}
+                    {saving ? "Submitting…" : "Submit to admin"}
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => setSheet(null)}>Close</Button>
                 </>
@@ -611,7 +729,12 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
                   ))}
                 </Table>
               )}
-              {rc.access === "granted" && <div style={{ marginTop: 12 }}><Button size="sm" variant="outline" onClick={() => printCards([rc])}>Print result</Button></div>}
+              {rc.access === "granted" && (
+                <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+                  <Button size="sm" variant="outline" onClick={() => printCards([rc])}>Print result</Button>
+                  <Button size="sm" variant="outline" loading={downloadingId === rc.id} onClick={() => downloadPdf(rc)}>Download PDF</Button>
+                </div>
+              )}
             </Card>
           ))
         )
@@ -636,6 +759,7 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
                 <td>
                   <div style={{ display: "flex", gap: 6 }}>
                     <Button size="sm" variant="outline" onClick={() => printCards([rc])}>Print</Button>
+                    <Button size="sm" variant="outline" loading={downloadingId === rc.id} onClick={() => downloadPdf(rc)}>PDF</Button>
                     {!rc.isPublished && (role === "ADMIN" || role === "OWNER") && rc.termId && (
                       <Button size="sm" variant="accent" onClick={() => publishStudent(rc)}>Publish</Button>
                     )}
@@ -699,6 +823,54 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
             Add component
           </Button>
           {draft.components.some((c) => !c.name) && <Alert tone="warning">Name every component before saving.</Alert>}
+        </Card>
+      )}
+
+      {/* Admin: report card visual builder — which sections render on the PDF */}
+      {builderOpen && builderDraft && (
+        <Card
+          title="Report card builder"
+          style={{ marginTop: 20 }}
+          actions={
+            <div style={{ display: "flex", gap: 8 }}>
+              <Button variant="ghost" size="sm" onClick={() => setBuilderOpen(false)}>Cancel</Button>
+              <Button size="sm" onClick={saveBuilder} loading={builderSaving}>Save</Button>
+            </div>
+          }
+        >
+          <Alert tone="info">
+            {section
+              ? `Editing the report card layout for ${section} only.`
+              : "Editing the school-wide default layout, used by any section without its own override."}
+          </Alert>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 10, marginTop: 14 }}>
+            {([
+              ["showCognitive", "Cognitive scores (subject table)"],
+              ["showPsychomotor", "Psychomotor domain ratings"],
+              ["showAffective", "Affective domain / co-curricular"],
+              ["showAttendance", "Attendance & conduct remark"],
+              ["showLogo", "School logo"],
+              ["showWatermark", "Watermark"],
+            ] as const).map(([key, label]) => (
+              <label key={key} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}>
+                <input
+                  type="checkbox"
+                  checked={builderDraft[key]}
+                  onChange={(e) => setBuilderDraft({ ...builderDraft, [key]: e.target.checked })}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+          <div style={{ marginTop: 14 }}>
+            <Field label="Signature lines" hint="Up to 4, in order — e.g. Class Teacher, Principal.">
+              <Input
+                value={builderDraft.signatureLabels.join(", ")}
+                onChange={(e) => setBuilderDraft({ ...builderDraft, signatureLabels: e.target.value.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 4) })}
+                placeholder="Class Teacher, Principal"
+              />
+            </Field>
+          </div>
         </Card>
       )}
     </div>

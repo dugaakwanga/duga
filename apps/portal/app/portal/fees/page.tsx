@@ -5,6 +5,21 @@ import { PageHeader, Card, Badge, Table, Alert, Spinner, EmptyState, Stat, Butto
 import { api } from "@/lib/client/api";
 import { useSection } from "@/components/SectionContext";
 
+interface Installment {
+  id: string;
+  sequence: number;
+  amount: string | number;
+  paidAmount: string | number;
+  dueDate: string;
+  status: "PENDING" | "PARTIAL" | "PAID" | "OVERDUE";
+}
+
+interface InstallmentPlan {
+  id: string;
+  installmentCount: number;
+  installments: Installment[];
+}
+
 interface Invoice {
   id: string;
   invoiceNumber: string;
@@ -14,6 +29,7 @@ interface Invoice {
   balance: string | number;
   term: { name: string } | null;
   student?: { user: { firstName: string; lastName: string } };
+  installmentPlan: InstallmentPlan | null;
 }
 
 interface FeeType {
@@ -86,6 +102,11 @@ export default function FeesPage() {
   const [owingStudents, setOwingStudents] = useState<OwingStudent[]>([]);
   const [payTarget, setPayTarget] = useState<string | null>(null);
   const [payForm, setPayForm] = useState({ amount: "", method: "CASH", coversTo: "" });
+  const [installmentTarget, setInstallmentTarget] = useState<Invoice | null>(null);
+  const [installmentCount, setInstallmentCount] = useState("3");
+  const [installmentBusy, setInstallmentBusy] = useState(false);
+  const [installmentPayTarget, setInstallmentPayTarget] = useState<Installment | null>(null);
+  const [installmentPayAmount, setInstallmentPayAmount] = useState("");
   const isStaff = role === "OWNER" || role === "BURSAR";
   const { section } = useSection();
 
@@ -120,6 +141,14 @@ export default function FeesPage() {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [load]);
+
+  // Keep the open installment-plan modal in sync with fresh invoice data
+  // after any create/pay/delete action triggers a reload.
+  useEffect(() => {
+    if (!installmentTarget) return;
+    const fresh = invoices.find((i) => i.id === installmentTarget.id);
+    if (fresh) setInstallmentTarget(fresh);
+  }, [invoices]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function generate() {
     try {
@@ -165,6 +194,78 @@ export default function FeesPage() {
       alert((e as Error).message);
     } finally {
       setPaying(null);
+    }
+  }
+
+  async function createInstallmentPlan() {
+    if (!installmentTarget) return;
+    const count = Number(installmentCount);
+    if (!Number.isInteger(count) || count < 2 || count > 12) return alert("Choose between 2 and 12 installments");
+    setInstallmentBusy(true);
+    try {
+      await api(`fees/${installmentTarget.id}/createInstallmentPlan`, { method: "POST", body: { installmentCount: count } });
+      await load();
+      setInstallmentTarget(null);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setInstallmentBusy(false);
+    }
+  }
+
+  async function deleteInstallmentPlan(planId: string) {
+    if (!confirm("Remove this installment plan? Only plans with no recorded payments can be removed.")) return;
+    setInstallmentBusy(true);
+    try {
+      await api(`fees/${planId}/deleteInstallmentPlan`, { method: "POST", body: {} });
+      await load();
+      setInstallmentTarget(null);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setInstallmentBusy(false);
+    }
+  }
+
+  function openPayInstallment(installment: Installment) {
+    setInstallmentPayTarget(installment);
+    setInstallmentPayAmount(String(Number(installment.amount) - Number(installment.paidAmount)));
+  }
+
+  async function payInstallmentOnline() {
+    if (!installmentTarget || !installmentPayTarget) return;
+    setInstallmentBusy(true);
+    try {
+      const d = await api<{ authorization_url?: string; status?: string }>(`fees/${installmentTarget.id}/initPayment`, {
+        method: "POST",
+        body: { installmentId: installmentPayTarget.id, amount: Number(installmentPayAmount) || undefined },
+      });
+      if (d.authorization_url && d.authorization_url !== "/portal/fees") window.location.href = d.authorization_url;
+      else {
+        alert("Payment recorded.");
+        await load();
+        setInstallmentPayTarget(null);
+      }
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setInstallmentBusy(false);
+    }
+  }
+
+  async function recordInstallmentPaymentStaff() {
+    if (!installmentTarget || !installmentPayTarget) return;
+    const amount = Number(installmentPayAmount);
+    if (!amount || amount <= 0) return alert("Enter a valid amount");
+    setInstallmentBusy(true);
+    try {
+      await api(`fees/${installmentTarget.id}/recordManual`, { method: "POST", body: { amount, installmentId: installmentPayTarget.id, method: "CASH" } });
+      await load();
+      setInstallmentPayTarget(null);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setInstallmentBusy(false);
     }
   }
 
@@ -314,15 +415,22 @@ export default function FeesPage() {
                   <Badge tone={i.status === "PAID" || i.status === "OVERPAID" ? "success" : i.status === "PARTIAL" ? "warning" : "danger"}>{i.status}</Badge>
                 </td>
                 <td>
-                  {i.status !== "PAID" && i.status !== "OVERPAID" && (role === "STUDENT" || role === "PARENT") && (
-                    <Button size="sm" loading={paying === i.id} onClick={() => pay(i.id)}>Pay</Button>
-                  )}
-                  {isStaff && (
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <Button size="sm" variant="outline" loading={paying === i.id} onClick={() => openRecordPayment(i.id)}>Record payment</Button>
-                      <Button size="sm" variant="ghost" loading={paying === i.id} onClick={() => deleteInvoice(i.id)}>Delete</Button>
-                    </div>
-                  )}
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {i.status !== "PAID" && i.status !== "OVERPAID" && (role === "STUDENT" || role === "PARENT") && (
+                      <Button size="sm" loading={paying === i.id} onClick={() => pay(i.id)}>Pay</Button>
+                    )}
+                    {(i.installmentPlan || isStaff) && (
+                      <Button size="sm" variant="outline" onClick={() => setInstallmentTarget(i)}>
+                        {i.installmentPlan ? "Installments" : "Set up installments"}
+                      </Button>
+                    )}
+                    {isStaff && (
+                      <>
+                        <Button size="sm" variant="outline" loading={paying === i.id} onClick={() => openRecordPayment(i.id)}>Record payment</Button>
+                        <Button size="sm" variant="ghost" loading={paying === i.id} onClick={() => deleteInvoice(i.id)}>Delete</Button>
+                      </>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -490,6 +598,73 @@ export default function FeesPage() {
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <Button variant="ghost" onClick={() => setPayTarget(null)}>Cancel</Button>
           <Button onClick={submitRecordPayment} loading={paying === payTarget}>Record payment</Button>
+        </div>
+      </Modal>
+
+      <Modal open={!!installmentTarget} onClose={() => setInstallmentTarget(null)} title={installmentTarget ? `Installment plan — ${installmentTarget.invoiceNumber}` : ""}>
+        {!installmentTarget ? null : !installmentTarget.installmentPlan ? (
+          isStaff ? (
+            <>
+              <Alert tone="info">Split this invoice&apos;s {naira(installmentTarget.totalAmount)} total into evenly-dated tranches across its term.</Alert>
+              <Field label="Number of installments">
+                <Select value={installmentCount} onChange={(e) => setInstallmentCount(e.target.value)}>
+                  {[2, 3, 4, 6, 12].map((n) => <option key={n} value={n}>{n}</option>)}
+                </Select>
+              </Field>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+                <Button variant="ghost" onClick={() => setInstallmentTarget(null)}>Cancel</Button>
+                <Button onClick={createInstallmentPlan} loading={installmentBusy}>Create plan</Button>
+              </div>
+            </>
+          ) : (
+            <EmptyState title="No installment plan yet" hint="Ask the school to set up an installment plan for this invoice." />
+          )
+        ) : (
+          <>
+            <Table headers={["#", "Due", "Amount", "Paid", "Status", ""]}>
+              {installmentTarget.installmentPlan.installments.map((inst) => (
+                <tr key={inst.id}>
+                  <td>{inst.sequence}</td>
+                  <td>{new Date(inst.dueDate).toLocaleDateString()}</td>
+                  <td>{naira(inst.amount)}</td>
+                  <td>{naira(inst.paidAmount)}</td>
+                  <td>
+                    <Badge tone={inst.status === "PAID" ? "success" : inst.status === "OVERDUE" ? "danger" : inst.status === "PARTIAL" ? "warning" : "neutral"}>
+                      {inst.status}
+                    </Badge>
+                  </td>
+                  <td>
+                    {inst.status !== "PAID" && (
+                      (role === "STUDENT" || role === "PARENT" || isStaff) && (
+                        <Button size="sm" variant="outline" onClick={() => openPayInstallment(inst)}>Pay</Button>
+                      )
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </Table>
+            {isStaff && (
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+                <Button size="sm" variant="ghost" onClick={() => deleteInstallmentPlan(installmentTarget.installmentPlan!.id)} loading={installmentBusy}>
+                  Remove plan
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+      </Modal>
+
+      <Modal open={!!installmentPayTarget} onClose={() => setInstallmentPayTarget(null)} title={installmentPayTarget ? `Pay installment #${installmentPayTarget.sequence}` : ""}>
+        <Field label="Amount (₦)" required>
+          <Input type="number" min={0} value={installmentPayAmount} onChange={(e) => setInstallmentPayAmount(e.target.value)} />
+        </Field>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+          <Button variant="ghost" onClick={() => setInstallmentPayTarget(null)}>Cancel</Button>
+          {isStaff ? (
+            <Button onClick={recordInstallmentPaymentStaff} loading={installmentBusy}>Record payment</Button>
+          ) : (
+            <Button onClick={payInstallmentOnline} loading={installmentBusy}>Pay now</Button>
+          )}
         </div>
       </Modal>
     </div>

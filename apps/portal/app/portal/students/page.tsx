@@ -39,6 +39,7 @@ interface ClassOption {
 export default function StudentsPage() {
   const [items, setItems] = useState<Student[]>([]);
   const [classes, setClasses] = useState<ClassOption[]>([]);
+  const [canManage, setCanManage] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -99,8 +100,9 @@ export default function StudentsPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await api<{ items: Student[] }>("students", { query: { search: search || undefined } });
+      const data = await api<{ items: Student[]; canManage: boolean }>("students", { query: { search: search || undefined } });
       setItems(data.items);
+      setCanManage(data.canManage);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -311,11 +313,13 @@ export default function StudentsPage() {
     <div>
       <PageHeader
         title="Students"
-        subtitle="Enroll, search and manage students and their fee access."
+        subtitle={canManage ? "Enroll, search and manage students and their fee access." : "Search and view students."}
         actions={
-          <Button onClick={() => setOpen(true)}>
-            <Icon name="plus" size={16} /> Enroll student
-          </Button>
+          canManage ? (
+            <Button onClick={() => setOpen(true)}>
+              <Icon name="plus" size={16} /> Enroll student
+            </Button>
+          ) : undefined
         }
       />
 
@@ -444,11 +448,11 @@ export default function StudentsPage() {
                   <td>{feeBadge(s)}</td>
                   <td>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <Button size="sm" variant="ghost" onClick={() => openEdit(s)}>Edit</Button>
-                      <Button size="sm" variant="outline" onClick={() => { setFeeTarget(s); setFeeForm({}); }}>Set fee</Button>
-                      <Button size="sm" variant="outline" onClick={() => { setPromoteTarget(s); setPromoteForm({}); }}>Move class</Button>
+                      {canManage && <Button size="sm" variant="ghost" onClick={() => openEdit(s)}>Edit</Button>}
+                      {canManage && <Button size="sm" variant="outline" onClick={() => { setFeeTarget(s); setFeeForm({}); }}>Set fee</Button>}
+                      {canManage && <Button size="sm" variant="outline" onClick={() => { setPromoteTarget(s); setPromoteForm({}); }}>Move class</Button>}
                       <Button size="sm" variant="outline" loading={printingCards === s.id} onClick={() => printIdCards([s.id], s.id)}>ID card</Button>
-                      <Button size="sm" variant="danger" onClick={() => removeStudent(s)}>Remove</Button>
+                      {canManage && <Button size="sm" variant="danger" onClick={() => removeStudent(s)}>Remove</Button>}
                     </div>
                   </td>
                 </tr>

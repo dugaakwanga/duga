@@ -12,6 +12,7 @@ type RegularEntryInput = {
   periodNumber: number;
   startTime: string;
   endTime: string;
+  room?: string;
 };
 
 function assertValidTimeRange(startTime: string, endTime: string) {
@@ -57,16 +58,22 @@ async function validateRegularEntry(schoolId: string, input: RegularEntryInput, 
     if (!classSubject) throw new Error("The selected class, subject, and teacher assignment is invalid");
   }
 
+  const room = input.room?.trim() || undefined;
   const candidates = await prisma.timetableEntry.findMany({
-    where: { schoolId, dayOfWeek: input.dayOfWeek, OR: [{ teacherId: input.teacherId }, { classGroupId: input.classGroupId }] },
-    select: { id: true, teacherId: true, classGroupId: true, termId: true, startTime: true, endTime: true },
+    where: {
+      schoolId,
+      dayOfWeek: input.dayOfWeek,
+      OR: [{ teacherId: input.teacherId }, { classGroupId: input.classGroupId }, ...(room ? [{ room }] : [])],
+    },
+    select: { id: true, teacherId: true, classGroupId: true, room: true, termId: true, startTime: true, endTime: true },
   });
   const conflict = candidates.find((entry) =>
     entry.id !== ignoreId && entry.termId === (input.termId ?? null) && overlaps(input.startTime, input.endTime, entry.startTime, entry.endTime),
   );
   if (conflict) {
     if (conflict.teacherId === input.teacherId) throw new Error("This teacher already has a class during that time");
-    throw new Error("This class already has a period during that time");
+    if (conflict.classGroupId === input.classGroupId) throw new Error("This class already has a period during that time");
+    throw new Error(`Room "${room}" is already booked for another class during that time`);
   }
   return classGroup;
 }
@@ -89,47 +96,70 @@ export async function generateSmartTimetable(
   if (!candidates.length) throw new Error("Assign teachers to class subjects before generating a timetable");
   const existing = await prisma.timetableEntry.findMany({
     where: { schoolId, ...(termId ? { termId } : { termId: null }) },
-    select: { classSubjectId: true, classGroupId: true, teacherId: true, dayOfWeek: true, startTime: true, endTime: true },
+    select: { classSubjectId: true, classGroupId: true, teacherId: true, room: true, dayOfWeek: true, startTime: true, endTime: true },
   });
+  // Per-teacher period caps (spec: "maximum periods per day"). Missing/zero
+  // falls back to periodsPerDay — i.e. no extra restriction.
+  const teacherIds = [...new Set(candidates.map((c) => c.teacherId).filter((id): id is string => !!id))];
+  const teacherCaps = new Map(
+    (await prisma.teacher.findMany({ where: { id: { in: teacherIds } }, select: { id: true, maxPeriodsPerDay: true } })).map((t) => [t.id, t.maxPeriodsPerDay]),
+  );
+
   const teacherSlots = new Map<string, Array<{ start: string; end: string }>>();
   const classSlots = new Map<string, Array<{ start: string; end: string }>>();
+  const roomSlots = new Map<string, Array<{ start: string; end: string }>>();
+  const teacherDayLoad = new Map<string, number>();
   const currentCount = new Map<string, number>();
   const subjectDays = new Map<string, Set<number>>();
+  const roomByClassGroup = new Map(candidates.map((c) => [c.classGroupId, c.classGroup.room]));
   for (const entry of existing) {
     const day = entry.dayOfWeek;
     const teacherKey = `${entry.teacherId}:${day}`;
     const classKey = `${entry.classGroupId}:${day}`;
+    const room = entry.room?.trim() || roomByClassGroup.get(entry.classGroupId) || undefined;
     teacherSlots.set(teacherKey, [...(teacherSlots.get(teacherKey) ?? []), { start: entry.startTime, end: entry.endTime }]);
     classSlots.set(classKey, [...(classSlots.get(classKey) ?? []), { start: entry.startTime, end: entry.endTime }]);
+    teacherDayLoad.set(teacherKey, (teacherDayLoad.get(teacherKey) ?? 0) + 1);
+    if (room) {
+      const roomKey = `${room}:${day}`;
+      roomSlots.set(roomKey, [...(roomSlots.get(roomKey) ?? []), { start: entry.startTime, end: entry.endTime }]);
+    }
     if (entry.classSubjectId) {
       currentCount.set(entry.classSubjectId, (currentCount.get(entry.classSubjectId) ?? 0) + 1);
       subjectDays.set(entry.classSubjectId, new Set([...(subjectDays.get(entry.classSubjectId) ?? []), day]));
     }
   }
 
-  const toCreate: Array<{ schoolId: string; termId?: string; classGroupId: string; classSubjectId: string; subjectId: string; teacherId: string; dayOfWeek: number; periodNumber: number; startTime: string; endTime: string }> = [];
+  const toCreate: Array<{ schoolId: string; termId?: string; classGroupId: string; classSubjectId: string; subjectId: string; teacherId: string; dayOfWeek: number; periodNumber: number; startTime: string; endTime: string; room?: string }> = [];
   let skipped = 0;
   const ordered = [...candidates].sort((a, b) => (b.weeklyPeriods - (currentCount.get(b.id) ?? 0)) - (a.weeklyPeriods - (currentCount.get(a.id) ?? 0)));
   for (const assignment of ordered) {
     if (!assignment.teacherId) continue;
     const needed = Math.max(0, assignment.weeklyPeriods - (currentCount.get(assignment.id) ?? 0));
+    const room = assignment.classGroup.room?.trim() || undefined;
+    const cap = teacherCaps.get(assignment.teacherId) || periodsPerDay;
     for (let added = 0; added < needed; added++) {
       let placed = false;
       const usedDays = subjectDays.get(assignment.id) ?? new Set<number>();
       const orderedDays = [...dayNumbers].sort((a, b) => Number(usedDays.has(a)) - Number(usedDays.has(b)));
       for (const dayOfWeek of orderedDays) {
+        const teacherKey = `${assignment.teacherId}:${dayOfWeek}`;
+        if ((teacherDayLoad.get(teacherKey) ?? 0) >= cap) continue;
         for (let periodNumber = 1; periodNumber <= periodsPerDay; periodNumber++) {
           const startTime = timeAfter("08:00", (periodNumber - 1) * 50);
           const endTime = timeAfter(startTime, 45);
-          const teacherKey = `${assignment.teacherId}:${dayOfWeek}`;
           const classKey = `${assignment.classGroupId}:${dayOfWeek}`;
+          const roomKey = room ? `${room}:${dayOfWeek}` : undefined;
           if ((teacherSlots.get(teacherKey) ?? []).some((slot) => overlaps(startTime, endTime, slot.start, slot.end))) continue;
           if ((classSlots.get(classKey) ?? []).some((slot) => overlaps(startTime, endTime, slot.start, slot.end))) continue;
+          if (roomKey && (roomSlots.get(roomKey) ?? []).some((slot) => overlaps(startTime, endTime, slot.start, slot.end))) continue;
           const slot = { start: startTime, end: endTime };
           teacherSlots.set(teacherKey, [...(teacherSlots.get(teacherKey) ?? []), slot]);
           classSlots.set(classKey, [...(classSlots.get(classKey) ?? []), slot]);
+          if (roomKey) roomSlots.set(roomKey, [...(roomSlots.get(roomKey) ?? []), slot]);
+          teacherDayLoad.set(teacherKey, (teacherDayLoad.get(teacherKey) ?? 0) + 1);
           subjectDays.set(assignment.id, new Set([...usedDays, dayOfWeek]));
-          toCreate.push({ schoolId, ...(termId ? { termId } : {}), classGroupId: assignment.classGroupId, classSubjectId: assignment.id, subjectId: assignment.subjectId, teacherId: assignment.teacherId, dayOfWeek, periodNumber, startTime, endTime });
+          toCreate.push({ schoolId, ...(termId ? { termId } : {}), classGroupId: assignment.classGroupId, classSubjectId: assignment.id, subjectId: assignment.subjectId, teacherId: assignment.teacherId, dayOfWeek, periodNumber, startTime, endTime, ...(room ? { room } : {}) });
           placed = true;
           break;
         }
@@ -155,14 +185,28 @@ export const timetableModule: Module = {
     const entriesWhere: Record<string, unknown> = { schoolId };
     if (termId) entriesWhere.termId = termId;
 
+    // Class groups this caller may see an exam timetable for — computed for
+    // every non-manager role so the exam schedule is scoped the same way the
+    // regular timetable already is (never the whole school's exam calendar).
+    let examClassGroupIds: string[] | undefined;
+
     if (role === "TEACHER") {
-      entriesWhere.teacherId = ctx.session.user.teacher!.id;
+      const teacherId = ctx.session.user.teacher!.id;
+      entriesWhere.teacherId = teacherId;
+      const [taught, formClasses] = await Promise.all([
+        prisma.classSubject.findMany({ where: { teacherId }, select: { classGroupId: true } }),
+        prisma.classGroup.findMany({ where: { schoolId, formTeacherId: teacherId }, select: { id: true } }),
+      ]);
+      examClassGroupIds = [...new Set([...taught.map((t) => t.classGroupId), ...formClasses.map((c) => c.id)])];
     } else if (role === "STUDENT") {
-      entriesWhere.classGroupId = ctx.session.user.student!.currentClassGroupId ?? "none";
+      const classGroupId = ctx.session.user.student!.currentClassGroupId ?? "none";
+      entriesWhere.classGroupId = classGroupId;
+      examClassGroupIds = [classGroupId];
     } else if (role === "PARENT") {
       const links = await prisma.studentParent.findMany({ where: { parentId: ctx.session.user.parent!.id }, include: { student: { select: { currentClassGroupId: true } } } });
       const groups = [...new Set(links.map((l) => l.student.currentClassGroupId).filter((id): id is string => !!id))];
       entriesWhere.classGroupId = { in: groups };
+      examClassGroupIds = groups;
     } else if (classGroupId) {
       entriesWhere.classGroupId = classGroupId;
     }
@@ -186,7 +230,7 @@ export const timetableModule: Module = {
 
     const examTimetableWhere: Record<string, unknown> = {
       schoolId,
-      ...(role === "STUDENT" ? { classGroupId: ctx.session.user.student!.currentClassGroupId ?? undefined } : {}),
+      ...(examClassGroupIds ? { classGroupId: { in: examClassGroupIds } } : {}),
     };
     if (isManager && section) examTimetableWhere.classGroup = { is: { level: { section } } };
     const examTimetable = await prisma.examTimetableEntry.findMany({
@@ -280,7 +324,7 @@ export const timetableModule: Module = {
       if (!classGroupId || !teacherId || dayOfWeek === undefined || periodNumber === undefined || !startTime || !endTime) {
         throw new Error("classGroupId, teacherId, dayOfWeek, periodNumber, startTime, endTime required");
       }
-      const input = { classGroupId, teacherId, subjectId: str(ctx.body.subjectId), classSubjectId: str(ctx.body.classSubjectId), termId: str(ctx.body.termId), dayOfWeek, periodNumber, startTime, endTime };
+      const input = { classGroupId, teacherId, subjectId: str(ctx.body.subjectId), classSubjectId: str(ctx.body.classSubjectId), termId: str(ctx.body.termId), dayOfWeek, periodNumber, startTime, endTime, room: str(ctx.body.room) };
       const classGroup = await validateRegularEntry(schoolId, input);
       const section = await resolveSection(ctx);
       if (section && classGroup.level.section !== section) throw new Error("You can only schedule classes in your active section");
@@ -338,6 +382,7 @@ export const timetableModule: Module = {
         periodNumber: (data.periodNumber as number | undefined) ?? existing.periodNumber,
         startTime: (data.startTime as string | undefined) ?? existing.startTime,
         endTime: (data.endTime as string | undefined) ?? existing.endTime,
+        room: (data.room as string | undefined) ?? existing.room ?? undefined,
       };
       const classGroup = await validateRegularEntry(schoolId, input, existing.id);
       const section = await resolveSection(ctx);

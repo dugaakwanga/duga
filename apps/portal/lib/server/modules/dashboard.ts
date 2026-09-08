@@ -64,16 +64,43 @@ export const dashboardModule: Module = {
     if (role === "TEACHER") {
       const teacher = ctx.session.user.teacher!;
       const section = await resolveSection(ctx);
-      const [classSubjects, upcomingLive, pendingGrading] = await Promise.all([
+      const [classSubjects, upcomingLive, pendingGrading, formClasses] = await Promise.all([
         prisma.classSubject.findMany({
           where: { teacherId: teacher.id, ...(section ? { classGroup: { level: { section } } } : {}) },
           include: { classGroup: { include: { level: true } }, subject: true },
           take: 8,
         }),
         prisma.liveClass.findMany({ where: { teacherId: teacher.id, status: "SCHEDULED" }, orderBy: { scheduledAt: "asc" }, take: 5 }),
-        prisma.assignmentSubmission.count({ where: { schoolId, gradedAt: null } }),
+        prisma.assignmentSubmission.count({ where: { schoolId, gradedAt: null, assignment: { teacherId: teacher.id } } }),
+        prisma.classGroup.findMany({ where: { schoolId, formTeacherId: teacher.id }, include: { level: true } }),
       ]);
-      return { role, classSubjects, upcomingLive, pendingGrading };
+
+      // Class-teacher extension: an extra attendance-rate + performance card,
+      // scoped only to the class(es) this teacher form-teaches (never shown
+      // to a plain subject teacher).
+      let classTeacherOf: Array<{ classGroupId: string; className: string; studentCount: number; attendanceRate: number; subjectAverage: number | null }> = [];
+      if (formClasses.length) {
+        const monthAgo = new Date(Date.now() - 30 * 86400000);
+        classTeacherOf = await Promise.all(
+          formClasses.map(async (cg) => {
+            const [studentCount, attendanceRows, avgResult] = await Promise.all([
+              prisma.student.count({ where: { schoolId, status: "ACTIVE", currentClassGroupId: cg.id } }),
+              prisma.studentAttendance.findMany({ where: { schoolId, date: { gte: monthAgo }, classGroupId: cg.id }, select: { status: true } }),
+              prisma.reportCard.aggregate({ where: { schoolId, isPublished: true, classGroupId: cg.id }, _avg: { average: true } }),
+            ]);
+            const present = attendanceRows.filter((row) => row.status === "PRESENT" || row.status === "LATE").length;
+            return {
+              classGroupId: cg.id,
+              className: `${cg.level.name} ${cg.name}`,
+              studentCount,
+              attendanceRate: attendanceRows.length ? Math.round((present / attendanceRows.length) * 100) : 0,
+              subjectAverage: avgResult._avg.average === null ? null : Math.round(Number(avgResult._avg.average) * 10) / 10,
+            };
+          }),
+        );
+      }
+
+      return { role, classSubjects, upcomingLive, pendingGrading, classTeacherOf };
     }
 
     if (role === "PARENT") {
@@ -201,6 +228,31 @@ export const dashboardModule: Module = {
         .filter((assignment) => isAssignedTo(assignment, student.id, classGroupId))
         .slice(0, 5);
       return { role, classSubjects, assignments, live, reportCard, invoice, fee: feeInfoOf(student) };
+    }
+
+    if (role === "BURSAR") {
+      const [invoiceStats, unpaid, recentPayments] = await Promise.all([
+        financeOn
+          ? prisma.invoice.aggregate({ where: { schoolId }, _sum: { totalAmount: true, paidAmount: true, balance: true } })
+          : Promise.resolve({ _sum: { totalAmount: 0, paidAmount: 0, balance: 0 } }),
+        financeOn ? prisma.invoice.count({ where: { schoolId, status: { in: ["UNPAID", "PARTIAL"] } } }) : Promise.resolve(0),
+        financeOn
+          ? prisma.payment.findMany({
+              where: { schoolId, status: "SUCCESS" },
+              orderBy: { paidAt: "desc" },
+              take: 5,
+              include: { student: { select: { user: { select: { firstName: true, lastName: true } } } } },
+            })
+          : Promise.resolve([]),
+      ]);
+      return {
+        role,
+        feeSummary: financeOn
+          ? { total: invoiceStats._sum.totalAmount ?? 0, paid: invoiceStats._sum.paidAmount ?? 0, balance: invoiceStats._sum.balance ?? 0 }
+          : null,
+        counts: { unpaid },
+        recentPayments,
+      };
     }
 
     return { role };

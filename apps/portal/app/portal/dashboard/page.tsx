@@ -23,6 +23,7 @@ interface DashboardData {
   classSubjects?: Array<{ id: string; subject: { name: string }; classGroup?: { level: { name: string }; name: string }; teacher?: { user: { firstName: string; lastName: string } } }>;
   upcomingLive?: Array<{ id: string; title: string; scheduledAt: string }>;
   pendingGrading?: number;
+  classTeacherOf?: Array<{ classGroupId: string; className: string; studentCount: number; attendanceRate: number; subjectAverage: number | null }>;
   children?: Array<{ student: { id: string; admissionNumber: string; user: { firstName: string; lastName: string }; classGroup: { level: { name: string }; name: string } | null } }>;
   invoices?: InvoiceLike[];
   assignments?: Array<{ id: string; title: string; classSubject?: { subject: { name: string } } }>;
@@ -30,6 +31,7 @@ interface DashboardData {
   reportCard?: { id: string; average: number | null; isPublished: boolean };
   invoice?: InvoiceLike;
   fee?: { feeAmount: string; feeDays: number; feePaidThrough: string | null; usedDays: number; daysRemaining: number; expired: boolean };
+  recentPayments?: Array<{ id: string; amount: string | number; paidAt: string | null; student?: { user: { firstName: string; lastName: string } } }>;
 }
 
 function naira(v: string | number | undefined): string {
@@ -117,6 +119,20 @@ export default function DashboardPage() {
           </Card>
           </div>
         </>
+      ) : null}
+
+      {data.role === "TEACHER" && data.classTeacherOf?.length ? (
+        <div className="portal-dashboard-grid" style={{ marginBottom: 18 }}>
+          {data.classTeacherOf.map((cg) => (
+            <Card key={cg.classGroupId} title={`Class teacher — ${cg.className}`}>
+              <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+                <Stat label="Students" value={cg.studentCount} />
+                <Stat label="Attendance rate (30d)" value={`${cg.attendanceRate}%`} tone={cg.attendanceRate >= 80 ? "success" : "warning"} />
+                <Stat label="Class average" value={cg.subjectAverage === null ? "—" : cg.subjectAverage} tone="info" />
+              </div>
+            </Card>
+          ))}
+        </div>
       ) : null}
 
       {data.role === "TEACHER" ? (
@@ -250,6 +266,38 @@ export default function DashboardPage() {
             )}
           </Card>
         </div>
+      ) : null}
+
+      {data.role === "BURSAR" ? (
+        <>
+          <div className="portal-metrics" style={{ marginBottom: 20 }}>
+            {data.feeSummary ? (
+              <>
+                <Stat label="Fees collected" value={naira(data.feeSummary.paid)} tone="success" />
+                <Stat label="Outstanding" value={naira(data.feeSummary.balance)} tone="danger" />
+                <Stat label="Total billed" value={naira(data.feeSummary.total)} />
+              </>
+            ) : (
+              <Stat label="Finance access" value="Not enabled" hint="Ask the owner to enable finance access." />
+            )}
+            <Stat label="Unpaid / partial invoices" value={data.counts?.unpaid ?? 0} tone="info" />
+          </div>
+          <Card title="Recent payments">
+            {data.recentPayments?.length ? (
+              <Table headers={["Student", "Amount", "Date"]}>
+                {data.recentPayments.map((p) => (
+                  <tr key={p.id}>
+                    <td>{p.student ? `${p.student.user.firstName} ${p.student.user.lastName}` : "—"}</td>
+                    <td>{naira(p.amount)}</td>
+                    <td>{p.paidAt ? new Date(p.paidAt).toLocaleDateString() : "—"}</td>
+                  </tr>
+                ))}
+              </Table>
+            ) : (
+              <EmptyState title="No payments recorded yet" />
+            )}
+          </Card>
+        </>
       ) : null}
     </div>
   );

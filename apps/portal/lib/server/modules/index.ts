@@ -43,6 +43,7 @@ import { aiModule } from "./ai";
 import { promotionModule } from "./promotion";
 import { securityModule } from "./security";
 import { admissionsTestModule } from "./admissionsTest";
+import { calendarModule } from "./calendar";
 
 export const modules: Record<string, Module> = {
   dashboard: dashboardModule,
@@ -77,6 +78,7 @@ export const modules: Record<string, Module> = {
   promotion: promotionModule,
   security: securityModule,
   admissionsTest: admissionsTestModule,
+  calendar: calendarModule,
 };
 
 export type { Ctx };

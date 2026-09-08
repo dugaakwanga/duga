@@ -6,7 +6,10 @@ import { can, str, num, resolveSection, sectionsOfTeacher, sectionArray, isOwner
 
 async function visibleClassIds(ctx: Ctx): Promise<string[] | undefined> {
   const { role, teacher, student, parent } = ctx.session.user;
-  if (role === "OWNER" || role === "ADMIN") return undefined;
+  // Bursar gets the same unrestricted (but read-only — enforced by isAdmin-
+  // gated mutation actions, not by this visibility filter) view as owner/admin:
+  // they need every class to assign fee schedules and track class balances.
+  if (role === "OWNER" || role === "ADMIN" || role === "BURSAR") return undefined;
   if (role === "TEACHER" && teacher) {
     const [taught, formClasses] = await Promise.all([
       prisma.classSubject.findMany({ where: { teacherId: teacher.id }, select: { classGroupId: true } }),
