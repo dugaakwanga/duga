@@ -51,18 +51,34 @@ export const attendanceModule: Module = {
   async list(ctx) {
     can(ctx, "attendance:view");
     const schoolId = ctx.session.user.schoolId;
-    const date = ctx.query.get("date") ?? isoDay(new Date());
+    const role = ctx.session.user.role;
     const classGroupId = ctx.query.get("classGroupId");
-    const where: Record<string, unknown> = { schoolId, date: new Date(`${date}T00:00:00Z`) };
+
+    // STUDENT/PARENT get a date-range history (defaults to the last 30 days)
+    // — a single-day filter isn't useful for "how has my child been doing".
+    // Staff keep the original single-day roster view.
+    const isRangeView = role === "STUDENT" || role === "PARENT";
+    const fromParam = ctx.query.get("from");
+    const toParam = ctx.query.get("to");
+    const date = ctx.query.get("date") ?? isoDay(new Date());
+    const where: Record<string, unknown> = { schoolId };
+    if (isRangeView) {
+      const to = toParam ? new Date(`${toParam}T00:00:00Z`) : new Date(`${isoDay(new Date())}T00:00:00Z`);
+      const from = fromParam ? new Date(`${fromParam}T00:00:00Z`) : new Date(to.getTime() - 29 * 86400000);
+      where.date = { gte: from, lte: to };
+    } else {
+      where.date = new Date(`${date}T00:00:00Z`);
+    }
 
     if (classGroupId) where.classGroupId = classGroupId;
 
     // Role scoping
-    const role = ctx.session.user.role;
+    let childIds: string[] | undefined;
     if (role === "STUDENT") where.studentId = ctx.session.user.student!.id;
     if (role === "PARENT") {
       const links = await prisma.studentParent.findMany({ where: { parentId: ctx.session.user.parent!.id }, select: { studentId: true } });
-      where.studentId = { in: links.map((l) => l.studentId) };
+      childIds = links.map((l) => l.studentId);
+      where.studentId = { in: childIds };
     }
     if (role === "TEACHER") {
       const teacher = ctx.session.user.teacher!;
@@ -77,7 +93,7 @@ export const attendanceModule: Module = {
     const records = await prisma.studentAttendance.findMany({
       where,
       include: { student: { include: { user: { select: { firstName: true, lastName: true } } } }, classGroup: { include: { level: true } } },
-      orderBy: { takenAt: "asc" },
+      orderBy: { date: "desc" },
       take: 1000,
     });
 
@@ -86,7 +102,20 @@ export const attendanceModule: Module = {
       return acc;
     }, {});
 
-    return { items: records, summary, date };
+    // Per-child breakdown for a parent with multiple linked children.
+    let byChild: Array<{ studentId: string; name: string; summary: Record<string, number>; total: number }> | undefined;
+    if (role === "PARENT" && childIds) {
+      const map = new Map<string, { studentId: string; name: string; summary: Record<string, number>; total: number }>();
+      for (const r of records) {
+        const entry = map.get(r.studentId) ?? { studentId: r.studentId, name: `${r.student.user.firstName} ${r.student.user.lastName}`, summary: {}, total: 0 };
+        entry.summary[r.status] = (entry.summary[r.status] ?? 0) + 1;
+        entry.total += 1;
+        map.set(r.studentId, entry);
+      }
+      byChild = childIds.map((id) => map.get(id)).filter((e): e is NonNullable<typeof e> => !!e);
+    }
+
+    return { role, items: records, summary, byChild, date, isRangeView };
   },
 
   // Take student attendance for a class/period

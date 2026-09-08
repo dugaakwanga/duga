@@ -503,8 +503,14 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
   return (
     <div>
       <PageHeader
-        title="Results"
-        subtitle="Educators enter subject scores, submit them to the administration, and the admin publishes report cards per student."
+        title={role === "PARENT" ? "Results & Report Cards" : role === "STUDENT" ? "My Results" : "Results"}
+        subtitle={
+          role === "PARENT"
+            ? "Your children's published term report cards."
+            : role === "STUDENT"
+              ? "Your published term report cards."
+              : "Educators enter subject scores, submit them to the administration, and the admin publishes report cards per student."
+        }
         actions={
           role === "ADMIN" || role === "OWNER" ? (
             <div style={{ display: "flex", gap: 8 }}>

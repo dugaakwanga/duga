@@ -91,16 +91,43 @@ export const feesModule: Module = {
         include: { items: true, payments: { orderBy: { createdAt: "desc" } }, term: true, installmentPlan: { include: { installments: { orderBy: { sequence: "asc" } } } } },
         orderBy: { createdAt: "desc" },
       });
-      return { role, invoices };
+      const summary = {
+        total: invoices.reduce((a, i) => a + Number(i.totalAmount), 0),
+        paid: invoices.reduce((a, i) => a + Number(i.paidAmount), 0),
+        balance: invoices.reduce((a, i) => a + Number(i.balance), 0),
+      };
+      return { role, invoices, summary };
     }
     if (role === "PARENT") {
-      const links = await prisma.studentParent.findMany({ where: { parentId: ctx.session.user.parent!.id }, select: { studentId: true } });
+      const links = await prisma.studentParent.findMany({
+        where: { parentId: ctx.session.user.parent!.id },
+        include: { student: { select: { id: true, user: { select: { firstName: true, lastName: true } } } } },
+      });
+      const childIds = links.map((l) => l.studentId);
       const invoices = await prisma.invoice.findMany({
-        where: { schoolId, studentId: { in: links.map((l) => l.studentId) } },
+        where: { schoolId, studentId: { in: childIds } },
         include: { items: true, student: { include: { user: { select: { firstName: true, lastName: true } } } }, payments: { orderBy: { createdAt: "desc" } }, term: true, installmentPlan: { include: { installments: { orderBy: { sequence: "asc" } } } } },
         orderBy: { createdAt: "desc" },
       });
-      return { role, invoices };
+      const summary = {
+        total: invoices.reduce((a, i) => a + Number(i.totalAmount), 0),
+        paid: invoices.reduce((a, i) => a + Number(i.paidAmount), 0),
+        balance: invoices.reduce((a, i) => a + Number(i.balance), 0),
+      };
+      // Per-child breakdown — every linked child appears even with zero
+      // invoices yet, so a parent sees "nothing billed" rather than nothing.
+      const byChild = links.map((link) => {
+        const childInvoices = invoices.filter((i) => i.studentId === link.studentId);
+        return {
+          studentId: link.studentId,
+          name: `${link.student.user.firstName} ${link.student.user.lastName}`,
+          total: childInvoices.reduce((a, i) => a + Number(i.totalAmount), 0),
+          paid: childInvoices.reduce((a, i) => a + Number(i.paidAmount), 0),
+          balance: childInvoices.reduce((a, i) => a + Number(i.balance), 0),
+          invoiceCount: childInvoices.length,
+        };
+      });
+      return { role, invoices, summary, byChild };
     }
     await assertFinanceManager(ctx);
 

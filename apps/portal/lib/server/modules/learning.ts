@@ -24,6 +24,18 @@ async function assertKindSubfeature(ctx: Ctx, kind: string): Promise<void> {
   if (subId) await assertSubfeature(ctx, subId);
 }
 
+// Parents may view lesson notes and (read-only) assignments to track their
+// child's work, but must never reach CBT tests or live interactive classes —
+// those stay student-only per the RBAC spec, enforced here rather than only
+// hiding the tab client-side.
+function assertParentCannotAccess(ctx: Ctx, kind: string): void {
+  if (ctx.session.user.role === "PARENT" && (kind === "tests" || kind === "live")) {
+    const err = new Error("Parents cannot access tests or live classes") as Error & { status?: number };
+    err.status = 403;
+    throw err;
+  }
+}
+
 async function visibleClassSubjectIds(ctx: Ctx): Promise<string[]> {
   const role = ctx.session.user.role;
   const teacher = ctx.session.user.teacher;
@@ -86,6 +98,7 @@ export const learningModule: Module = {
   async list(ctx) {
     const kind = (ctx.query.get("kind") ?? "notes") as Kind;
     can(ctx, "learning:view");
+    assertParentCannotAccess(ctx, kind);
     await assertKindSubfeature(ctx, kind);
     const ids = await visibleClassSubjectIds(ctx);
     const where = { classSubjectId: { in: ids }, schoolId: ctx.session.user.schoolId };
@@ -140,6 +153,7 @@ export const learningModule: Module = {
   async get(ctx) {
     const kind = (ctx.query.get("kind") ?? "notes") as Kind;
     can(ctx, "learning:view");
+    assertParentCannotAccess(ctx, kind);
     await assertKindSubfeature(ctx, kind);
     const schoolId = ctx.session.user.schoolId;
     const ids = await visibleClassSubjectIds(ctx);

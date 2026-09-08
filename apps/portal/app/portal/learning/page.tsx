@@ -164,21 +164,40 @@ export default function LearningPage() {
   // receivers here — parents view read-only, students get their own actions
   // (join live, submit, take test) — so neither ever sees create/edit/delete.
   const canManage = role === "TEACHER" || role === "ADMIN" || role === "OWNER";
+  // Parents must never see, let alone reach, CBT tests or live interactive
+  // classes — those are student-only per the RBAC spec. They keep lesson
+  // notes and a read-only view of assignments to track their child's work.
+  const isParent = role === "PARENT";
+  const allTabs = [
+    { id: "notes", label: "Lesson notes" },
+    { id: "assignments", label: "Assignments" },
+    { id: "tests", label: "Tests" },
+    { id: "live", label: "Live classes" },
+  ];
+  const visibleTabs = isParent ? allTabs.filter((t) => t.id === "notes" || t.id === "assignments") : allTabs;
+  const kindLabel: Record<Kind, string> = { notes: "lesson notes", assignments: "assignments", tests: "tests", live: "live classes" };
+
+  // If a parent's kind ever lands on a restricted tab (e.g. a stale link),
+  // fall back to notes rather than render/fetch restricted content.
+  useEffect(() => {
+    if (isParent && (kind === "tests" || kind === "live")) setKind("notes");
+  }, [isParent, kind]);
 
   return (
     <div>
       <PageHeader
-        title="Learning"
-        subtitle="Lesson notes, assignments, tests and live classes."
+        title={isParent ? "Assignments & Lesson Notes" : role === "STUDENT" ? "My Learning" : "Learning"}
+        subtitle={
+          isParent
+            ? "Track your child's lesson notes and assignments."
+            : role === "STUDENT"
+              ? "Your lesson notes, assignments, tests and live classes."
+              : "Lesson notes, assignments, tests and live classes."
+        }
         actions={canManage ? <Button onClick={() => setOpen(true)}><Icon name="plus" size={16} /> New</Button> : undefined}
       />
       <Tabs
-        tabs={[
-          { id: "notes", label: "Lesson notes" },
-          { id: "assignments", label: "Assignments" },
-          { id: "tests", label: "Tests" },
-          { id: "live", label: "Live classes" },
-        ]}
+        tabs={visibleTabs}
         value={kind}
         onChange={(k) => setKind(k as Kind)}
       />
@@ -186,7 +205,7 @@ export default function LearningPage() {
       {loading ? (
         <Spinner size={28} />
       ) : items.length === 0 ? (
-        <EmptyState title={`No ${kind} yet`} hint={canManage ? "Use the New button to create one." : `${kind} shared with you will appear here.`} />
+        <EmptyState title={`No ${kindLabel[kind]} yet`} hint={canManage ? "Use the New button to create one." : `${kindLabel[kind]} shared with you will appear here.`} />
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 16 }}>
           {items.map((item) => (

@@ -75,6 +75,15 @@ interface OwingStudent {
   fee: { feePaidThrough: string | null; daysRemaining: number; expired: boolean };
 }
 
+interface ChildFeeSummary {
+  studentId: string;
+  name: string;
+  total: number;
+  paid: number;
+  balance: number;
+  invoiceCount: number;
+}
+
 function naira(v: string | number | undefined): string {
   return `₦${Number(v ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
@@ -100,6 +109,7 @@ export default function FeesPage() {
   const [paying, setPaying] = useState<string | null>(null);
   const [paymentRecordsVisible, setPaymentRecordsVisible] = useState(true);
   const [owingStudents, setOwingStudents] = useState<OwingStudent[]>([]);
+  const [byChild, setByChild] = useState<ChildFeeSummary[] | undefined>(undefined);
   const [payTarget, setPayTarget] = useState<string | null>(null);
   const [payForm, setPayForm] = useState({ amount: "", method: "CASH", coversTo: "" });
   const [installmentTarget, setInstallmentTarget] = useState<Invoice | null>(null);
@@ -123,6 +133,7 @@ export default function FeesPage() {
       classGroups: ClassGroup[];
       paymentRecordsVisible?: boolean;
       owingStudents?: OwingStudent[];
+      byChild?: ChildFeeSummary[];
     }>("fees");
     setRole(d.role);
     setInvoices(d.invoices);
@@ -134,6 +145,7 @@ export default function FeesPage() {
     setClassGroups(d.classGroups ?? []);
     setPaymentRecordsVisible(d.paymentRecordsVisible !== false);
     setOwingStudents(d.owingStudents ?? []);
+    setByChild(d.byChild);
   }, [section]);
 
   useEffect(() => {
@@ -359,8 +371,14 @@ export default function FeesPage() {
   return (
     <div>
       <PageHeader
-        title="Fees & payments"
-        subtitle="Invoices, payments and fee structures."
+        title={role === "PARENT" ? "Children's Fees" : role === "STUDENT" ? "My Fees" : "Fees & payments"}
+        subtitle={
+          role === "PARENT"
+            ? "Itemized invoices, balances and installment plans for each of your children."
+            : role === "STUDENT"
+              ? "Your invoices, balance and installment plan."
+              : "Invoices, payments and fee structures."
+        }
         actions={
           isStaff ? (
             <div style={{ display: "flex", gap: 8 }}>
@@ -371,6 +389,24 @@ export default function FeesPage() {
           ) : undefined
         }
       />
+
+      {role === "PARENT" && byChild && byChild.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 14, marginBottom: 20 }}>
+          {byChild.map((c) => (
+            <Card key={c.studentId} title={c.name}>
+              {c.invoiceCount === 0 ? (
+                <div style={{ fontSize: 13, color: "var(--duga-muted)" }}>No invoices generated yet.</div>
+              ) : (
+                <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+                  <Stat label="Billed" value={naira(c.total)} />
+                  <Stat label="Paid" value={naira(c.paid)} tone="success" />
+                  <Stat label="Owing" value={naira(c.balance)} tone={c.balance > 0 ? "danger" : "success"} />
+                </div>
+              )}
+            </Card>
+          ))}
+        </div>
+      )}
 
       {summary && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 14, marginBottom: 20 }}>
