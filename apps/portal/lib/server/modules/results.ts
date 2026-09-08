@@ -134,7 +134,12 @@ export const resultsModule: Module = {
     ]);
     const submissions = await submissionSummary(schoolId, classSubjects);
     const { school, reportCardConfig } = await schoolAndReportCardConfig(schoolId, section);
-    return { role, reportCards: reportCards.map((rc) => ({ ...rc, gpa: gpaOf(rc.items) })), config, submissions, school, reportCardConfig };
+    // classSubjects was already being fetched to compute `submissions`, but
+    // was never sent to the client — the admin/owner "Subject submissions"
+    // overview builds its rows from this array client-side, so without it
+    // that whole card silently never rendered, no matter how many subjects
+    // teachers had submitted.
+    return { role, reportCards: reportCards.map((rc) => ({ ...rc, gpa: gpaOf(rc.items) })), classSubjects, config, submissions, school, reportCardConfig };
   },
 
   async get(ctx) {

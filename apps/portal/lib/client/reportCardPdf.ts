@@ -72,11 +72,33 @@ function imageFormat(dataUrl: string): "PNG" | "JPEG" | "WEBP" {
   return "JPEG";
 }
 
-export async function downloadReportCardPdf(
+// Sample data for the report-card builder's live preview — lets an admin
+// see exactly how a real card will look while adjusting toggles, before any
+// real report card exists yet.
+export const SAMPLE_REPORT_CARD: ReportCardPdfData = {
+  student: { firstName: "Jane", lastName: "Doe", admissionNumber: "SAMPLE/001" },
+  className: "JSS 2 A",
+  term: { name: "First Term" },
+  average: 78.4,
+  position: 3,
+  classSize: 28,
+  gpa: 4.2,
+  items: [
+    { subject: { name: "Mathematics" }, ca: 32, exam: 51, total: 83, grade: "A1", remark: "Excellent", position: 1 },
+    { subject: { name: "English Language" }, ca: 28, exam: 44, total: 72, grade: "B2", remark: "Very Good", position: 4 },
+    { subject: { name: "Basic Science" }, ca: 25, exam: 40, total: 65, grade: "B3", remark: "Good", position: 6 },
+  ],
+  psychomotor: { Punctuality: "Excellent", Neatness: "Very Good", "Handling of tools": "Good" },
+  coCurricular: { Sports: "Very Good", "Relationship with peers": "Excellent", Leadership: "Good" },
+  attendanceRemark: "Present 58 out of 60 school days this term.",
+  remark: "A hardworking and diligent student. Keep it up!",
+};
+
+async function buildReportCardDoc(
   school: ReportCardPdfSchool,
   config: ReportCardPdfConfig,
   card: ReportCardPdfData,
-): Promise<void> {
+) {
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
   const W = 210;
@@ -97,7 +119,9 @@ export async function downloadReportCardPdf(
   const logoDataUrl = config.showLogo ? await toDataUrl(school.logoUrl) : null;
   if (logoDataUrl) {
     try {
-      doc.addImage(logoDataUrl, imageFormat(logoDataUrl), W / 2 - 9, y, 18, 18);
+      // jsPDF embeds images uncompressed by default — a few-hundred-KB PNG
+      // logo can balloon a single-page PDF to several MB without this.
+      doc.addImage(logoDataUrl, imageFormat(logoDataUrl), W / 2 - 9, y, 18, 18, undefined, "FAST");
       y += 20;
     } catch {
       /* skip a logo image jsPDF can't decode */
@@ -268,5 +292,29 @@ export async function downloadReportCardPdf(
     doc.text(label, cx, sigY + 5, { align: "center" });
   });
 
+  return { doc, name };
+}
+
+export async function downloadReportCardPdf(
+  school: ReportCardPdfSchool,
+  config: ReportCardPdfConfig,
+  card: ReportCardPdfData,
+): Promise<void> {
+  const { doc, name } = await buildReportCardDoc(school, config, card);
   doc.save(`report-card-${(card.student.admissionNumber ?? name).replace(/\s+/g, "-")}-${(card.term?.name ?? "term").replace(/\s+/g, "-")}.pdf`);
+}
+
+// Renders the PDF and returns an object URL for it — used by the report-card
+// builder to show an inline <iframe> preview rather than a new tab/window,
+// which sidesteps popup blockers entirely (a new tab opened after an async
+// logo fetch loses the "user gesture" and gets silently blocked by many
+// browsers regardless of how it's opened). Callers should revoke the
+// previous URL (URL.revokeObjectURL) before requesting a new one.
+export async function renderReportCardPreviewUrl(
+  school: ReportCardPdfSchool,
+  config: ReportCardPdfConfig,
+  card: ReportCardPdfData = SAMPLE_REPORT_CARD,
+): Promise<string> {
+  const { doc } = await buildReportCardDoc(school, config, card);
+  return doc.output("bloburl") as unknown as string;
 }

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { PageHeader, Card, Badge, Table, Alert, Spinner, EmptyState, Button, Field, Select, Input, ProgressBar, Icon } from "@duga/ui";
 import { api } from "@/lib/client/api";
 import { useSection } from "@/components/SectionContext";
-import { downloadReportCardPdf, type ReportCardPdfConfig, type ReportCardPdfSchool } from "@/lib/client/reportCardPdf";
+import { downloadReportCardPdf, renderReportCardPreviewUrl, type ReportCardPdfConfig, type ReportCardPdfSchool } from "@/lib/client/reportCardPdf";
 
 interface ResultComponent {
   name: string;
@@ -138,6 +138,9 @@ export default function ResultsPage() {
   const [builderOpen, setBuilderOpen] = useState(false);
   const [builderDraft, setBuilderDraft] = useState<ReportCardPdfConfig | null>(null);
   const [builderSaving, setBuilderSaving] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   // Auto-save drafts while a teacher is entering scores — the entry grid
@@ -259,8 +262,14 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
     }
   }
 
+  function closePreview() {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+  }
+
   function openBuilder() {
     setBuilderDraft(reportCardConfig ?? { showCognitive: true, showPsychomotor: true, showAffective: true, showAttendance: true, showLogo: true, showWatermark: false, signatureLabels: ["Class Teacher", "Principal"] });
+    closePreview();
     setBuilderOpen(true);
   }
 
@@ -271,10 +280,30 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
       await api("results/saveReportCardConfig", { method: "POST", body: builderDraft });
       setReportCardConfig(builderDraft);
       setBuilderOpen(false);
+      closePreview();
     } catch (e) {
       alert((e as Error).message);
     } finally {
       setBuilderSaving(false);
+    }
+  }
+
+  // Preview the current (possibly unsaved) toggle state on a sample report
+  // card, rendered inline in the panel rather than a new tab/window — a
+  // popup opened after the async PDF build loses the browser's "user
+  // gesture" and gets silently blocked by most browsers regardless of how
+  // it's opened, so an embedded <iframe> is the reliable option here.
+  async function previewBuilder() {
+    if (!builderDraft || !school) return;
+    setPreviewing(true);
+    try {
+      const url = await renderReportCardPreviewUrl(school, builderDraft);
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(url);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setPreviewing(false);
     }
   }
 
@@ -839,11 +868,15 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
           style={{ marginTop: 20 }}
           actions={
             <div style={{ display: "flex", gap: 8 }}>
-              <Button variant="ghost" size="sm" onClick={() => setBuilderOpen(false)}>Cancel</Button>
+              <Button variant="outline" size="sm" onClick={previewBuilder} loading={previewing}>Preview template</Button>
+              <Button variant="ghost" size="sm" onClick={() => { setBuilderOpen(false); closePreview(); }}>Cancel</Button>
               <Button size="sm" onClick={saveBuilder} loading={builderSaving}>Save</Button>
             </div>
           }
         >
+          <Alert tone="info">
+            Preview renders a sample report card below, reflecting your current (unsaved) choices — use it to see the effect of each toggle before saving.
+          </Alert>
           <Alert tone="info">
             {section
               ? `Editing the report card layout for ${section} only.`
@@ -877,6 +910,14 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
               />
             </Field>
           </div>
+          {previewUrl && (
+            <div style={{ marginTop: 18 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--duga-muted)", marginBottom: 8 }}>
+                Preview (sample data)
+              </div>
+              <iframe src={previewUrl} title="Report card preview" style={{ width: "100%", height: 700, border: "1px solid var(--duga-border)", borderRadius: 8 }} />
+            </div>
+          )}
         </Card>
       )}
     </div>

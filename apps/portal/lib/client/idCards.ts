@@ -139,7 +139,10 @@ export async function downloadIdCardsPdf(
     let y = 6;
     if (logoDataUrl) {
       try {
-        doc.addImage(logoDataUrl, imageFormat(logoDataUrl), CARD_W / 2 - 4, y, 8, 8);
+        // jsPDF embeds images uncompressed by default, which can balloon a
+        // batch of ID cards to tens of MB — "FAST" keeps a real photo/logo
+        // file's size in the same ballpark in the output PDF.
+        doc.addImage(logoDataUrl, imageFormat(logoDataUrl), CARD_W / 2 - 4, y, 8, 8, undefined, "FAST");
         y += 10;
       } catch {
         /* skip a logo image jsPDF can't decode rather than failing the card */
@@ -195,7 +198,7 @@ export async function downloadIdCardsPdf(
         doc.circle(photoCx, photoCy, photoR, null);
         doc.clip();
         doc.discardPath();
-        doc.addImage(photoDataUrl, imageFormat(photoDataUrl), photoCx - photoR, photoCy - photoR, photoR * 2, photoR * 2);
+        doc.addImage(photoDataUrl, imageFormat(photoDataUrl), photoCx - photoR, photoCy - photoR, photoR * 2, photoR * 2, undefined, "FAST");
         doc.restoreGraphicsState();
       } catch {
         /* fall through to the initials placeholder */
