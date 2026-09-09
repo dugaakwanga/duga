@@ -506,6 +506,21 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
     return () => clearInterval(t);
   }, [loadNotifs]);
 
+  // After logout, pressing Back can restore this authenticated page straight
+  // from the browser's bfcache (an instant, no-network restore) instead of
+  // re-requesting it — so the server-side "no session? redirect to /login"
+  // check in the layout never runs, and a signed-out user briefly sees the
+  // stale portal UI again. `pageshow`'s `persisted` flag is the standard way
+  // to detect a bfcache restore; forcing a reload sends a real request that
+  // the layout can correctly bounce to /login.
+  useEffect(() => {
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) window.location.reload();
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, []);
+
   async function markAllRead() {
     try {
       await api("messages/notificationsRead", { method: "POST", loading: false });
@@ -518,8 +533,10 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
-    const staffRole = user.role === "OWNER" || user.role === "ADMIN" || user.role === "BURSAR" || user.role === "SECURITY";
-    window.location.href = staffRole ? "/admin" : "/";
+    // Land back on the school's website, not another portal screen — the
+    // portal and site are two separate apps, and logging out should feel
+    // like leaving the portal entirely.
+    window.location.href = siteHomeUrl;
   }
 
   const baseNav = user.role === "STUDENT" ? STUDENT_NAV : user.role === "PARENT" ? PARENT_NAV : user.role === "SECURITY" ? SECURITY_NAV : STAFF_NAV;
@@ -548,7 +565,7 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
       <aside className={`portal-sidebar${sidebarOpen ? " open" : ""}`}>
         <div className="portal-sidebar__brand">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <Link href={siteHomeUrl} aria-label="De Ultimate Glory Academy home">
+          <Link href={siteHomeUrl} target="_blank" rel="noopener noreferrer" aria-label="De Ultimate Glory Academy home">
             <img src="/images/logo.png" alt="De Ultimate Glory Academy" />
           </Link>
           <div>

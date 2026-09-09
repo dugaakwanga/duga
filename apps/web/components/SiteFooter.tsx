@@ -73,9 +73,9 @@ export default function SiteFooter() {
           <div className="mkt-footer-col">
             <h4>Portals</h4>
             {show("apply") && <Link href="/apply">Apply Online</Link>}
-            <Link href={portalUrl}>Parent Portal</Link>
-            <Link href={portalUrl}>Student Portal</Link>
-            <Link href={portalUrl}>Staff Portal</Link>
+            <Link href={portalUrl} target="_blank" rel="noopener noreferrer">Parent Portal</Link>
+            <Link href={portalUrl} target="_blank" rel="noopener noreferrer">Student Portal</Link>
+            <Link href={portalUrl} target="_blank" rel="noopener noreferrer">Staff Portal</Link>
             {show("contact") && <Link href="/contact">Contact Us</Link>}
           </div>
 

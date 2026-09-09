@@ -82,7 +82,7 @@ function AdminLogin() {
         <div className="login-card">
           <div className="login-brand">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <Link href={siteHomeUrl} aria-label="De Ultimate Glory Academy home">
+            <Link href={siteHomeUrl} target="_blank" rel="noopener noreferrer" aria-label="De Ultimate Glory Academy home">
               <img src="/images/logo.png" alt="De Ultimate Glory Academy logo" />
             </Link>
             <h1>De Ultimate Glory Academy</h1>

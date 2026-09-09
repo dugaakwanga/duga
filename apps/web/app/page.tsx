@@ -310,7 +310,7 @@ export default async function HomePage() {
 
           <Reveal>
             <div style={{ marginTop: 48, display: "flex", gap: 14, flexWrap: "wrap" }}>
-              <Link href={portalUrl} className="duga-btn duga-btn--primary duga-btn--lg duga-btn--arrow">
+              <Link href={portalUrl} target="_blank" rel="noopener noreferrer" className="duga-btn duga-btn--primary duga-btn--lg duga-btn--arrow">
                 Open the Portal <ArrowRight size={17} className="mkt-arrow" />
               </Link>
               <Link href="/apply" className="duga-btn duga-btn--outline duga-btn--lg duga-btn--arrow">

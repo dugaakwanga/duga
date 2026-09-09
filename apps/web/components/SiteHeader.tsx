@@ -142,7 +142,7 @@ export default function SiteHeader() {
             </nav>
 
             <div className="mkt-header-actions">
-              <Link className="duga-btn duga-btn--outline duga-btn--sm" href={portalUrl}>
+              <Link className="duga-btn duga-btn--outline duga-btn--sm" href={portalUrl} target="_blank" rel="noopener noreferrer">
                 Portal
               </Link>
               <Link className="duga-btn duga-btn--primary duga-btn--arrow" href="/apply">
@@ -162,7 +162,7 @@ export default function SiteHeader() {
             <Link className="duga-btn duga-btn--primary duga-btn--block" href="/apply" onClick={() => setOpen(false)}>
               Apply Now
             </Link>
-            <Link className="duga-btn duga-btn--outline duga-btn--block" href={portalUrl} onClick={() => setOpen(false)}>
+            <Link className="duga-btn duga-btn--outline duga-btn--block" href={portalUrl} target="_blank" rel="noopener noreferrer" onClick={() => setOpen(false)}>
               Portal Login
             </Link>
           </div>
