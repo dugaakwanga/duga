@@ -22,6 +22,9 @@ interface Book {
   description: string | null;
   onLoanCount?: number;
   targetStudentIds?: string[] | null;
+  isPublished: boolean;
+  addedByUserId: string | null;
+  addedByName: string | null;
 }
 
 interface Loan {
@@ -82,6 +85,12 @@ export default function LibraryPage() {
 
   const canManageCatalogue = data?.role === "ADMIN" || data?.role === "OWNER";
   const canIssueBooks = canManageCatalogue || data?.role === "TEACHER";
+  // Teachers can submit books, but only an admin/owner publishes them to the
+  // real catalogue students see — matches canIssueBooks' role set, named
+  // separately since "submitting" and "issuing loans" are different asks.
+  const canSubmitBooks = canIssueBooks;
+  const publishedBooks = (data?.books ?? []).filter((b) => b.isPublished);
+  const pendingBooks = (data?.books ?? []).filter((b) => !b.isPublished);
 
   function openModal(kind: "book" | "loan") {
     setKind(kind);
@@ -181,6 +190,26 @@ export default function LibraryPage() {
     }
   }
 
+  async function publishBook(id: string) {
+    try {
+      await api(`library/${id}/publishBook`, { method: "POST", body: {} });
+      await load();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
+  async function rejectBook(id: string, title: string) {
+    const reason = window.prompt(`Decline "${title}"? Optionally add a reason for the submitter:`, "");
+    if (reason === null) return;
+    try {
+      await api(`library/${id}/rejectBook`, { method: "POST", body: { reason } });
+      await load();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
   if (error) return <Alert tone="danger">{error}</Alert>;
   if (loading || !data) return <Spinner size={28} />;
 
@@ -196,15 +225,54 @@ export default function LibraryPage() {
           canIssueBooks ? (
             <div style={{ display: "flex", gap: 8 }}>
               <Button variant="outline" onClick={() => openModal("loan")}><Icon name="plus" size={16} /> Issue book</Button>
-              {canManageCatalogue && <Button onClick={() => openModal("book")}><Icon name="plus" size={16} /> Add book</Button>}
+              {canSubmitBooks && (
+                <Button onClick={() => openModal("book")}>
+                  <Icon name="plus" size={16} /> {canManageCatalogue ? "Add book" : "Submit book"}
+                </Button>
+              )}
             </div>
           ) : undefined
         }
       />
 
+      {/* Teacher submissions awaiting an admin's review — never visible to
+          students/parents; a teacher sees only their own here. */}
+      {pendingBooks.length > 0 && (
+        <Card title="Pending review" style={{ marginBottom: 16 }}>
+          <div style={{ display: "grid", gap: 10 }}>
+            {pendingBooks.map((b) => (
+              <div key={b.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, border: "1px solid var(--duga-border)", borderRadius: 10, padding: "10px 14px" }}>
+                <div>
+                  <strong>{b.title}</strong>
+                  {b.author && <span style={{ color: "var(--duga-muted)" }}> · {b.author}</span>}
+                  <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginTop: 2 }}>
+                    <Badge tone="warning">Awaiting review</Badge>
+                    {b.addedByName && canManageCatalogue && <span> · Submitted by {b.addedByName}</span>}
+                    {b.category && <span> · {b.category}</span>}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                  {canManageCatalogue ? (
+                    <>
+                      <Button variant="accent" size="sm" onClick={() => publishBook(b.id)}>Publish</Button>
+                      <Button variant="ghost" size="sm" onClick={() => rejectBook(b.id, b.title)}>Decline</Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button variant="outline" size="sm" onClick={() => openEdit(b)}>Edit</Button>
+                      <Button variant="ghost" size="sm" onClick={() => run(b.id, "deleteBook")}>Withdraw</Button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       {/* Catalogue grouped by category rather than one long unsorted grid. */}
-      {BOOK_CATEGORIES.filter((cat) => (data.books ?? []).some((b) => b.category === cat)).map((cat) => {
-        const rows = (data.books ?? []).filter((b) => b.category === cat);
+      {BOOK_CATEGORIES.filter((cat) => publishedBooks.some((b) => b.category === cat)).map((cat) => {
+        const rows = publishedBooks.filter((b) => b.category === cat);
         return (
           <details key={cat} open style={{ marginBottom: 14 }}>
             <summary
@@ -325,9 +393,12 @@ export default function LibraryPage() {
         )}
       </Card>
 
-      <Modal open={open} onClose={() => setOpen(false)} title={editing ? "Edit book" : kind === "book" ? "Add book" : "Issue book"}>
+      <Modal open={open} onClose={() => setOpen(false)} title={editing ? "Edit book" : kind === "book" ? (canManageCatalogue ? "Add book" : "Submit book for review") : "Issue book"}>
         {kind === "book" ? (
           <>
+            {!canManageCatalogue && !editing && (
+              <Alert tone="info">Submitted books need an admin&apos;s review before students can see them.</Alert>
+            )}
             <Field label="Title" required>
               <Input value={form.title ?? ""} onChange={(e) => setForm({ ...form, title: e.target.value })} />
             </Field>
@@ -418,7 +489,7 @@ export default function LibraryPage() {
             <Field label="Book" required>
               <Select value={form.bookId ?? ""} onChange={(e) => setForm({ ...form, bookId: e.target.value })}>
                 <option value="">Select a book…</option>
-                {(data.books ?? [])
+                {publishedBooks
                   .filter((b) => b.availableCopies > 0)
                   .map((b) => (
                     <option key={b.id} value={b.id}>{b.title} ({b.availableCopies} left)</option>
@@ -441,7 +512,7 @@ export default function LibraryPage() {
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
           <Button onClick={submit} loading={saving}>
-            {editing ? "Save changes" : kind === "book" ? "Add book" : "Issue book"}
+            {editing ? "Save changes" : kind === "book" ? (canManageCatalogue ? "Add book" : "Submit for review") : "Issue book"}
           </Button>
         </div>
       </Modal>

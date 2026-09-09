@@ -2182,6 +2182,13 @@ model LibraryBook {
   fileSize            Int?
   description         String?
   addedByUserId       String?
+  // A teacher's upload starts unpublished (visible only to them and admins)
+  // until an owner/admin reviews and publishes it to the real catalogue —
+  // teachers can submit books but never publish directly. Admin-added books
+  // publish immediately since the admin IS the publisher.
+  isPublished         Boolean   @default(true)
+  publishedByUserId   String?
+  publishedAt         DateTime?
   // Who this book/e-book is given to — empty means the whole school, matching
   // the same assignment convention used by assignments, e-learning content
   // and games (see isAssignedTo in apps/portal/lib/server/helpers.ts).
