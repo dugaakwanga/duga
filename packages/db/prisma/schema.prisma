@@ -1142,18 +1142,26 @@ model ResultConfig {
 
 // Visual report-card builder settings — one row per (schoolId, section);
 // section "" is the school-wide fallback, same pattern as ResultConfig.
-// Controls which sections render on a generated/printed report card and its
-// signature lines; grading itself still comes from ResultConfig/GradingScale.
+// Controls which sections render on a generated/printed report card, its
+// header text and its signature lines; grading itself still comes from
+// ResultConfig/GradingScale. Modeled on the school's real paper sheet
+// (town/state/motto/section header), not a generic template.
 model ReportCardConfig {
   id              String   @id @default(cuid())
   schoolId        String
   section         String   @default("")
   showCognitive   Boolean  @default(true)
   showPsychomotor Boolean  @default(true)
-  showAffective   Boolean  @default(true)
   showAttendance  Boolean  @default(true)
+  showFees        Boolean  @default(true)
   showLogo        Boolean  @default(true)
   showWatermark   Boolean  @default(false)
+  motto           String?
+  town            String?
+  state           String?
+  // Printed under the school name, e.g. "SECONDARY SECTION". Falls back to
+  // `${section} SECTION` when unset.
+  sectionLabel    String?
   // Ordered list of signature line labels, e.g. ["Class Teacher","Principal"].
   signatureLabels Json     @default("[\"Class Teacher\", \"Principal\"]")
   createdAt       DateTime @default(now())
@@ -1260,12 +1268,27 @@ model ReportCard {
   position           Int?
   classSize          Int?
   subjectCount       Int?
+  // Form Master's written comment on the printed card.
   remark             String?
+  // Behavioral assessment: fixed trait name -> single-letter grade (A-E),
+  // e.g. { "Neatness": "A", "Punctuality": "B" }. Admin-editable, seeded
+  // with the school's trait list at collation time.
   psychomotor        Json?
   coCurricular       Json?
   attendanceRemark   String?
   isPaidGated        Boolean   @default(true)
   feeOverrideApplied Boolean   @default(false)
+  // Snapshotted at collation time so a printed card doesn't drift if the
+  // student's DOB/attendance/fees change afterward.
+  studentAge         Int?
+  schoolDaysOpened   Int?
+  daysPresent        Int?
+  feesOwed           Decimal?
+  nextTermFees       Decimal?
+  feesPayableBy      DateTime?
+  formMasterName     String?
+  principalComment   String?
+  principalName      String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
@@ -1293,6 +1316,13 @@ model ReportCardItem {
   grade          String?
   remark         String?
   position       Int?
+  // Whole-class average total for this subject/term, snapshotted at
+  // collation time (the "Class Average" column on the printed sheet).
+  classAverage   Float?
+  // Snapshot of the raw component -> score map (e.g. {"Assignment 1st":10,
+  // "Test 2nd":18}) as configured on ResultConfig.components at collation
+  // time, so the printed sheet can show each CA sub-column individually.
+  componentScores Json?
 
   reportCard   ReportCard    @relation(fields: [reportCardId], references: [id], onDelete: Cascade)
   classSubject ClassSubject? @relation(fields: [classSubjectId], references: [id])

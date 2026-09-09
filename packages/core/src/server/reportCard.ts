@@ -29,6 +29,38 @@ export const DEFAULT_RESULT_COMPONENTS: ResultComponent[] = [
 export const DEFAULT_CA_CAP = 40;
 export const DEFAULT_EXAM_CAP = 60;
 
+// The seven traits on the school's printed behavioral-assessment grid,
+// graded A-E. Seeded onto a report card's `psychomotor` field when it's
+// first collated (left blank — "" — until the class teacher grades them);
+// re-collation never overwrites a value the teacher/admin already set.
+export const DEFAULT_BEHAVIORAL_TRAITS = [
+  "Neatness",
+  "Punctuality",
+  "Honesty",
+  "Self Control",
+  "Obedience",
+  "Politeness",
+  "Relationship with Others",
+];
+
+// Runs `fn` over `items` with at most `limit` in flight at once — the
+// remote Supabase pooler this app talks to (see .env DATABASE_URL's
+// connection_limit) only allows a handful of concurrent connections, so an
+// unbounded Promise.all over a whole class's worth of writes would just
+// queue up and time out instead of actually running faster.
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]!);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 function normalizeComponents(value: unknown): ResultComponent[] {
   if (!Array.isArray(value)) return DEFAULT_RESULT_COMPONENTS;
   const comps = (value as Array<{ name?: unknown; category?: unknown; max?: unknown; order?: unknown }>)
@@ -103,8 +135,6 @@ export async function collateReportCards(opts: CollateOptions) {
   });
   if (!classGroup) throw new Error("Class not found");
 
-  const config = await getResultConfig(schoolId, classGroup.level.section);
-
   const classSubjects = await prisma.classSubject.findMany({
     where: { classGroupId },
     include: { subject: true },
@@ -119,8 +149,64 @@ export async function collateReportCards(opts: CollateOptions) {
   // standard WAEC-style scale when none is configured so grades are never empty.
   const scale = await getDefaultGradingScale(schoolId, classGroup.level.section);
 
-  // Subject score matrix built from per-student SubjectScore rows.
-  const subjectScores: Record<string, Record<string, number>> = {};
+  // Next term (same session, next termNumber) — used for "next term's fees"
+  // and the "payable on or before" date. Left null past the last term of a
+  // session; that data isn't knowable until the next session is set up.
+  const nextTerm = await prisma.term.findFirst({
+    where: { schoolId, sessionId: term.sessionId, termNumber: term.termNumber + 1 },
+  });
+
+  // Attendance: how many distinct days this class took attendance this term
+  // ("No. of times school opened"), and how many of those each student was
+  // marked present for.
+  const attendanceRows = await prisma.studentAttendance.findMany({
+    where: { schoolId, classGroupId, termId },
+    select: { date: true, studentId: true, status: true },
+  });
+  const schoolDaysOpened = new Set(attendanceRows.map((r) => r.date.toISOString().slice(0, 10))).size;
+  const daysPresentByStudent = new Map<string, number>();
+  for (const row of attendanceRows) {
+    if (row.status === "PRESENT" || row.status === "LATE") {
+      daysPresentByStudent.set(row.studentId, (daysPresentByStudent.get(row.studentId) ?? 0) + 1);
+    }
+  }
+
+  // Fees: this term's invoice balance ("fees owed") and next term's
+  // applicable fee structures ("next term's fees"), same most-specific-wins
+  // matching fees.ts uses when generating invoices.
+  const [invoices, nextTermStructures] = await Promise.all([
+    prisma.invoice.findMany({ where: { schoolId, termId, studentId: { in: students.map((s) => s.id) } } }),
+    nextTerm
+      ? prisma.feeStructure.findMany({ where: { schoolId, termId: nextTerm.id } })
+      : Promise.resolve([]),
+  ]);
+  const invoiceByStudent = new Map(invoices.map((inv) => [inv.studentId, inv]));
+  const nextTermFeesByStudent = new Map<string, number>();
+  for (const student of students) {
+    const applicable = nextTermStructures.filter(
+      (s) =>
+        (!s.classGroupId || s.classGroupId === classGroupId) &&
+        (!s.levelId || s.levelId === classGroup.levelId) &&
+        (!s.section || s.section === student.section),
+    );
+    if (applicable.length) {
+      nextTermFeesByStudent.set(student.id, applicable.reduce((a, s) => a + Number(s.amount), 0));
+    }
+  }
+
+  const asOfDate = term.endDate ?? new Date();
+  function ageAsOf(dob: Date | null): number | null {
+    if (!dob) return null;
+    let age = asOfDate.getFullYear() - dob.getFullYear();
+    const beforeBirthday = asOfDate.getMonth() < dob.getMonth() || (asOfDate.getMonth() === dob.getMonth() && asOfDate.getDate() < dob.getDate());
+    if (beforeBirthday) age -= 1;
+    return age;
+  }
+
+  // Subject score matrix built from per-student SubjectScore rows, keeping
+  // the full row (not just its total) so ca/exam/component breakdown can be
+  // snapshotted onto the report exactly as entered, not re-derived.
+  const subjectScoreRows: Record<string, Map<string, { ca: number; exam: number; total: number; scores: unknown }>> = {};
   const studentTotals: Record<string, number> = {};
   const studentCount: Record<string, number> = {};
   const subjectStudents: Record<string, number[]> = {};
@@ -129,20 +215,22 @@ export async function collateReportCards(opts: CollateOptions) {
   for (const cs of classSubjects) {
     const key = cs.subjectId;
     subjectsInReport[key] = { id: cs.subjectId, name: cs.subject.name, classSubjectId: cs.id };
-    subjectScores[key] = {};
     subjectStudents[key] = [];
 
     const rows = await prisma.subjectScore.findMany({ where: { classSubjectId: cs.id, termId } });
-    const byStudent = new Map(rows.map((r) => [r.studentId, r]));
+    const byStudent = new Map(rows.map((r) => [r.studentId, { ca: r.caTotal, exam: r.examTotal, total: r.total, scores: r.scores }]));
+    subjectScoreRows[key] = byStudent;
 
     for (const student of students) {
-      const row = byStudent.get(student.id);
-      const total = row?.total ?? 0;
-      subjectScores[key][student.id] = total;
+      const total = byStudent.get(student.id)?.total ?? 0;
       subjectStudents[key].push(total);
       studentTotals[student.id] = (studentTotals[student.id] ?? 0) + total;
       studentCount[student.id] = (studentCount[student.id] ?? 0) + 1;
     }
+  }
+  const classAverageBySubject: Record<string, number> = {};
+  for (const [key, totals] of Object.entries(subjectStudents)) {
+    classAverageBySubject[key] = totals.length ? Math.round((totals.reduce((a, b) => a + b, 0) / totals.length) * 100) / 100 : 0;
   }
 
   const allAverages = students.map((s) => {
@@ -158,92 +246,98 @@ export async function collateReportCards(opts: CollateOptions) {
     return true;
   };
 
-  const reportCards = [];
-  for (const student of students) {
+  // One batch read for every student's existing card (instead of one query
+  // per student) — needed only to preserve `psychomotor`/`publishedAt` state
+  // that an upsert's `update` branch can't conditionally read for itself.
+  const existingCards = await prisma.reportCard.findMany({ where: { termId, studentId: { in: students.map((s) => s.id) } } });
+  const existingByStudent = new Map(existingCards.map((c) => [c.studentId, c]));
+
+  // A remote Supabase pooler connection is the bottleneck here, not CPU —
+  // cap how many upserts run at once instead of firing them all together.
+  const WRITE_CONCURRENCY = 4;
+
+  const reportCards = await mapWithConcurrency(students, WRITE_CONCURRENCY, async (student) => {
     const total = studentTotals[student.id];
     const count = studentCount[student.id];
     const average = count ? (total ?? 0) / count : 0;
     const overallPosition = ranked.indexOf(average) + 1;
     const willPublish = shouldPublish(student.id);
+    const invoice = invoiceByStudent.get(student.id);
+    const nextTermFees = nextTermFeesByStudent.get(student.id);
+    const existing = existingByStudent.get(student.id);
 
-    const existing = await prisma.reportCard.findUnique({
+    const commonData = {
+      total: Math.round(studentTotals[student.id] ?? 0),
+      average: Math.round(average * 100) / 100,
+      position: overallPosition,
+      classSize: students.length,
+      subjectCount: Object.keys(subjectsInReport).length,
+      classGroupId,
+      sessionId: term.sessionId,
+      studentAge: ageAsOf(student.dateOfBirth),
+      schoolDaysOpened,
+      daysPresent: daysPresentByStudent.get(student.id) ?? 0,
+      feesOwed: invoice ? invoice.balance : undefined,
+      nextTermFees: nextTermFees !== undefined ? nextTermFees : undefined,
+      feesPayableBy: nextTerm?.startDate ?? undefined,
+    };
+    return prisma.reportCard.upsert({
       where: { studentId_termId: { studentId: student.id, termId } },
+      // psychomotor is deliberately omitted here — re-collation must never
+      // overwrite behavioral grades a class teacher already entered.
+      update: {
+        ...commonData,
+        isPublished: willPublish ? true : existing?.isPublished ?? false,
+        publishedAt: willPublish && !existing?.isPublished ? new Date() : existing?.publishedAt,
+        publishedBy: willPublish && !existing?.isPublished ? publishedBy : existing?.publishedBy,
+      },
+      create: {
+        schoolId,
+        studentId: student.id,
+        termId,
+        ...commonData,
+        isPublished: willPublish,
+        publishedAt: willPublish ? new Date() : undefined,
+        publishedBy: willPublish ? publishedBy : undefined,
+        isPaidGated: true,
+        psychomotor: Object.fromEntries(DEFAULT_BEHAVIORAL_TRAITS.map((t) => [t, ""])),
+      },
     });
-    const reportCard = existing
-      ? await prisma.reportCard.update({
-          where: { id: existing.id },
-          data: {
-            total: Math.round(studentTotals[student.id] ?? 0),
-            average: Math.round(average * 100) / 100,
-            position: overallPosition,
-            classSize: students.length,
-            subjectCount: Object.keys(subjectsInReport).length,
-            isPublished: willPublish ? true : existing.isPublished,
-            publishedAt: willPublish && !existing.isPublished ? new Date() : existing.publishedAt,
-            publishedBy: willPublish && !existing.isPublished ? publishedBy : existing.publishedBy,
-            classGroupId,
-            sessionId: term.sessionId,
-          },
-        })
-      : await prisma.reportCard.create({
-          data: {
-            schoolId,
-            studentId: student.id,
-            termId,
-            sessionId: term.sessionId,
-            classGroupId,
-            total: Math.round(studentTotals[student.id] ?? 0),
-            average: Math.round(average * 100) / 100,
-            position: overallPosition,
-            classSize: students.length,
-            subjectCount: Object.keys(subjectsInReport).length,
-            isPublished: willPublish,
-            publishedAt: willPublish ? new Date() : undefined,
-            publishedBy: willPublish ? publishedBy : undefined,
-            isPaidGated: true,
-          },
-        });
+  });
 
-    for (const [subjectKey, info] of Object.entries(subjectsInReport)) {
-      const score = subjectScores[subjectKey]?.[student.id] ?? 0;
-      const subjScores = subjectStudents[subjectKey] ?? [];
-      const subjPosition = subjScores.indexOf(score) + 1;
-      const { grade, remark } = computeGrade(score, scale);
-      const existingItem = await prisma.reportCardItem.findUnique({
-        where: { reportCardId_subjectId: { reportCardId: reportCard.id, subjectId: info.id } },
-      });
-      if (existingItem) {
-        await prisma.reportCardItem.update({
-          where: { id: existingItem.id },
-          data: {
-            ca: Math.min(score, config.caCap),
-            exam: Math.max(score - Math.min(score, config.caCap), 0),
-            total: Math.round(score),
-            grade,
-            remark,
-            position: subjPosition,
-          },
-        });
-      } else {
-        await prisma.reportCardItem.create({
-          data: {
-            reportCardId: reportCard.id,
-            classSubjectId: info.classSubjectId,
-            subjectId: info.id,
-            subjectName: info.name,
-            ca: Math.min(score, config.caCap),
-            exam: Math.max(score - Math.min(score, config.caCap), 0),
-            total: Math.round(score),
-            grade,
-            remark,
-            position: subjPosition,
-          },
-        });
-      }
-    }
-
-    reportCards.push(reportCard);
-  }
+  const itemJobs = students.flatMap((student, i) =>
+    Object.entries(subjectsInReport).map(([subjectKey, info]) => ({ student, reportCard: reportCards[i]!, subjectKey, info })),
+  );
+  await mapWithConcurrency(itemJobs, WRITE_CONCURRENCY, async ({ student, reportCard, subjectKey, info }) => {
+    const row = subjectScoreRows[subjectKey]?.get(student.id);
+    const ca = row?.ca ?? 0;
+    const exam = row?.exam ?? 0;
+    const score = row?.total ?? 0;
+    const subjScores = subjectStudents[subjectKey] ?? [];
+    const subjPosition = subjScores.indexOf(score) + 1;
+    const { grade, remark } = computeGrade(score, scale);
+    const itemData = {
+      ca,
+      exam,
+      total: Math.round(score),
+      grade,
+      remark,
+      position: subjPosition,
+      classAverage: classAverageBySubject[subjectKey] ?? null,
+      componentScores: (row?.scores as object | undefined) ?? {},
+    };
+    return prisma.reportCardItem.upsert({
+      where: { reportCardId_subjectId: { reportCardId: reportCard.id, subjectId: info.id } },
+      update: itemData,
+      create: {
+        reportCardId: reportCard.id,
+        classSubjectId: info.classSubjectId,
+        subjectId: info.id,
+        subjectName: info.name,
+        ...itemData,
+      },
+    });
+  });
 
   return { reportCards, classGroup, term };
 }

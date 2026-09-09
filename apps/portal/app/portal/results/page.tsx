@@ -1,10 +1,22 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { PageHeader, Card, Badge, Table, Alert, Spinner, EmptyState, Button, Field, Select, Input, ProgressBar, Icon } from "@duga/ui";
+import { PageHeader, Card, Badge, Table, Alert, Spinner, EmptyState, Button, Field, Select, Input, Textarea, Modal, ProgressBar, Icon } from "@duga/ui";
 import { api } from "@/lib/client/api";
 import { useSection } from "@/components/SectionContext";
-import { downloadReportCardPdf, renderReportCardPreviewUrl, type ReportCardPdfConfig, type ReportCardPdfSchool } from "@/lib/client/reportCardPdf";
+import {
+  downloadReportCardPdf,
+  renderReportCardPreviewUrl,
+  type ReportCardPdfConfig,
+  type ReportCardPdfSchool,
+  type ReportCardPdfGradeBand,
+} from "@/lib/client/reportCardPdf";
+
+// The seven traits on the school's printed behavioral-assessment grid,
+// graded A-E — mirrors packages/core/src/server/reportCard.ts's
+// DEFAULT_BEHAVIORAL_TRAITS (kept as a local copy since that module also
+// pulls in Prisma, which client code can't import).
+const DEFAULT_BEHAVIORAL_TRAITS = ["Neatness", "Punctuality", "Honesty", "Self Control", "Obedience", "Politeness", "Relationship with Others"];
 
 interface ResultComponent {
   name: string;
@@ -31,16 +43,36 @@ interface ReportCard {
   gpa?: number | null;
   classSize?: number | null;
   subjectCount?: number | null;
-  term: { name: string } | null;
-  student: { id: string; photoUrl?: string | null; user: { firstName: string; lastName: string } };
+  term: { name: string; startDate?: string | null; endDate?: string | null; session?: { name: string } | null } | null;
+  student: { id: string; photoUrl?: string | null; admissionNumber?: string; user: { firstName: string; lastName: string } };
   classGroup: { level: { name: string }; name: string } | null;
   access?: "granted" | "locked";
   gatedReason?: string | null;
-  items?: Array<{ id: string; subject: { name: string }; ca: number | null; exam: number | null; total: number | null; grade: string | null; remark?: string | null; position?: number | null }> | null;
+  items?: Array<{
+    id: string;
+    subject: { name: string };
+    ca: number | null;
+    exam: number | null;
+    total: number | null;
+    grade: string | null;
+    remark?: string | null;
+    position?: number | null;
+    classAverage?: number | null;
+    componentScores?: Record<string, number> | null;
+  }> | null;
+  // Behavioral assessment: fixed trait name -> single-letter grade (A-E).
   psychomotor?: Record<string, string> | null;
-  coCurricular?: Record<string, string> | null;
   attendanceRemark?: string | null;
   remark?: string | null;
+  studentAge?: number | null;
+  schoolDaysOpened?: number | null;
+  daysPresent?: number | null;
+  feesOwed?: number | string | null;
+  nextTermFees?: number | string | null;
+  feesPayableBy?: string | null;
+  formMasterName?: string | null;
+  principalComment?: string | null;
+  principalName?: string | null;
 }
 
 interface TeacherClassSubject {
@@ -138,6 +170,7 @@ export default function ResultsPage() {
   const [activeTermId, setActiveTermId] = useState<string>("");
   const [submissions, setSubmissions] = useState<Record<string, SubStatus>>({});
   const [config, setConfig] = useState<ResultConfig | null>(null);
+  const [gradingScale, setGradingScale] = useState<ReportCardPdfGradeBand[]>([]);
   const [sheet, setSheet] = useState<EntrySheet | null>(null);
   const [sheetLoading, setSheetLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -147,6 +180,21 @@ export default function ResultsPage() {
   const [printClassId, setPrintClassId] = useState("");
   const [printTermId, setPrintTermId] = useState("");
   const { section } = useSection();
+
+  // Report card details editor: behavioral grades, Form Master's/Principal's
+  // comments and names, and the auto-computed (but overridable) fees fields.
+  const [detailsTarget, setDetailsTarget] = useState<ReportCard | null>(null);
+  const [detailsForm, setDetailsForm] = useState<{
+    psychomotor: Record<string, string>;
+    remark: string;
+    formMasterName: string;
+    principalComment: string;
+    principalName: string;
+    feesOwed: string;
+    nextTermFees: string;
+    feesPayableBy: string;
+  }>({ psychomotor: {}, remark: "", formMasterName: "", principalComment: "", principalName: "", feesOwed: "", nextTermFees: "", feesPayableBy: "" });
+  const [detailsSaving, setDetailsSaving] = useState(false);
 
   // Admin: mark all draft report cards ready (flag to show publish buttons)
   const [configOpen, setConfigOpen] = useState(false);
@@ -174,108 +222,39 @@ export default function ResultsPage() {
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipNextAutoSave = useRef(false);
 
-  function esc(value: unknown) {
-    return String(value ?? "—").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] ?? c));
-  }
-
-  function printableCard(rc: ReportCard) {
-    const student = `${rc.student.user.firstName} ${rc.student.user.lastName}`;
-    const rows = (rc.items ?? []).map((item) => `<tr><td>${esc(item.subject.name)}</td><td>${esc(item.ca)}</td><td>${esc(item.exam)}</td><td>${esc(item.total)}</td><td>${esc(item.grade)}</td></tr>`).join("");
-    const ratings = (title: string, values?: Record<string, string> | null) => values && Object.keys(values).length
-      ? `<section><h3>${esc(title)}</h3><table class="ratings"><tbody>${Object.entries(values).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("")}</tbody></table></section>` : "";
-    const scaleRows = [
-      ["A1", "75 – 100"], ["B2", "70 – 74"], ["B3", "65 – 69"], ["C4", "60 – 64"], ["C5", "55 – 59"],
-      ["C6", "50 – 54"], ["D7", "45 – 49"], ["E8", "40 – 44"], ["F9", "0 – 39"],
-    ].map(([g, r]) => `<tr><td class="c">${g}</td><td class="c">${r}</td></tr>`).join("");
-    const photo = rc.student.photoUrl
-      ? `<img src="${esc(rc.student.photoUrl)}" alt="Passport" style="width:76px;height:76px;border-radius:50%;object-fit:cover;border:2px solid #9aa4b2;display:block;margin:0 auto 8px" />`
-      : "";
-    const className = rc.classGroup ? `${esc(rc.classGroup.level.name)} ${esc(rc.classGroup.name)}` : "—";
-    return `<article class="report">
-  <header class="report-head">
-    <div class="report-school">De Ultimate Glory Academy</div>
-    <div class="report-sub">AKWANGA · NIGERIA</div>
-    <h1>STUDENT REPORT CARD</h1>
-    <div class="report-term">${esc(rc.term?.name ?? "")} · ${className}</div>
-  </header>
-  <div class="report-body">
-    <div class="report-student">${photo}<div class="report-student-name">${esc(student)}</div></div>
-    <table class="summary"><tbody>
-      <tr><th>Class</th><td>${className}</td><th>Average</th><td>${rc.average == null ? "—" : esc(Number(rc.average).toFixed(1))}%</td></tr>
-      <tr><th>Term</th><td>${esc(rc.term?.name ?? "—")}</td><th>Position</th><td>${rc.position == null ? "—" : esc(String(rc.position))} of ${rc.classSize ?? "—"}</td></tr>
-      <tr><th>Subjects</th><td>${esc(String(rc.subjectCount ?? (rc.items ?? []).length))}</td><th>GPA</th><td>${rc.gpa == null ? "—" : esc(Number(rc.gpa).toFixed(2))}</td></tr>
-    </tbody></table>
-    <table class="grades"><thead><tr><th>Subject</th><th>CA</th><th>Exam</th><th>Total</th><th>Grade</th></tr></thead><tbody>${rows}</tbody></table>
-    <section><h3>Grading scale</h3><table class="scale"><tbody>${scaleRows}</tbody></table></section>
-    ${ratings("Psychomotor development", rc.psychomotor)}
-    ${ratings("Co-curricular activities", rc.coCurricular)}
-    <section>
-      <h3>Teacher's remark</h3>
-      <p class="remark">${esc(rc.remark ?? "—")}</p>
-      <h3>Attendance / conduct</h3>
-      <p class="remark">${esc(rc.attendanceRemark ?? "—")}</p>
-    </section>
-    <div class="report-signs">
-      <div><div class="sign-line"></div><span>Class Teacher</span></div>
-      <div><div class="sign-line"></div><span>Principal</span></div>
-    </div>
-  </div>
-  <footer class="report-foot">Grading scale — A1: 75–100 · B2: 70–74 · B3: 65–69 · C4–C6: 50–64 · D7–E8: 40–49 · F9: below 40</footer>
-</article>`;
-  }
-
-  function printCards(selected: ReportCard[]) {
-    if (!selected.length) return alert("There are no report cards to print for this selection.");
-    const popup = window.open("", "_blank", "noopener,noreferrer");
-    if (!popup) return alert("Please allow pop-ups to print report cards.");
-    popup.document.write(`<!doctype html><html><head><title>Report cards</title><style>
-body{font-family:'Segoe UI',Arial,sans-serif;color:#18202a;margin:0;background:#eef1f6}
-.report{max-width:820px;margin:28px auto;background:#fff;padding:0 0 28px;box-shadow:0 2px 14px rgba(0,0,0,.08)}
-.report-head{background:linear-gradient(135deg,#1e3a8a,#0b1f4b);color:#fff;text-align:center;padding:22px 18px 16px}
-.report-school{font-size:22px;font-weight:800;letter-spacing:.4px}
-.report-sub{font-size:11px;letter-spacing:3px;opacity:.85;margin-top:2px}
-.report-head h1{font-size:17px;letter-spacing:2px;margin:12px 0 4px;font-weight:800}
-.report-term{font-size:13px;opacity:.9}
-.report-body{padding:22px 26px}
-.report-student{text-align:center;margin-bottom:14px}
-.report-student-name{font-size:19px;font-weight:800;color:#1e3a8a}
-table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13.5px}
-table.grades th,table.grades td,table.ratings td,table.summary th,table.summary td,table.scale td{border:1px solid #c3cbda;padding:7px 9px;text-align:left}
-table.grades thead th,table.summary th{background:#edf2f7;color:#1e3a8a}
-table.summary th{width:96px}
-table.summary td{font-weight:600}
-td.c{text-align:center}
-table.scale{width:64%;margin-left:auto;margin-right:auto}
-table.scale td{text-align:center;padding:4px 9px}
-section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:uppercase;letter-spacing:.6px}
-.remark{padding:8px 12px;background:#f7f9fc;border-radius:6px;min-height:26px;margin:0}
-.report-signs{display:flex;gap:40px;margin-top:40px;justify-content:space-between}
-.report-signs>div{flex:1;text-align:center;font-size:12.5px;color:#39475b}
-.sign-line{border-top:1.5px solid #39475b;margin-bottom:6px;height:26px}
-.report-foot{text-align:center;font-size:11px;color:#6b7a90;padding:14px;border-top:1px solid #dfe5ee}
-@media print{body{background:#fff}.report{margin:0 auto;box-shadow:none;page-break-after:always}.report:last-child{page-break-after:auto}}
-</style></head><body>${selected.map(printableCard).join("")}<script>window.onload=()=>window.print()</script></body></html>`);
-    popup.document.close();
-  }
-
   async function downloadPdf(rc: ReportCard) {
     if (!school || !reportCardConfig) return alert("Report card settings are still loading — try again in a moment.");
     setDownloadingId(rc.id);
     try {
-      await downloadReportCardPdf(school, reportCardConfig, {
-        student: rc.student.user,
-        className: rc.classGroup ? `${rc.classGroup.level.name} ${rc.classGroup.name}` : null,
-        term: rc.term,
-        average: rc.average,
-        position: rc.position,
-        classSize: rc.classSize ?? null,
-        gpa: rc.gpa ?? null,
-        items: rc.items ? rc.items.map((i) => ({ ...i, remark: i.remark ?? null, position: i.position ?? null })) : null,
-        psychomotor: rc.psychomotor ?? null,
-        coCurricular: rc.coCurricular ?? null,
-        attendanceRemark: rc.attendanceRemark ?? null,
-        remark: rc.remark ?? null,
-      });
+      await downloadReportCardPdf(
+        school,
+        reportCardConfig,
+        {
+          student: { ...rc.student.user, admissionNumber: rc.student.admissionNumber },
+          className: rc.classGroup ? `${rc.classGroup.level.name} ${rc.classGroup.name}` : null,
+          term: rc.term,
+          sessionName: rc.term?.session?.name ?? null,
+          average: rc.average,
+          position: rc.position,
+          classSize: rc.classSize ?? null,
+          gpa: rc.gpa ?? null,
+          items: rc.items ? rc.items.map((i) => ({ ...i, remark: i.remark ?? null, position: i.position ?? null })) : null,
+          psychomotor: rc.psychomotor ?? null,
+          attendanceRemark: rc.attendanceRemark ?? null,
+          studentAge: rc.studentAge ?? null,
+          schoolDaysOpened: rc.schoolDaysOpened ?? null,
+          daysPresent: rc.daysPresent ?? null,
+          feesOwed: rc.feesOwed !== undefined && rc.feesOwed !== null ? Number(rc.feesOwed) : null,
+          nextTermFees: rc.nextTermFees !== undefined && rc.nextTermFees !== null ? Number(rc.nextTermFees) : null,
+          feesPayableBy: rc.feesPayableBy ?? null,
+          remark: rc.remark ?? null,
+          formMasterName: rc.formMasterName ?? null,
+          principalComment: rc.principalComment ?? null,
+          principalName: rc.principalName ?? null,
+        },
+        config?.components,
+        gradingScale.length ? gradingScale : undefined,
+      );
     } catch (e) {
       alert((e as Error).message);
     } finally {
@@ -289,7 +268,21 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
   }
 
   function openBuilder() {
-    setBuilderDraft(reportCardConfig ?? { showCognitive: true, showPsychomotor: true, showAffective: true, showAttendance: true, showLogo: true, showWatermark: false, signatureLabels: ["Class Teacher", "Principal"] });
+    setBuilderDraft(
+      reportCardConfig ?? {
+        showCognitive: true,
+        showPsychomotor: true,
+        showAttendance: true,
+        showFees: true,
+        showLogo: true,
+        showWatermark: false,
+        motto: null,
+        town: null,
+        state: null,
+        sectionLabel: null,
+        signatureLabels: ["Class Teacher", "Principal"],
+      },
+    );
     closePreview();
     setBuilderOpen(true);
   }
@@ -328,16 +321,53 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
     }
   }
 
-  async function editDetails(rc: ReportCard) {
-    const psychomotorText = window.prompt("Psychomotor ratings (one per line: Skill: Rating)", Object.entries(rc.psychomotor ?? {}).map(([k, v]) => `${k}: ${v}`).join("\n"));
-    if (psychomotorText === null) return;
-    const activitiesText = window.prompt("Co-curricular activities (one per line: Activity: Rating)", Object.entries(rc.coCurricular ?? {}).map(([k, v]) => `${k}: ${v}`).join("\n"));
-    if (activitiesText === null) return;
-    const toRatings = (text: string) => Object.fromEntries(text.split("\n").map((line) => line.split(":")).flatMap(([k, v]) => k?.trim() && v?.trim() ? [[k.trim(), v.trim()] as [string, string]] : []));
+  const BEHAVIORAL_GRADES = ["A", "B", "C", "D", "E"];
+
+  function detailsFormFrom(rc: ReportCard, remarkOverride?: string) {
+    const storedTraits = rc.psychomotor && Object.keys(rc.psychomotor).length ? rc.psychomotor : {};
+    const traitNames = Object.keys(storedTraits).length ? Object.keys(storedTraits) : DEFAULT_BEHAVIORAL_TRAITS;
+    const psychomotor = Object.fromEntries(
+      traitNames.map((t) => [t, BEHAVIORAL_GRADES.includes(storedTraits[t] ?? "") ? storedTraits[t]! : ""]),
+    );
+    return {
+      psychomotor,
+      remark: remarkOverride ?? rc.remark ?? "",
+      formMasterName: rc.formMasterName ?? "",
+      principalComment: rc.principalComment ?? "",
+      principalName: rc.principalName ?? "",
+      feesOwed: rc.feesOwed !== undefined && rc.feesOwed !== null ? String(rc.feesOwed) : "",
+      nextTermFees: rc.nextTermFees !== undefined && rc.nextTermFees !== null ? String(rc.nextTermFees) : "",
+      feesPayableBy: rc.feesPayableBy ? rc.feesPayableBy.slice(0, 10) : "",
+    };
+  }
+
+  function openDetails(rc: ReportCard) {
+    setDetailsForm(detailsFormFrom(rc));
+    setDetailsTarget(rc);
+  }
+
+  async function saveDetails() {
+    if (!detailsTarget) return;
+    setDetailsSaving(true);
     try {
-      await api(`results/${rc.id}/updateDetails`, { method: "POST", body: { psychomotor: toRatings(psychomotorText), coCurricular: toRatings(activitiesText), attendanceRemark: window.prompt("Attendance / conduct remark", rc.attendanceRemark ?? "") ?? "", remark: window.prompt("Teacher's remark", rc.remark ?? "") ?? "" } });
-      setCards((old) => old.map((card) => card.id === rc.id ? { ...card, psychomotor: toRatings(psychomotorText), coCurricular: toRatings(activitiesText) } : card));
-    } catch (e) { alert((e as Error).message); }
+      const body = {
+        psychomotor: detailsForm.psychomotor,
+        remark: detailsForm.remark,
+        formMasterName: detailsForm.formMasterName,
+        principalComment: detailsForm.principalComment,
+        principalName: detailsForm.principalName,
+        feesOwed: detailsForm.feesOwed === "" ? undefined : Number(detailsForm.feesOwed),
+        nextTermFees: detailsForm.nextTermFees === "" ? undefined : Number(detailsForm.nextTermFees),
+        feesPayableBy: detailsForm.feesPayableBy || undefined,
+      };
+      await api(`results/${detailsTarget.id}/updateDetails`, { method: "POST", body });
+      setCards((old) => old.map((card) => (card.id === detailsTarget.id ? { ...card, ...body } : card)));
+      setDetailsTarget(null);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setDetailsSaving(false);
+    }
   }
 
   async function draftRemark(rc: ReportCard) {
@@ -351,14 +381,11 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
           grade: rc.average != null ? gradeOf(Number(rc.average)) : undefined,
         },
       });
-      const remark = window.prompt("AI-drafted remark — edit or press OK to keep:", d.reply);
-      if (remark === null) return;
-      await api(`results/${rc.id}/updateDetails`, {
-        method: "POST",
-        body: { psychomotor: rc.psychomotor ?? {}, coCurricular: rc.coCurricular ?? {}, attendanceRemark: rc.attendanceRemark ?? "", remark },
-      });
-      setCards((old) => old.map((card) => (card.id === rc.id ? { ...card, remark } : card)));
-      setRankMsg("Remark saved.");
+      // Open the same details editor pre-filled with the AI draft so the
+      // reviewer can read/edit it (and everything else) before saving,
+      // instead of a blind window.prompt.
+      setDetailsForm(detailsFormFrom(rc, d.reply));
+      setDetailsTarget(rc);
     } catch (e) {
       alert((e as Error).message);
     }
@@ -366,7 +393,18 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
 
   useEffect(() => {
     void section;
-    api<{ role: string; reportCards?: ReportCard[]; classSubjects?: TeacherClassSubject[]; terms?: TermOption[]; activeTermId?: string; config?: ResultConfig; submissions?: Record<string, SubStatus>; school?: ReportCardPdfSchool; reportCardConfig?: ReportCardPdfConfig }>("results")
+    api<{
+      role: string;
+      reportCards?: ReportCard[];
+      classSubjects?: TeacherClassSubject[];
+      terms?: TermOption[];
+      activeTermId?: string;
+      config?: ResultConfig;
+      submissions?: Record<string, SubStatus>;
+      school?: ReportCardPdfSchool;
+      reportCardConfig?: ReportCardPdfConfig;
+      gradingScale?: ReportCardPdfGradeBand[];
+    }>("results")
       .then((d) => {
         setRole(d.role);
         setCards(d.reportCards ?? []);
@@ -377,6 +415,7 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
         setSubmissions(d.submissions ?? {});
         setSchool(d.school ?? null);
         setReportCardConfig(d.reportCardConfig ?? null);
+        setGradingScale(d.gradingScale ?? []);
         const focus = new URLSearchParams(window.location.search).get("classSubject");
         if (focus && d.role === "TEACHER" && d.activeTermId) openSheet(focus, d.activeTermId);
       })
@@ -848,7 +887,6 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
               )}
               {rc.access === "granted" && (
                 <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
-                  <Button size="sm" variant="outline" onClick={() => printCards([rc])}>Print result</Button>
                   <Button size="sm" variant="outline" loading={downloadingId === rc.id} onClick={() => downloadPdf(rc)}>Download PDF</Button>
                 </div>
               )}
@@ -859,10 +897,9 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
         <EmptyState title="No report cards published yet" hint="Teachers enter and submit subject scores; then use the Publish button per student once the class is ready." />
       ) : (
         <Card>
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(180px,1fr) minmax(180px,1fr) auto", gap: 10, alignItems: "end", marginBottom: 12 }}>
-            <Field label="Class to print"><Select value={printClassId} onChange={(e) => setPrintClassId(e.target.value)}><option value="">All classes</option>{printClasses.map(([id, group]) => <option key={id} value={id}>{group.level.name} {group.name}</option>)}</Select></Field>
-            <Field label="Term to print"><Select value={printTermId} onChange={(e) => setPrintTermId(e.target.value)}><option value="">All terms</option>{printTerms.map(([id, term]) => <option key={id} value={id}>{term.name}</option>)}</Select></Field>
-            <Button variant="outline" onClick={() => printCards(displayedCards)}>Print selected results</Button>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(180px,1fr) minmax(180px,1fr)", gap: 10, alignItems: "end", marginBottom: 12 }}>
+            <Field label="Filter by class"><Select value={printClassId} onChange={(e) => setPrintClassId(e.target.value)}><option value="">All classes</option>{printClasses.map(([id, group]) => <option key={id} value={id}>{group.level.name} {group.name}</option>)}</Select></Field>
+            <Field label="Filter by term"><Select value={printTermId} onChange={(e) => setPrintTermId(e.target.value)}><option value="">All terms</option>{printTerms.map(([id, term]) => <option key={id} value={id}>{term.name}</option>)}</Select></Field>
           </div>
           {cardsByClass.map(([className, rows]) => {
             const publishedCount = rows.filter((rc) => rc.isPublished).length;
@@ -900,12 +937,11 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
                         <td><Badge tone={rc.isPublished ? "success" : "neutral"}>{rc.isPublished ? "Published" : "Draft"}</Badge></td>
                         <td>
                           <div style={{ display: "flex", gap: 6 }}>
-                            <Button size="sm" variant="outline" onClick={() => printCards([rc])}>Print</Button>
                             <Button size="sm" variant="outline" loading={downloadingId === rc.id} onClick={() => downloadPdf(rc)}>PDF</Button>
                             {!rc.isPublished && (role === "ADMIN" || role === "OWNER") && rc.termId && (
                               <Button size="sm" variant="accent" onClick={() => publishStudent(rc)}>Publish</Button>
                             )}
-                            {(role === "TEACHER" || role === "ADMIN" || role === "OWNER") && <Button size="sm" variant="ghost" onClick={() => editDetails(rc)}>Rate extras</Button>}
+                            {(role === "TEACHER" || role === "ADMIN" || role === "OWNER") && <Button size="sm" variant="ghost" onClick={() => openDetails(rc)}>Comments &amp; fees</Button>}
                             {(role === "TEACHER" || role === "ADMIN" || role === "OWNER") && <Button size="sm" variant="outline" onClick={() => draftRemark(rc)}>Draft remark</Button>}
                           </div>
                         </td>
@@ -994,11 +1030,17 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
               : "Editing the school-wide default layout, used by any section without its own override."}
           </Alert>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 10, marginTop: 14 }}>
+            <Field label="Motto"><Input value={builderDraft.motto ?? ""} onChange={(e) => setBuilderDraft({ ...builderDraft, motto: e.target.value || null })} placeholder="Imparting the winning wisdom" /></Field>
+            <Field label="Section header" hint='Printed under the motto, e.g. "SECONDARY SECTION".'><Input value={builderDraft.sectionLabel ?? ""} onChange={(e) => setBuilderDraft({ ...builderDraft, sectionLabel: e.target.value || null })} placeholder={section ? `${section} Section` : "e.g. Secondary Section"} /></Field>
+            <Field label="Town"><Input value={builderDraft.town ?? ""} onChange={(e) => setBuilderDraft({ ...builderDraft, town: e.target.value || null })} /></Field>
+            <Field label="State"><Input value={builderDraft.state ?? ""} onChange={(e) => setBuilderDraft({ ...builderDraft, state: e.target.value || null })} /></Field>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 10, marginTop: 14 }}>
             {([
-              ["showCognitive", "Cognitive scores (subject table)"],
-              ["showPsychomotor", "Psychomotor domain ratings"],
-              ["showAffective", "Affective domain / co-curricular"],
-              ["showAttendance", "Attendance & conduct remark"],
+              ["showCognitive", "Subjects & scores table"],
+              ["showPsychomotor", "Behavioral assessment grid"],
+              ["showAttendance", "Attendance line"],
+              ["showFees", "Fees owed / next term's fees"],
               ["showLogo", "School logo"],
               ["showWatermark", "Watermark"],
             ] as const).map(([key, label]) => (
@@ -1030,6 +1072,62 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
             </div>
           )}
         </Card>
+      )}
+
+      {detailsTarget && (
+        <Modal
+          open
+          onClose={() => setDetailsTarget(null)}
+          title={`Comments & fees — ${detailsTarget.student.user.firstName} ${detailsTarget.student.user.lastName}`}
+          wide
+          footer={
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <Button variant="ghost" onClick={() => setDetailsTarget(null)}>Cancel</Button>
+              <Button onClick={saveDetails} loading={detailsSaving}>Save</Button>
+            </div>
+          }
+        >
+          <Field label="Behavioral assessment" hint="Graded A (best) to E.">
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 10 }}>
+              {Object.keys(detailsForm.psychomotor).map((trait) => (
+                <div key={trait} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                  <span style={{ fontSize: 13.5 }}>{trait}</span>
+                  <Select
+                    style={{ maxWidth: 90 }}
+                    value={detailsForm.psychomotor[trait] ?? ""}
+                    onChange={(e) => setDetailsForm({ ...detailsForm, psychomotor: { ...detailsForm.psychomotor, [trait]: e.target.value } })}
+                  >
+                    <option value="">—</option>
+                    {BEHAVIORAL_GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
+                  </Select>
+                </div>
+              ))}
+            </div>
+          </Field>
+          <Field label="Form Master's Comment">
+            <Textarea rows={2} value={detailsForm.remark} onChange={(e) => setDetailsForm({ ...detailsForm, remark: e.target.value })} />
+          </Field>
+          <Field label="Form Master's Name">
+            <Input value={detailsForm.formMasterName} onChange={(e) => setDetailsForm({ ...detailsForm, formMasterName: e.target.value })} />
+          </Field>
+          <Field label="Principal's Comment">
+            <Textarea rows={2} value={detailsForm.principalComment} onChange={(e) => setDetailsForm({ ...detailsForm, principalComment: e.target.value })} />
+          </Field>
+          <Field label="Principal's Name">
+            <Input value={detailsForm.principalName} onChange={(e) => setDetailsForm({ ...detailsForm, principalName: e.target.value })} />
+          </Field>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 10 }}>
+            <Field label="Fees owed (₦)" hint="Auto-computed from this term's invoice; override if needed.">
+              <Input type="number" min={0} value={detailsForm.feesOwed} onChange={(e) => setDetailsForm({ ...detailsForm, feesOwed: e.target.value })} />
+            </Field>
+            <Field label="Next term's fees (₦)" hint="Auto-computed from next term's fee structure.">
+              <Input type="number" min={0} value={detailsForm.nextTermFees} onChange={(e) => setDetailsForm({ ...detailsForm, nextTermFees: e.target.value })} />
+            </Field>
+            <Field label="Payable on or before">
+              <Input type="date" value={detailsForm.feesPayableBy} onChange={(e) => setDetailsForm({ ...detailsForm, feesPayableBy: e.target.value })} />
+            </Field>
+          </div>
+        </Modal>
       )}
     </div>
   );

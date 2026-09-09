@@ -34,10 +34,14 @@ async function schoolAndReportCardConfig(schoolId: string, section?: string) {
     reportCardConfig: {
       showCognitive: row?.showCognitive ?? true,
       showPsychomotor: row?.showPsychomotor ?? true,
-      showAffective: row?.showAffective ?? true,
       showAttendance: row?.showAttendance ?? true,
+      showFees: row?.showFees ?? true,
       showLogo: row?.showLogo ?? true,
       showWatermark: row?.showWatermark ?? false,
+      motto: row?.motto ?? null,
+      town: row?.town ?? null,
+      state: row?.state ?? null,
+      sectionLabel: row?.sectionLabel ?? (section ? `${section} Section`.toUpperCase() : null),
       signatureLabels: Array.isArray(row?.signatureLabels) ? row.signatureLabels : ["Class Teacher", "Principal"],
     },
   };
@@ -73,6 +77,9 @@ export const resultsModule: Module = {
     const section = await resolveSection(ctx);
     const config = await getResultConfig(schoolId, section);
     const gpaOf = await gpaCalculator(schoolId, section);
+    // The grading scale's bands double as the printed report card's "Keys
+    // Grade" box (min-max -> remark), so the client never hardcodes it.
+    const gradingScale = await getDefaultGradingScale(schoolId, section);
 
     // Entry grid for teachers: return class subjects with class students
     if (role === "TEACHER") {
@@ -95,7 +102,7 @@ export const resultsModule: Module = {
 
       const reportCards = await prisma.reportCard.findMany({
         where: { schoolId, studentId: { in: studentIds } },
-        include: { term: true, student: { select: { id: true, photoUrl: true, feeAmount: true, feeDays: true, feePaidThrough: true, user: { select: { firstName: true, lastName: true } } } } },
+        include: { term: { include: { session: true } }, student: { select: { id: true, photoUrl: true, feeAmount: true, feeDays: true, feePaidThrough: true, user: { select: { firstName: true, lastName: true } } } } },
         orderBy: { createdAt: "desc" },
       });
 
@@ -116,7 +123,7 @@ export const resultsModule: Module = {
         });
       }
       const { school, reportCardConfig } = await schoolAndReportCardConfig(schoolId, section);
-      return { role, reportCards: gated, school, reportCardConfig };
+      return { role, reportCards: gated, school, reportCardConfig, config, gradingScale };
     }
 
     // Admin / owner: only return the active section when one is selected.
@@ -129,7 +136,7 @@ export const resultsModule: Module = {
     const [reportCards, classSubjects] = await Promise.all([
       prisma.reportCard.findMany({
         where: { schoolId, ...(section ? { classGroup: { level: { section } } } : {}) },
-        include: { term: true, student: { select: { id: true, photoUrl: true, user: { select: { firstName: true, lastName: true } } } }, classGroup: { include: { level: true } }, items: { include: { subject: true }, orderBy: { position: "asc" } } },
+        include: { term: { include: { session: true } }, student: { select: { id: true, photoUrl: true, user: { select: { firstName: true, lastName: true } } } }, classGroup: { include: { level: true } }, items: { include: { subject: true }, orderBy: { position: "asc" } } },
         orderBy: { createdAt: "desc" },
         take: 500,
       }),
@@ -145,7 +152,7 @@ export const resultsModule: Module = {
     // overview builds its rows from this array client-side, so without it
     // that whole card silently never rendered, no matter how many subjects
     // teachers had submitted.
-    return { role, reportCards: reportCards.map((rc) => ({ ...rc, gpa: gpaOf(rc.items) })), classSubjects, config, submissions, school, reportCardConfig, activeTermId, terms };
+    return { role, reportCards: reportCards.map((rc) => ({ ...rc, gpa: gpaOf(rc.items) })), classSubjects, config, submissions, school, reportCardConfig, activeTermId, terms, gradingScale };
   },
 
   async get(ctx) {
@@ -159,14 +166,19 @@ export const resultsModule: Module = {
         ...(role === "STUDENT" || role === "PARENT" ? { ...(await studentScope(ctx)), isPublished: true } : {}),
       },
       include: {
-        term: true,
+        term: { include: { session: true } },
         student: { include: { user: { select: { firstName: true, lastName: true } } } },
-        classGroup: { select: { formTeacherId: true } },
+        classGroup: { select: { formTeacherId: true, level: { select: { section: true } } } },
         items: { include: { subject: true }, orderBy: { position: "asc" } },
       },
     });
     if (!rc) throw new Error("Report card not found");
-    const { school, reportCardConfig } = await schoolAndReportCardConfig(ctx.session.user.schoolId, ctx.session.user.student?.section);
+    const section = rc.classGroup?.level.section ?? ctx.session.user.student?.section;
+    const [{ school, reportCardConfig }, config, gradingScale] = await Promise.all([
+      schoolAndReportCardConfig(ctx.session.user.schoolId, section),
+      getResultConfig(ctx.session.user.schoolId, section),
+      getDefaultGradingScale(ctx.session.user.schoolId, section),
+    ]);
     // Students/parents must also pass the fee gate (published + paid/overridden).
     if (role === "STUDENT" || role === "PARENT") {
       // resolveResultsAccess already fully governs results gating (its own
@@ -198,11 +210,11 @@ export const resultsModule: Module = {
           err.status = 403;
           throw err;
         }
-        return { ...rc, items: ownItems, gpa: (await gpaCalculator(ctx.session.user.schoolId))(ownItems), school, reportCardConfig };
+        return { ...rc, items: ownItems, gpa: (await gpaCalculator(ctx.session.user.schoolId))(ownItems), school, reportCardConfig, config, gradingScale };
       }
-      return { ...rc, gpa: (await gpaCalculator(ctx.session.user.schoolId))(rc.items), school, reportCardConfig };
+      return { ...rc, gpa: (await gpaCalculator(ctx.session.user.schoolId))(rc.items), school, reportCardConfig, config, gradingScale };
     }
-    return { ...rc, gpa: (await gpaCalculator(ctx.session.user.schoolId))(rc.items), school, reportCardConfig };
+    return { ...rc, gpa: (await gpaCalculator(ctx.session.user.schoolId))(rc.items), school, reportCardConfig, config, gradingScale };
   },
 
   actions: {
@@ -223,11 +235,26 @@ export const resultsModule: Module = {
       } else {
         can(ctx, "results:publish");
       }
+      // psychomotor here is the behavioral-assessment grid: fixed trait name
+      // -> single-letter grade (A-E), e.g. { "Neatness": "A" }.
       const psychomotor = ctx.body.psychomotor && typeof ctx.body.psychomotor === "object" ? ctx.body.psychomotor : undefined;
       const coCurricular = ctx.body.coCurricular && typeof ctx.body.coCurricular === "object" ? ctx.body.coCurricular : undefined;
       const updated = await prisma.reportCard.update({
         where: { id: card.id },
-        data: { psychomotor, coCurricular, attendanceRemark: str(ctx.body.attendanceRemark), remark: str(ctx.body.remark) },
+        data: {
+          psychomotor,
+          coCurricular,
+          attendanceRemark: str(ctx.body.attendanceRemark),
+          remark: str(ctx.body.remark),
+          formMasterName: str(ctx.body.formMasterName),
+          principalComment: str(ctx.body.principalComment),
+          principalName: str(ctx.body.principalName),
+          // These are auto-computed at collation time but stay editable so an
+          // admin can correct them (e.g. a manual fee waiver, a corrected DOB).
+          feesOwed: num(ctx.body.feesOwed),
+          nextTermFees: num(ctx.body.nextTermFees),
+          feesPayableBy: str(ctx.body.feesPayableBy) ? new Date(String(ctx.body.feesPayableBy)) : undefined,
+        },
       });
       await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "results.detailsUpdated", entityType: "ReportCard", entityId: card.id });
       return updated;
@@ -396,10 +423,14 @@ export const resultsModule: Module = {
       const data = {
         showCognitive: bool(ctx.body.showCognitive, true),
         showPsychomotor: bool(ctx.body.showPsychomotor, true),
-        showAffective: bool(ctx.body.showAffective, true),
         showAttendance: bool(ctx.body.showAttendance, true),
+        showFees: bool(ctx.body.showFees, true),
         showLogo: bool(ctx.body.showLogo, true),
         showWatermark: bool(ctx.body.showWatermark, false),
+        motto: str(ctx.body.motto) ?? null,
+        town: str(ctx.body.town) ?? null,
+        state: str(ctx.body.state) ?? null,
+        sectionLabel: str(ctx.body.sectionLabel) ?? null,
         signatureLabels: signatureLabels.length ? (signatureLabels as never) : (["Class Teacher", "Principal"] as never),
       };
       const config = await prisma.reportCardConfig.upsert({
