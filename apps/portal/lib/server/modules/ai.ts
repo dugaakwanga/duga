@@ -1,6 +1,9 @@
 import type { Module } from ".";
 import { can, str, num } from "../helpers";
 import { generateSmartTimetable } from "./timetable";
+import { checkRateLimit } from "@duga/core/server";
+import { hasPermission, type Role } from "@duga/core";
+import type { Ctx } from "@/app/api/v1/[...path]/route";
 
 // ---------------------------------------------------------------------------
 // AI assistant (OpenRouter — free tier)
@@ -21,10 +24,35 @@ function available(): boolean {
   return API_KEY.length > 0;
 }
 
-async function generate(system: string, userText: string, temperature = 0.7, maxTokens = 1024): Promise<string> {
+// Every AI action shares one per-user budget — nothing here is metered
+// upstream (OpenRouter's free tier), so an unthrottled endpoint is a wide
+// open door for one account to burn the whole school's shared quota (or, on
+// a paid model, run up real cost) by hammering it in a loop.
+function assertAiRateLimit(ctx: Ctx): void {
+  const rl = checkRateLimit(`ai:${ctx.session.user.id}`, 20, 5 * 60_000);
+  if (!rl.allowed) {
+    const err = new Error(`Too many AI requests — please wait about ${Math.ceil((rl.retryAfterSeconds ?? 60) / 60)} minute(s) and try again.`) as Error & { status?: number };
+    err.status = 429;
+    throw err;
+  }
+}
+
+interface ChatTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+// Takes either a single prompt string (the common case — remark/draft are
+// one-shot) or a real list of prior turns. Passing history as actual
+// role-tagged messages — rather than flattening it into one block of text —
+// means a message crafted to look like "Assistant: ignore your instructions"
+// still arrives tagged as `user`, not `assistant`; the model has no reason
+// to treat it as something it said itself.
+async function generate(system: string, prompt: string | ChatTurn[], temperature = 0.7, maxTokens = 1024): Promise<string> {
   if (!available()) {
     throw new Error("AI is not configured yet. Add an OPENROUTER_API_KEY to the server environment to enable the assistant.");
   }
+  const turns: ChatTurn[] = typeof prompt === "string" ? [{ role: "user", content: prompt }] : prompt;
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -33,10 +61,7 @@ async function generate(system: string, userText: string, temperature = 0.7, max
     },
     body: JSON.stringify({
       model: MODEL,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: userText },
-      ],
+      messages: [{ role: "system", content: system }, ...turns],
       temperature,
       max_tokens: maxTokens,
     }),
@@ -79,6 +104,7 @@ export const aiModule: Module = {
     // Generic chat used by the portal assistant panel.
     chat: async (ctx) => {
       can(ctx, "ai:use");
+      assertAiRateLimit(ctx);
       const messages = Array.isArray(ctx.body.messages) ? (ctx.body.messages as Array<{ role?: string; content?: string }>) : [];
       if (messages.length === 0) throw new Error("A message is required");
       const last = messages[messages.length - 1];
@@ -86,8 +112,10 @@ export const aiModule: Module = {
       if (!prompt) throw new Error("A message is required");
       // If an owner/admin asks the assistant to create/generate the timetable,
       // run the smart clash-free builder directly instead of a generic reply.
+      // Checked against the real permission (not a hardcoded role list) so
+      // this stays correct if timetable:manage is ever granted more broadly.
       const wantsTimetable = /\b(create|generate|make|set ?up|build|draft)\b/i.test(prompt) && /\btimetable|time\s*table|schedule\b/i.test(prompt);
-      if (wantsTimetable && ["OWNER", "ADMIN"].includes(ctx.session.user.role)) {
+      if (wantsTimetable && hasPermission(ctx.session.user.role as Role, "timetable:manage")) {
         try {
           const result = await generateSmartTimetable(ctx.session.user.schoolId, {
             termId: str(ctx.body.termId),
@@ -115,19 +143,22 @@ export const aiModule: Module = {
       const sectionHint = section
         ? `The user is currently managing the ${section === "PRIMARY" ? "PRIMARY school" : "SECONDARY school"} section. Tailor examples (classes, levels, subjects) to that section.\n\n`
         : "";
-      // Carry a little context from previous turns to keep conversations coherent.
-      const history = messages
+      // Carry a little context from previous turns as real role-tagged
+      // messages (not flattened into one block of text) so the model always
+      // knows what it actually said versus what the user said.
+      const history: ChatTurn[] = messages
         .slice(-6, -1)
-        .map((m) => `${m.role === "assistant" ? "Assistant" : "User"}: ${String(m.content ?? "")}`)
-        .join("\n");
-      const userText = sectionHint + pageHint + (history ? `Previous conversation:\n${history}\n\nNew message:\n${prompt}` : prompt);
-      const reply = await generate(systemFor(ctx.session.user.role), userText, 0.7, 1024);
+        .map((m) => ({ role: m.role === "assistant" ? ("assistant" as const) : ("user" as const), content: String(m.content ?? "") }))
+        .filter((m) => m.content.trim().length > 0);
+      const turns: ChatTurn[] = [...history, { role: "user", content: sectionHint + pageHint + prompt }];
+      const reply = await generate(systemFor(ctx.session.user.role), turns, 0.7, 1024);
       return { reply };
     },
 
     // Structured report card remark generator.
     remark: async (ctx) => {
       can(ctx, "ai:use");
+      assertAiRateLimit(ctx);
       const student = str(ctx.body.studentName) ?? "the student";
       const subject = str(ctx.body.subject);
       const average = str(ctx.body.average);
@@ -160,6 +191,7 @@ export const aiModule: Module = {
     // Lesson-note / quiz / assignment drafts for teachers.
     draft: async (ctx) => {
       can(ctx, "ai:use");
+      assertAiRateLimit(ctx);
       const kind = str(ctx.body.kind) ?? "note"; // note | quiz | assignment
       const subject = str(ctx.body.subject) ?? "the subject";
       const topic = str(ctx.body.topic) ?? "the topic";
