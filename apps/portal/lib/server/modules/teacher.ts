@@ -188,5 +188,110 @@ export const teacherModule: Module = {
         upcomingLive,
       };
     },
+
+    // Class-teacher dashboard: for a class this teacher is the FORM teacher
+    // of, show how the class is performing across every subject (not just
+    // the ones this teacher personally teaches) plus its attendance trend —
+    // the oversight view a homeroom/class teacher needs, distinct from "My
+    // Subjects" (their own subject-teaching workload). Only reachable by an
+    // actual class teacher — there is nothing to show anyone else here.
+    classDashboard: async (ctx) => {
+      can(ctx, "classes:view");
+      const teacher = ctx.session.user.teacher;
+      if (!teacher) throw new Error("Only a class teacher can view this");
+      const schoolId = ctx.session.user.schoolId;
+
+      const formClasses = await prisma.classGroup.findMany({
+        where: { schoolId, formTeacherId: teacher.id },
+        include: { level: true, _count: { select: { students: true } } },
+        orderBy: { createdAt: "asc" },
+      });
+      if (formClasses.length === 0) throw new Error("You are not a class teacher for any class");
+
+      const requested = str(ctx.query.get("classGroupId"));
+      const selected = formClasses.find((c) => c.id === requested) ?? formClasses[0]!;
+
+      const [students, classSubjects] = await Promise.all([
+        prisma.student.findMany({ where: { schoolId, currentClassGroupId: selected.id, status: "ACTIVE" }, select: { id: true } }),
+        prisma.classSubject.findMany({
+          where: { schoolId, classGroupId: selected.id },
+          select: { id: true, subject: { select: { name: true } }, teacher: { select: { user: { select: { firstName: true, lastName: true } } } } },
+        }),
+      ]);
+      const studentIds = students.map((s) => s.id);
+
+      // Attendance trend for this class over the last 7 days.
+      const since = new Date();
+      since.setDate(since.getDate() - 6);
+      const attendanceRows = await prisma.studentAttendance.findMany({
+        where: { schoolId, classGroupId: selected.id, date: { gte: since } },
+        select: { date: true, status: true },
+      });
+      const buckets = new Map<string, { present: number; total: number }>();
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        buckets.set(d.toISOString().slice(0, 10), { present: 0, total: 0 });
+      }
+      for (const r of attendanceRows) {
+        const key = r.date.toISOString().slice(0, 10);
+        const b = buckets.get(key);
+        if (!b) continue;
+        b.total += 1;
+        if (r.status === "PRESENT") b.present += 1;
+      }
+      const attendance = [...buckets.entries()].map(([label, b]) => ({
+        label: new Date(label).toLocaleDateString("en-GB", { day: "numeric", month: "short" }),
+        value: b.total === 0 ? 0 : Math.round((b.present / b.total) * 100),
+      }));
+
+      // Per-subject average across every subject taught to this class,
+      // whoever teaches it — this is the whole point of the class-teacher
+      // view: seeing how the class does outside the subject(s) this teacher
+      // personally handles.
+      const items = classSubjects.length
+        ? await prisma.reportCardItem.findMany({
+            where: { classSubjectId: { in: classSubjects.map((cs) => cs.id) }, reportCard: { schoolId, isPublished: true } },
+            select: { total: true, classSubjectId: true },
+          })
+        : [];
+      const bySubject = new Map<string, { total: number; count: number; pass: number; teacherName: string }>();
+      for (const cs of classSubjects) {
+        bySubject.set(cs.id, {
+          total: 0,
+          count: 0,
+          pass: 0,
+          teacherName: cs.teacher?.user ? `${cs.teacher.user.firstName} ${cs.teacher.user.lastName}` : "Unassigned",
+        });
+      }
+      const nameById = new Map(classSubjects.map((cs) => [cs.id, cs.subject.name]));
+      for (const item of items) {
+        const e = bySubject.get(item.classSubjectId ?? "");
+        if (!e || item.total === null) continue;
+        e.total += item.total;
+        e.count += 1;
+        if (item.total >= 50) e.pass += 1;
+      }
+      const subjects = [...bySubject.entries()]
+        .map(([csId, e]) => ({
+          name: nameById.get(csId) ?? "",
+          teacherName: e.teacherName,
+          value: e.count === 0 ? 0 : Math.round(e.total / e.count),
+          passRate: e.count === 0 ? 0 : Math.round((e.pass / e.count) * 100),
+          count: e.count,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      const lastAttendance = attendance[attendance.length - 1];
+
+      return {
+        classes: formClasses.map((c) => ({ id: c.id, name: `${c.level.name} ${c.name}`, studentCount: c._count.students })),
+        selectedClassId: selected.id,
+        studentCount: studentIds.length,
+        attendance,
+        subjects,
+        todayAttendanceRate: lastAttendance?.value ?? null,
+      };
+    },
   },
 };

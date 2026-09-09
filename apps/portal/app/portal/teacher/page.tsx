@@ -287,7 +287,7 @@ export default function TeacherHomePage() {
                                   {s.classGroup._count.students} students · {s._count.lessonNotes} notes · {s._count.assignments} assignments · {s._count.tests} CBT
                                 </div>
                               </div>
-                              <Link href="/portal/teacher/attendance" className="duga-btn duga-btn--outline duga-btn--sm">Class page</Link>
+                              <Link href={`/portal/results?classSubject=${s.id}`} className="duga-btn duga-btn--outline duga-btn--sm">Students & scores</Link>
                             </div>
                           ))}
                         </div>

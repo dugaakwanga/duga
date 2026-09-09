@@ -53,6 +53,14 @@ export default async function PortalLayout({ children }: { children: React.React
     hasBoarding = true; // staff always see Hostel (they manage it for whoever is boarding)
   }
 
+  // "My Class" (a homeroom performance dashboard) only means something for
+  // a teacher who is actually the form/class teacher of at least one class.
+  let isClassTeacher = false;
+  if (user.role === "TEACHER" && user.teacher) {
+    const formClassCount = await prisma.classGroup.count({ where: { schoolId: user.schoolId, formTeacherId: user.teacher.id } });
+    isClassTeacher = formClassCount > 0;
+  }
+
   return (
     <PortalShell
       user={{
@@ -68,6 +76,7 @@ export default async function PortalLayout({ children }: { children: React.React
         sections,
         canSwitchSection,
         hasBoarding,
+        isClassTeacher,
       }}
     >
       {children}

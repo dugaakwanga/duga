@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { PageHeader, Card, Alert, Spinner, EmptyState } from "@duga/ui";
+import { PageHeader, Card, Alert, Spinner, EmptyState, Button, Icon } from "@duga/ui";
 import { api } from "@/lib/client/api";
 import { useSection } from "@/components/SectionContext";
 
@@ -23,6 +23,7 @@ export default function MySubjectsPage() {
   const [subjects, setSubjects] = useState<SubjectRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [openSubject, setOpenSubject] = useState<string | null>(null);
   const { section } = useSection();
 
   useEffect(() => {
@@ -42,44 +43,57 @@ export default function MySubjectsPage() {
     bySubject.get(key)!.rows.push(s);
   }
   const grouped = [...bySubject.values()].sort((a, b) => a.name.localeCompare(b.name));
+  const active = grouped.find((g) => g.name === openSubject) ?? null;
 
   return (
     <div>
-      <PageHeader title="My Subjects" subtitle="The subjects assigned to you and the classes you teach them in. Enter scores straight from each class." />
+      <PageHeader title="My Subjects" subtitle="The subjects assigned to you. Pick one to see the classes you teach it in." />
 
       {error && <Alert tone="danger">{error}</Alert>}
       {loading ? (
         <Spinner size={28} />
       ) : grouped.length === 0 ? (
         <EmptyState title="No subjects assigned" hint="Ask the school admin to assign you to classes and subjects." />
+      ) : active ? (
+        <div>
+          <Button variant="ghost" size="sm" onClick={() => setOpenSubject(null)} style={{ marginBottom: 14 }}>
+            <Icon name="back" size={14} /> My Subjects
+          </Button>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 14, flexWrap: "wrap", gap: 6 }}>
+            <h2 style={{ fontSize: 18, margin: 0, color: "var(--duga-primary-ink)" }}>{active.name}</h2>
+            <span style={{ fontSize: 12.5, color: "var(--duga-muted)" }}>
+              {active.code ? `Code: ${active.code} · ` : ""}{active.rows.length} class{active.rows.length === 1 ? "" : "es"}
+            </span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 16 }}>
+            {active.rows.map((s) => (
+              <Card key={s.id} title={`${s.classGroup.level.name} ${s.classGroup.name}`}>
+                <div style={{ fontSize: 13, color: "var(--duga-muted)", marginBottom: 10 }}>
+                  {s.classGroup._count.students} students
+                </div>
+                <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginBottom: 12 }}>
+                  {s._count.lessonNotes} notes · {s._count.assignments} assignments · {s._count.tests} CBT
+                </div>
+                <Link href={`/portal/results?classSubject=${s.id}`} className="duga-btn duga-btn--accent duga-btn--sm">
+                  Enter scores
+                </Link>
+              </Card>
+            ))}
+          </div>
+        </div>
       ) : (
-        <div style={{ display: "grid", gap: 24 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 16 }}>
           {grouped.map((subj) => (
-            <section key={subj.name} className="classes-section">
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10, flexWrap: "wrap", gap: 6 }}>
-                <h2 style={{ fontSize: 16, margin: 0, color: "var(--duga-primary-ink)" }}>
-                  {subj.name}
-                </h2>
-                <span style={{ fontSize: 12.5, color: "var(--duga-muted)" }}>
-                  {subj.code ? `Code: ${subj.code} · ` : ""}{subj.rows.length} class{subj.rows.length === 1 ? "" : "es"}
-                </span>
+            <button key={subj.name} className="classes-drill-card" onClick={() => setOpenSubject(subj.name)}>
+              <div className="classes-drill-card__icon"><Icon name="classes" size={20} /></div>
+              <div className="classes-drill-card__title">{subj.name}</div>
+              <div className="classes-drill-card__sub">
+                {subj.code ? `Code: ${subj.code} · ` : ""}{subj.rows.reduce((a, r) => a + r.classGroup._count.students, 0)} students total
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 16 }}>
-                {subj.rows.map((s) => (
-                  <Card key={s.id} title={`${s.classGroup.level.name} ${s.classGroup.name}`}>
-                    <div style={{ fontSize: 13, color: "var(--duga-muted)", marginBottom: 10 }}>
-                      {s.classGroup._count.students} students
-                    </div>
-                    <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginBottom: 12 }}>
-                      {s._count.lessonNotes} notes · {s._count.assignments} assignments · {s._count.tests} CBT
-                    </div>
-                    <Link href={`/portal/results?classSubject=${s.id}`} className="duga-btn duga-btn--accent duga-btn--sm">
-                      Enter scores
-                    </Link>
-                  </Card>
-                ))}
+              <div className="classes-drill-card__foot">
+                <span className="classes-drill-card__manage">{subj.rows.length} class{subj.rows.length === 1 ? "" : "es"} →</span>
               </div>
-            </section>
+            </button>
           ))}
         </div>
       )}

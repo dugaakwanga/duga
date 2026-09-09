@@ -176,6 +176,14 @@ export default function ClassesPage() {
     load();
   }, [load]);
 
+  // Teachers no longer have a "Classes" feature — this is the whole-school
+  // structure browser for owner/admin/bursar. A teacher's own relationship
+  // to a class lives at "My Subjects" / "My Class" instead. Redirect anyone
+  // who lands here directly (e.g. a stale bookmark) rather than showing it.
+  useEffect(() => {
+    if (role === "TEACHER") router.replace("/portal/teacher");
+  }, [role, router]);
+
   async function addClass() {
     try {
       if (editingClass) {

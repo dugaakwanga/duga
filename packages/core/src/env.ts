@@ -52,13 +52,13 @@ export const schoolConfig = {
     return env("NEXT_PUBLIC_SCHOOL_ADDRESS", "Akwanga, Nasarawa State, Nigeria");
   },
   get lat() {
-    return envFloat("NEXT_PUBLIC_SCHOOL_LAT", 8.9123);
+    return envFloat("NEXT_PUBLIC_SCHOOL_LAT", 8.9020761);
   },
   get lng() {
-    return envFloat("NEXT_PUBLIC_SCHOOL_LNG", 8.4066);
+    return envFloat("NEXT_PUBLIC_SCHOOL_LNG", 8.4075964);
   },
   get attendanceRadiusMeters() {
-    return envInt("ATTENDANCE_RADIUS_METERS", 150);
+    return envInt("ATTENDANCE_RADIUS_METERS", 30);
   },
   get portalUrl() {
     return appUrl("NEXT_PUBLIC_PORTAL_URL", "https://duga-portal.vercel.app");
