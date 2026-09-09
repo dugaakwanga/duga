@@ -361,6 +361,25 @@ export const studentsModule: Module = {
       return { ok: true };
     },
 
+    // Set a new temporary password for a student's own login — mirrors
+    // staff's setTempPassword. Existed for staff but was missing here, even
+    // though a student's account can just as easily need a password reset.
+    setTempPassword: async (ctx) => {
+      can(ctx, "students:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const tempPassword = str(ctx.body.tempPassword);
+      if (!tempPassword) throw new Error("Temporary password is required");
+      if (tempPassword.length < 8) throw new Error("Temporary password must be at least 8 characters");
+      const student = await prisma.student.findFirst({ where: { id: ctx.id, schoolId }, select: { userId: true } });
+      if (!student) throw new Error("Student not found");
+      await prisma.user.update({
+        where: { id: student.userId },
+        data: { passwordHash: await bcrypt.hash(tempPassword, 10), mustChangePassword: true },
+      });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "student.tempPasswordSet", entityType: "Student", entityId: ctx.id });
+      return { ok: true };
+    },
+
     // Printable ID card data for one class (or an explicit list of students):
     // each student's details plus a freshly-signed gate QR token, the
     // school's own branding, and its saved card theme — the client renders

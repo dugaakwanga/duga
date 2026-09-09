@@ -50,6 +50,10 @@ export default function StudentsPage() {
   const [editTarget, setEditTarget] = useState<Student | null>(null);
   const [editForm, setEditForm] = useState<Record<string, string>>({});
   const [feeTarget, setFeeTarget] = useState<Student | null>(null);
+  const [passwordTarget, setPasswordTarget] = useState<Student | null>(null);
+  const [tempPassword, setTempPassword] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSaving, setPasswordSaving] = useState(false);
   const [feeForm, setFeeForm] = useState<Record<string, string>>({});
   const [promoteTarget, setPromoteTarget] = useState<Student | null>(null);
   const [promoteForm, setPromoteForm] = useState<Record<string, string>>({});
@@ -299,6 +303,24 @@ export default function StudentsPage() {
     }
   }
 
+  async function submitTempPassword() {
+    if (!passwordTarget) return;
+    if (tempPassword.length < 8) {
+      setPasswordError("Password must be at least 8 characters");
+      return;
+    }
+    setPasswordSaving(true);
+    setPasswordError(null);
+    try {
+      await api(`students/${passwordTarget.id}/setTempPassword`, { method: "POST", body: { tempPassword } });
+      setPasswordTarget(null);
+    } catch (e) {
+      setPasswordError((e as Error).message);
+    } finally {
+      setPasswordSaving(false);
+    }
+  }
+
   function feeBadge(s: Student) {
     if (!s.fee || (!s.fee.feeAmount || Number(s.fee.feeAmount) === 0)) return <Badge tone="neutral">No fee set</Badge>;
     if (s.fee.expired) return <Badge tone="danger">Expired</Badge>;
@@ -449,6 +471,7 @@ export default function StudentsPage() {
                   <td>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       {canManage && <Button size="sm" variant="ghost" onClick={() => openEdit(s)}>Edit</Button>}
+                      {canManage && <Button size="sm" variant="ghost" onClick={() => { setPasswordTarget(s); setTempPassword(""); setPasswordError(null); }}>Set password</Button>}
                       {canManage && <Button size="sm" variant="outline" onClick={() => { setFeeTarget(s); setFeeForm({}); }}>Set fee</Button>}
                       {canManage && <Button size="sm" variant="outline" onClick={() => { setPromoteTarget(s); setPromoteForm({}); }}>Move class</Button>}
                       <Button size="sm" variant="outline" loading={printingCards === s.id} onClick={() => printIdCards([s.id], s.id)}>ID card</Button>
@@ -698,6 +721,18 @@ export default function StudentsPage() {
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <Button variant="ghost" onClick={() => setPromoteTarget(null)}>Cancel</Button>
           <Button onClick={savePromote} loading={saving}>Move student</Button>
+        </div>
+      </Modal>
+
+      <Modal open={!!passwordTarget} onClose={() => setPasswordTarget(null)} title={passwordTarget ? `Set temporary password — ${passwordTarget.user.firstName} ${passwordTarget.user.lastName}` : ""}>
+        <Alert tone="info">The student signs in with this password and will be asked to change it on first login.</Alert>
+        {passwordError && <Alert tone="danger">{passwordError}</Alert>}
+        <Field label="Temporary password" required>
+          <Input type="text" value={tempPassword} onChange={(e) => setTempPassword(e.target.value)} placeholder="At least 8 characters" autoComplete="off" />
+        </Field>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+          <Button variant="ghost" onClick={() => setPasswordTarget(null)}>Cancel</Button>
+          <Button onClick={submitTempPassword} loading={passwordSaving}>Set password</Button>
         </div>
       </Modal>
 

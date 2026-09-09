@@ -124,7 +124,12 @@ export default function DashboardPage() {
       {data.role === "TEACHER" && data.classTeacherOf?.length ? (
         <div className="portal-dashboard-grid" style={{ marginBottom: 18 }}>
           {data.classTeacherOf.map((cg) => (
-            <Card key={cg.classGroupId} title={`Class teacher — ${cg.className}`}>
+            <Card
+              key={cg.classGroupId}
+              title={cg.className}
+              actions={<Link href="/portal/teacher/attendance" className="duga-btn duga-btn--accent duga-btn--sm"><Icon name="attendance" size={14} /> Take attendance</Link>}
+            >
+              <div style={{ marginBottom: 12 }}><Badge tone="accent">You are the Class Teacher</Badge></div>
               <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
                 <Stat label="Students" value={cg.studentCount} />
                 <Stat label="Attendance rate (30d)" value={`${cg.attendanceRate}%`} tone={cg.attendanceRate >= 80 ? "success" : "warning"} />

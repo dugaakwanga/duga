@@ -120,6 +120,12 @@ export const resultsModule: Module = {
     }
 
     // Admin / owner: only return the active section when one is selected.
+    // Compute the active term first (same as the teacher branch) so
+    // "Subject submissions" is scoped to one consistent term — Reopen/View
+    // only ever act against activeTermId, so showing counts aggregated
+    // across every term ever would be misleading regardless.
+    const terms = await prisma.term.findMany({ where: { schoolId }, include: { session: true }, orderBy: [{ session: { createdAt: "desc" } }, { termNumber: "asc" }] });
+    const activeTermId = (terms.find((t) => t.status === "ACTIVE") ?? terms[0])?.id;
     const [reportCards, classSubjects] = await Promise.all([
       prisma.reportCard.findMany({
         where: { schoolId, ...(section ? { classGroup: { level: { section } } } : {}) },
@@ -132,19 +138,14 @@ export const resultsModule: Module = {
         include: { subject: true, classGroup: { include: { level: true, students: { select: { id: true } } } } },
       }),
     ]);
-    const submissions = await submissionSummary(schoolId, classSubjects);
+    const submissions = await submissionSummary(schoolId, classSubjects, activeTermId);
     const { school, reportCardConfig } = await schoolAndReportCardConfig(schoolId, section);
-    // So admin can open a read-only entry sheet from "Subject submissions"
-    // (entrySheet already lets OWNER/ADMIN view any classSubject — it was
-    // just missing a term to ask for from the client).
-    const terms = await prisma.term.findMany({ where: { schoolId }, include: { session: true }, orderBy: [{ session: { createdAt: "desc" } }, { termNumber: "asc" }] });
-    const activeTermId = (terms.find((t) => t.status === "ACTIVE") ?? terms[0])?.id;
     // classSubjects was already being fetched to compute `submissions`, but
     // was never sent to the client — the admin/owner "Subject submissions"
     // overview builds its rows from this array client-side, so without it
     // that whole card silently never rendered, no matter how many subjects
     // teachers had submitted.
-    return { role, reportCards: reportCards.map((rc) => ({ ...rc, gpa: gpaOf(rc.items) })), classSubjects, config, submissions, school, reportCardConfig, activeTermId };
+    return { role, reportCards: reportCards.map((rc) => ({ ...rc, gpa: gpaOf(rc.items) })), classSubjects, config, submissions, school, reportCardConfig, activeTermId, terms };
   },
 
   async get(ctx) {
