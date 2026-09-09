@@ -10,6 +10,8 @@ interface Term {
   name: string;
   termNumber: number;
   status: string;
+  startDate: string | null;
+  endDate: string | null;
   session: { name: string };
 }
 
@@ -66,6 +68,9 @@ export default function SettingsPage() {
   const [termOpen, setTermOpen] = useState(false);
   const [termForm, setTermForm] = useState<Record<string, string>>({});
   const [termBusy, setTermBusy] = useState(false);
+  const [datesTarget, setDatesTarget] = useState<Term | null>(null);
+  const [datesForm, setDatesForm] = useState<{ startDate: string; endDate: string }>({ startDate: "", endDate: "" });
+  const [datesBusy, setDatesBusy] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
@@ -108,6 +113,26 @@ export default function SettingsPage() {
     await api("settings/activateTerm", { method: "POST", body: { termId: id } });
     const d = await api<SettingsData>("settings");
     setData(d);
+  }
+
+  function openDates(t: Term) {
+    setDatesForm({ startDate: t.startDate ? t.startDate.slice(0, 10) : "", endDate: t.endDate ? t.endDate.slice(0, 10) : "" });
+    setDatesTarget(t);
+  }
+
+  async function saveDates() {
+    if (!datesTarget) return;
+    setDatesBusy(true);
+    try {
+      await api("settings/updateTermDates", { method: "POST", body: { termId: datesTarget.id, startDate: datesForm.startDate || undefined, endDate: datesForm.endDate || undefined } });
+      setDatesTarget(null);
+      const d = await api<SettingsData>("settings");
+      setData(d);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setDatesBusy(false);
+    }
   }
 
   async function saveSchoolDays() {
@@ -391,18 +416,26 @@ export default function SettingsPage() {
             {data.terms.length === 0 ? (
               <EmptyState title="No terms yet" />
             ) : (
-              <Table headers={["Term", "Session", "Status", ""]}>
+              <Table headers={["Term", "Session", "Dates", "Status", ""]}>
                 {data.terms.map((t) => (
                   <tr key={t.id}>
                     <td>{t.name}</td>
                     <td>{t.session.name}</td>
                     <td>
+                      {t.startDate && t.endDate
+                        ? `${new Date(t.startDate).toLocaleDateString()} – ${new Date(t.endDate).toLocaleDateString()}`
+                        : <span style={{ color: "var(--duga-muted)" }}>Not set</span>}
+                    </td>
+                    <td>
                       <Badge tone={t.status === "ACTIVE" ? "success" : "neutral"}>{t.status}</Badge>
                     </td>
                     <td>
-                      {t.status !== "ACTIVE" && (
-                        <Button variant="outline" size="sm" onClick={() => activateTerm(t.id)}>Activate</Button>
-                      )}
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <Button variant="ghost" size="sm" onClick={() => openDates(t)}>Set dates</Button>
+                        {t.status !== "ACTIVE" && (
+                          <Button variant="outline" size="sm" onClick={() => activateTerm(t.id)}>Activate</Button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -433,11 +466,39 @@ export default function SettingsPage() {
         <Field label="Name (optional)">
           <Input value={termForm.name ?? ""} onChange={(e) => setTermForm({ ...termForm, name: e.target.value })} placeholder="Defaults to First/Second/Third Term" />
         </Field>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <Field label="Start date (optional)" hint="Drives installment due dates and printed report cards.">
+            <Input type="date" value={termForm.startDate ?? ""} onChange={(e) => setTermForm({ ...termForm, startDate: e.target.value })} />
+          </Field>
+          <Field label="End date (optional)">
+            <Input type="date" value={termForm.endDate ?? ""} onChange={(e) => setTermForm({ ...termForm, endDate: e.target.value })} />
+          </Field>
+        </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <Button variant="ghost" onClick={() => setTermOpen(false)}>Cancel</Button>
           <Button loading={termBusy} onClick={createTerm}>Add term</Button>
         </div>
       </Modal>
+
+      {datesTarget && (
+        <Modal open onClose={() => setDatesTarget(null)} title={`Set dates — ${datesTarget.name}`}>
+          <Alert tone="info">
+            Installment plans prorate due dates across this range, and printed report cards show it as &quot;This Term Ends On&quot; / &quot;Next Term Begins On&quot;.
+          </Alert>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <Field label="Start date">
+              <Input type="date" value={datesForm.startDate} onChange={(e) => setDatesForm({ ...datesForm, startDate: e.target.value })} />
+            </Field>
+            <Field label="End date">
+              <Input type="date" value={datesForm.endDate} onChange={(e) => setDatesForm({ ...datesForm, endDate: e.target.value })} />
+            </Field>
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+            <Button variant="ghost" onClick={() => setDatesTarget(null)}>Cancel</Button>
+            <Button loading={datesBusy} onClick={saveDates}>Save</Button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

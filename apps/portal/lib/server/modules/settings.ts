@@ -147,7 +147,26 @@ export const settingsModule: Module = {
       const termNumber = Number(ctx.body.termNumber);
       if (!sessionId || !termNumber) throw new Error("sessionId and termNumber required");
       const name = String(ctx.body.name ?? `${["", "First", "Second", "Third"][termNumber] ?? termNumber} Term`);
-      return prisma.term.create({ data: { schoolId, sessionId, termNumber, name } });
+      const startDate = ctx.body.startDate ? new Date(String(ctx.body.startDate)) : undefined;
+      const endDate = ctx.body.endDate ? new Date(String(ctx.body.endDate)) : undefined;
+      return prisma.term.create({ data: { schoolId, sessionId, termNumber, name, startDate, endDate } });
+    },
+
+    // Lets an admin set/correct a term's start and end date after creation —
+    // installment plans and printed report cards (term-ends-on, next-term
+    // fees due date) are all computed from these, so they need to stay
+    // editable, not just settable once at term creation.
+    updateTermDates: async (ctx) => {
+      can(ctx, "settings:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const termId = String(ctx.body.termId ?? "");
+      if (!termId) throw new Error("termId required");
+      const existing = await prisma.term.findFirst({ where: { id: termId, schoolId } });
+      if (!existing) throw new Error("Term not found");
+      const startDate = ctx.body.startDate ? new Date(String(ctx.body.startDate)) : null;
+      const endDate = ctx.body.endDate ? new Date(String(ctx.body.endDate)) : null;
+      if (startDate && endDate && endDate <= startDate) throw new Error("End date must be after start date");
+      return prisma.term.update({ where: { id: termId }, data: { startDate, endDate } });
     },
 
     saveSchoolDays: async (ctx) => {
