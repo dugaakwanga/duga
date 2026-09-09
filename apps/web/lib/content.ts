@@ -8,8 +8,8 @@ function appUrl(key: string, fallback: string): string {
   return clean(value);
 }
 
-export const portalUrl = appUrl("NEXT_PUBLIC_PORTAL_URL", "https://duga-portal.vercel.app/");
-export const siteUrl = appUrl("NEXT_PUBLIC_SITE_URL", "https://duga-web.vercel.app");
+export const portalUrl = appUrl("NEXT_PUBLIC_PORTAL_URL", "https://portal.dugaakwanga.com/");
+export const siteUrl = appUrl("NEXT_PUBLIC_SITE_URL", "https://dugaakwanga.com");
 
 export const school = {
   name: "De Ultimate Glory Academy",

@@ -61,9 +61,9 @@ export const schoolConfig = {
     return envInt("ATTENDANCE_RADIUS_METERS", 30);
   },
   get portalUrl() {
-    return appUrl("NEXT_PUBLIC_PORTAL_URL", "https://duga-portal.vercel.app");
+    return appUrl("NEXT_PUBLIC_PORTAL_URL", "https://portal.dugaakwanga.com");
   },
   get siteUrl() {
-    return appUrl("NEXT_PUBLIC_SITE_URL", "https://duga-web.vercel.app");
+    return appUrl("NEXT_PUBLIC_SITE_URL", "https://dugaakwanga.com");
   },
 };
