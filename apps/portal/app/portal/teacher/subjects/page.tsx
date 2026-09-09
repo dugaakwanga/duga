@@ -13,12 +13,10 @@ interface SubjectRow {
   _count: { lessonNotes: number; assignments: number; tests: number };
 }
 
-interface ClassGroup {
-  id: string;
-  level: string;
+interface SubjectGroup {
   name: string;
-  students: number;
-  subjects: SubjectRow[];
+  code?: string | null;
+  rows: SubjectRow[];
 }
 
 export default function MySubjectsPage() {
@@ -34,25 +32,20 @@ export default function MySubjectsPage() {
       .finally(() => setLoading(false));
   }, [section]);
 
-  const classes = new Map<string, ClassGroup>();
+  // A subject like "Basic Science" gets one class-subject row per class it's
+  // taught in — grouping by class made it look like a different subject per
+  // class. Group by subject name instead, with the classes nested under it.
+  const bySubject = new Map<string, SubjectGroup>();
   for (const s of subjects) {
-    const key = s.classGroup.id;
-    if (!classes.has(key)) {
-      classes.set(key, {
-        id: s.classGroup.id,
-        level: s.classGroup.level.name,
-        name: s.classGroup.name,
-        students: s.classGroup._count.students,
-        subjects: [],
-      });
-    }
-    classes.get(key)!.subjects.push(s);
+    const key = s.subject.name;
+    if (!bySubject.has(key)) bySubject.set(key, { name: s.subject.name, code: s.subject.code, rows: [] });
+    bySubject.get(key)!.rows.push(s);
   }
-  const grouped = [...classes.values()];
+  const grouped = [...bySubject.values()].sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <div>
-      <PageHeader title="My Subjects" subtitle="The subjects and classes assigned to you. Enter scores straight from each subject." />
+      <PageHeader title="My Subjects" subtitle="The subjects assigned to you and the classes you teach them in. Enter scores straight from each class." />
 
       {error && <Alert tone="danger">{error}</Alert>}
       {loading ? (
@@ -61,19 +54,21 @@ export default function MySubjectsPage() {
         <EmptyState title="No subjects assigned" hint="Ask the school admin to assign you to classes and subjects." />
       ) : (
         <div style={{ display: "grid", gap: 24 }}>
-          {grouped.map((cls) => (
-            <section key={cls.id} className="classes-section">
+          {grouped.map((subj) => (
+            <section key={subj.name} className="classes-section">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10, flexWrap: "wrap", gap: 6 }}>
                 <h2 style={{ fontSize: 16, margin: 0, color: "var(--duga-primary-ink)" }}>
-                  {cls.level} {cls.name}
+                  {subj.name}
                 </h2>
-                <span style={{ fontSize: 12.5, color: "var(--duga-muted)" }}>{cls.students} students · {cls.subjects.length} subject{cls.subjects.length === 1 ? "" : "s"}</span>
+                <span style={{ fontSize: 12.5, color: "var(--duga-muted)" }}>
+                  {subj.code ? `Code: ${subj.code} · ` : ""}{subj.rows.length} class{subj.rows.length === 1 ? "" : "es"}
+                </span>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 16 }}>
-                {cls.subjects.map((s) => (
-                  <Card key={s.id} title={s.subject.name}>
+                {subj.rows.map((s) => (
+                  <Card key={s.id} title={`${s.classGroup.level.name} ${s.classGroup.name}`}>
                     <div style={{ fontSize: 13, color: "var(--duga-muted)", marginBottom: 10 }}>
-                      {s.subject.code ? `Code: ${s.subject.code} · ` : ""}{s.classGroup._count.students} students
+                      {s.classGroup._count.students} students
                     </div>
                     <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginBottom: 12 }}>
                       {s._count.lessonNotes} notes · {s._count.assignments} assignments · {s._count.tests} CBT

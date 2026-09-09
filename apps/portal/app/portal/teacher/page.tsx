@@ -101,6 +101,21 @@ export default function TeacherHomePage() {
       ).sort(([a], [b]) => a.localeCompare(b))
     : [];
 
+  // Same grouping for the teacher's own compact home-page card — a teacher
+  // handling one subject across six classes should see that subject once,
+  // not six separate "subjects".
+  const mySubjectGroups = !isManager
+    ? Array.from(
+        subjects.reduce((map, s) => {
+          const key = s.subject.name;
+          const list = map.get(key) ?? [];
+          list.push(s);
+          map.set(key, list);
+          return map;
+        }, new Map<string, SubjectRow[]>()),
+      ).sort(([a], [b]) => a.localeCompare(b))
+    : [];
+
   return (
     <div>
       <PageHeader
@@ -257,18 +272,25 @@ export default function TeacherHomePage() {
                 {subjects.length === 0 ? (
                   <EmptyState title="No class subjects assigned" hint="Ask the school admin to assign you to classes and subjects." />
                 ) : (
-                  <div style={{ display: "grid", gap: 8 }}>
-                    {subjects.map((s) => (
-                      <div key={s.id} className="duga-card__pad" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, border: "1px solid var(--duga-border)", borderRadius: 8 }}>
-                        <div>
-                          <div style={{ fontWeight: 600 }}>
-                            {s.subject.name} <span style={{ color: "var(--duga-muted)", fontWeight: 400 }}> · {s.classGroup.level.name} {s.classGroup.name}</span>
-                          </div>
-                          <div style={{ fontSize: 12.5, color: "var(--duga-muted)" }}>
-                            {s.classGroup._count.students} students · {s._count.lessonNotes} notes · {s._count.assignments} assignments · {s._count.tests} CBT
-                          </div>
+                  <div style={{ display: "grid", gap: 14 }}>
+                    {mySubjectGroups.map(([name, rows]) => (
+                      <div key={name}>
+                        <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6 }}>
+                          {name} <span style={{ color: "var(--duga-muted)", fontWeight: 400, fontSize: 12 }}>· {rows.length} class{rows.length === 1 ? "" : "es"}</span>
                         </div>
-                        <Link href="/portal/teacher/attendance" className="duga-btn duga-btn--outline duga-btn--sm">Class page</Link>
+                        <div style={{ display: "grid", gap: 8 }}>
+                          {rows.map((s) => (
+                            <div key={s.id} className="duga-card__pad" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, border: "1px solid var(--duga-border)", borderRadius: 8 }}>
+                              <div>
+                                <div style={{ fontWeight: 600 }}>{s.classGroup.level.name} {s.classGroup.name}</div>
+                                <div style={{ fontSize: 12.5, color: "var(--duga-muted)" }}>
+                                  {s.classGroup._count.students} students · {s._count.lessonNotes} notes · {s._count.assignments} assignments · {s._count.tests} CBT
+                                </div>
+                              </div>
+                              <Link href="/portal/teacher/attendance" className="duga-btn duga-btn--outline duga-btn--sm">Class page</Link>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     ))}
                   </div>

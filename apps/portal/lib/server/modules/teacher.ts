@@ -136,9 +136,16 @@ export const teacherModule: Module = {
       const asTeacher = role === "OWNER" || role === "ADMIN" ? false : true;
       const tId = asTeacher ? teacher!.id : undefined;
 
-      const [classSubjectsCount, classCount, students, notesCount, assignmentsCount, testsCount, pendingGrading, contentCount, gameCount, upcomingLive, today] =
+      const [distinctSubjects, classCount, students, notesCount, assignmentsCount, testsCount, pendingGrading, contentCount, gameCount, upcomingLive, today] =
         await Promise.all([
-          prisma.classSubject.count({ where: { schoolId, ...(tId ? { teacherId: tId } : {}), ...(section ? { classGroup: { level: { section } } } : {}) } }),
+          // A "class subject" row exists once per class a subject is taught
+          // in, so counting rows directly makes one subject taught across
+          // many classes look like many subjects. Count distinct subjects.
+          prisma.classSubject.findMany({
+            where: { schoolId, ...(tId ? { teacherId: tId } : {}), ...(section ? { classGroup: { level: { section } } } : {}) },
+            select: { subjectId: true },
+            distinct: ["subjectId"],
+          }),
           prisma.classGroup.count({ where: tId ? { classSubjects: { some: { teacherId: tId, ...(section ? { classGroup: { level: { section } } } : {}) } } } : { schoolId, ...(section ? { level: { section } } : {}) } }),
           (async () => {
             if (tId) {
@@ -167,7 +174,7 @@ export const teacherModule: Module = {
       return {
         role,
         counts: {
-          classSubjects: classSubjectsCount,
+          classSubjects: distinctSubjects.length,
           classes: classCount,
           students,
           notes: notesCount,
