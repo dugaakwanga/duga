@@ -92,7 +92,10 @@ export type Permission =
   | "gate:view"
   // Central school calendar (term dates, holidays, assessment windows)
   | "calendar:view"
-  | "calendar:manage";
+  | "calendar:manage"
+  // "Family Corner" parent content hub (recipes, parenting tips, etc.)
+  | "familyCorner:view"
+  | "familyCorner:manage";
 
 export const PERMISSIONS: Permission[] = [
   "students:view",
@@ -157,6 +160,8 @@ export const PERMISSIONS: Permission[] = [
   "gate:view",
   "calendar:view",
   "calendar:manage",
+  "familyCorner:view",
+  "familyCorner:manage",
 ];
 
 const rolePermissions: Record<Role, Permission[]> = {
@@ -218,6 +223,7 @@ const rolePermissions: Record<Role, Permission[]> = {
     "gate:view",
     "calendar:view",
     "calendar:manage",
+    "familyCorner:manage",
   ],
   // Bursar access is intentionally limited to finance, plus view-only
   // students/classes for billing, invoicing and clearance tracking (never
@@ -267,6 +273,8 @@ const rolePermissions: Record<Role, Permission[]> = {
   // Parents may track their children's learning but must never be able to
   // submit assignments, take CBT tests, or join live classroom sessions —
   // those are student-only actions per the RBAC spec.
+  // No library:view — parents get "Family Corner" instead of access to the
+  // school's student book catalogue.
   PARENT: [
     "students:view",
     "learning:view",
@@ -283,9 +291,9 @@ const rolePermissions: Record<Role, Permission[]> = {
     "elearn:view",
     "games:play",
     "pta:view",
-    "library:view",
     "ai:use",
     "calendar:view",
+    "familyCorner:view",
   ],
   STUDENT: [
     "learning:view",

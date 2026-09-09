@@ -37,6 +37,7 @@ import { gamesModule } from "./games";
 import { featuresModule } from "./features";
 import { progressModule } from "./progress";
 import { ptaModule } from "./pta";
+import { familyCornerModule } from "./familyCorner";
 import { libraryModule } from "./library";
 import { payrollModule } from "./payroll";
 import { aiModule } from "./ai";
@@ -72,6 +73,7 @@ export const modules: Record<string, Module> = {
   features: featuresModule,
   progress: progressModule,
   pta: ptaModule,
+  familyCorner: familyCornerModule,
   library: libraryModule,
   payroll: payrollModule,
   ai: aiModule,

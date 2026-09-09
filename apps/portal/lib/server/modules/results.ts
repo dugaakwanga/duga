@@ -134,12 +134,17 @@ export const resultsModule: Module = {
     ]);
     const submissions = await submissionSummary(schoolId, classSubjects);
     const { school, reportCardConfig } = await schoolAndReportCardConfig(schoolId, section);
+    // So admin can open a read-only entry sheet from "Subject submissions"
+    // (entrySheet already lets OWNER/ADMIN view any classSubject — it was
+    // just missing a term to ask for from the client).
+    const terms = await prisma.term.findMany({ where: { schoolId }, include: { session: true }, orderBy: [{ session: { createdAt: "desc" } }, { termNumber: "asc" }] });
+    const activeTermId = (terms.find((t) => t.status === "ACTIVE") ?? terms[0])?.id;
     // classSubjects was already being fetched to compute `submissions`, but
     // was never sent to the client — the admin/owner "Subject submissions"
     // overview builds its rows from this array client-side, so without it
     // that whole card silently never rendered, no matter how many subjects
     // teachers had submitted.
-    return { role, reportCards: reportCards.map((rc) => ({ ...rc, gpa: gpaOf(rc.items) })), classSubjects, config, submissions, school, reportCardConfig };
+    return { role, reportCards: reportCards.map((rc) => ({ ...rc, gpa: gpaOf(rc.items) })), classSubjects, config, submissions, school, reportCardConfig, activeTermId };
   },
 
   async get(ctx) {

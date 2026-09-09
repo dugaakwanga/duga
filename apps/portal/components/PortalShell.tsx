@@ -19,6 +19,8 @@ interface NavItem {
   finance?: boolean;
   feature?: string;
   subfeature?: string;
+  /** Only shown when the viewer (or, for a parent, at least one linked child) is a boarding student. */
+  boardingOnly?: boolean;
 }
 
 interface NavSection {
@@ -52,12 +54,21 @@ const STAFF_NAV: NavSection[] = [
   {
     title: "My Teaching",
     items: [
-      { href: "/portal/teacher", label: "Teaching Overview", icon: "home", perm: "learning:manage", feature: "learning" },
-      { href: "/portal/teacher/subjects", label: "My Subjects", icon: "classes", perm: "learning:manage", feature: "learning" },
-      { href: "/portal/teacher/notes", label: "Lesson Notes", icon: "notes", perm: "learning:manage", feature: "learning", subfeature: "learning:notes" },
-      { href: "/portal/teacher/assignments", label: "Assignments", icon: "assignment", perm: "learning:manage", feature: "learning", subfeature: "learning:assignments" },
-      { href: "/portal/teacher/cbt", label: "CBT Exams", icon: "quiz", perm: "learning:manage", feature: "learning", subfeature: "learning:cbt" },
-      { href: "/portal/teacher/attendance", label: "Take Attendance", icon: "attendance", perm: "attendance:take", feature: "attendance" },
+      { href: "/portal/teacher", label: "Teaching Overview", icon: "home", perm: "learning:manage", feature: "learning", roles: ["TEACHER"] },
+      { href: "/portal/teacher/subjects", label: "My Subjects", icon: "classes", perm: "learning:manage", feature: "learning", roles: ["TEACHER"] },
+      { href: "/portal/teacher/notes", label: "Lesson Notes", icon: "notes", perm: "learning:manage", feature: "learning", subfeature: "learning:notes", roles: ["TEACHER"] },
+      { href: "/portal/teacher/assignments", label: "Assignments", icon: "assignment", perm: "learning:manage", feature: "learning", subfeature: "learning:assignments", roles: ["TEACHER"] },
+      { href: "/portal/teacher/cbt", label: "CBT Exams", icon: "quiz", perm: "learning:manage", feature: "learning", subfeature: "learning:cbt", roles: ["TEACHER"] },
+      { href: "/portal/teacher/attendance", label: "Take Attendance", icon: "attendance", perm: "attendance:take", feature: "attendance", roles: ["TEACHER"] },
+    ],
+  },
+  // Owner/Admin get institutional monitoring only — never the teacher's
+  // personal workspace (no "My Subjects", no lesson-note/assignment/CBT
+  // authoring tools, no "take attendance" for a class they don't teach).
+  {
+    title: "Teaching",
+    items: [
+      { href: "/portal/teacher", label: "Teaching", icon: "home", perm: "learning:manage", feature: "learning", roles: ["OWNER", "ADMIN"] },
     ],
   },
   {
@@ -86,6 +97,7 @@ const STAFF_NAV: NavSection[] = [
       { href: "/portal/announcements", label: "Announcements", icon: "announcements", perm: "announcements:view", feature: "messaging" },
       { href: "/portal/messages", label: "Messages", icon: "messages", perm: "messaging:use", feature: "messaging" },
       { href: "/portal/notifications", label: "Notifications", icon: "notifications", feature: "messaging" },
+      { href: "/portal/family-corner", label: "Family Corner", icon: "notes", perm: "familyCorner:manage" },
     ],
   },
   {
@@ -136,7 +148,7 @@ const STUDENT_NAV: NavSection[] = [
       { href: "/portal/fees", label: "My Fees", icon: "fees", perm: "fees:view", feature: "fees", subfeature: "finance" },
       { href: "/portal/pta", label: "PTA", icon: "announcements", perm: "pta:view", feature: "pta" },
       { href: "/portal/library", label: "Library", icon: "notes", perm: "library:view", feature: "library" },
-      { href: "/portal/hostel", label: "Hostel", icon: "hostel", perm: "hostel:view", feature: "hostel" },
+      { href: "/portal/hostel", label: "Hostel", icon: "hostel", perm: "hostel:view", feature: "hostel", boardingOnly: true },
       { href: "/portal/transport", label: "Transport", icon: "bus", perm: "transport:view", feature: "transport" },
     ],
   },
@@ -174,9 +186,9 @@ const PARENT_NAV: NavSection[] = [
     items: [
       { href: "/portal/learning", label: "Assignments & Exams", icon: "quiz", perm: "learning:view", feature: "learning" },
       { href: "/portal/pta", label: "PTA", icon: "announcements", perm: "pta:view", feature: "pta" },
-      { href: "/portal/library", label: "Library", icon: "notes", perm: "library:view", feature: "library" },
-      { href: "/portal/hostel", label: "Hostel", icon: "hostel", perm: "hostel:view", feature: "hostel" },
+      { href: "/portal/hostel", label: "Hostel", icon: "hostel", perm: "hostel:view", feature: "hostel", boardingOnly: true },
       { href: "/portal/transport", label: "Transport", icon: "bus", perm: "transport:view", feature: "transport" },
+      { href: "/portal/family-corner", label: "Family Corner", icon: "notes", roles: ["PARENT"] },
     ],
   },
   {
@@ -353,6 +365,7 @@ interface ShellUser {
   subfeatures?: string[];
   sections?: Section[];
   canSwitchSection?: boolean;
+  hasBoarding?: boolean;
 }
 
 // Human-readable label for a section: "PRIMARY" -> "Primary",
@@ -509,7 +522,8 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
           (!i.perm || hasPermission(user.role, i.perm)) &&
           (!i.roles || i.roles.includes(user.role)) &&
           (!i.feature || !user.features || user.features.includes(i.feature)) &&
-          (!i.subfeature || !user.subfeatures || user.subfeatures.includes(i.subfeature)),
+          (!i.subfeature || !user.subfeatures || user.subfeatures.includes(i.subfeature)) &&
+          (!i.boardingOnly || user.hasBoarding),
       ),
     }))
     .filter((s) => s.items.length > 0);

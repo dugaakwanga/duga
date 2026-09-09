@@ -87,7 +87,7 @@ export const classesModule: Module = {
         subjectIds: (user.teacher!.subjectIds as string[] | null) ?? [],
         sections: await sectionsOfTeacher(user.teacher!.id),
       })));
-    return { items: classGroups, levels, sessions, subjects, sections: schoolSections, teachers: teacherOptions, role: ctx.session.user.role };
+    return { items: classGroups, levels, sessions, subjects, sections: schoolSections, teachers: teacherOptions, role: ctx.session.user.role, teacherId: ctx.session.user.teacher?.id ?? null };
   },
 
   async get(ctx) {

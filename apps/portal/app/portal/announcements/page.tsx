@@ -89,7 +89,10 @@ export default function AnnouncementsPage() {
   }, []);
 
   useEffect(() => {
-    setCanManage(role === "OWNER" || role === "ADMIN" || role === "BURSAR" || role === "TEACHER");
+    // Only OWNER/ADMIN hold announcements:manage server-side — Bursar and
+    // Teacher are receive-only. This previously let both see the compose
+    // UI even though posting would 403.
+    setCanManage(role === "OWNER" || role === "ADMIN");
   }, [role]);
 
   const pinned = useMemo(() => items.filter((a) => a.isPinned), [items]);

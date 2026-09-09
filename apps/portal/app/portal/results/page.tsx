@@ -445,7 +445,12 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
 
   function setRow(r: EntryRow, comp: string, val: string) {
     if (!sheet) return;
-    const v = val === "" ? null : Math.max(0, Number(val));
+    // Clamp to the component's admin-set maximum so what's stored always
+    // matches what's displayed — previously only the computed CA/Exam
+    // totals were capped server-side, while the raw per-component value
+    // (e.g. typing 999 into a 10-mark component) was stored as-is.
+    const max = sheet.config.components.find((c) => c.name === comp)?.max;
+    const v = val === "" ? null : Math.max(0, Math.min(Number(val), max ?? Number(val)));
     setSheet({
       ...sheet,
       rows: sheet.rows.map((row) => (row.studentId === r.studentId ? { ...row, scores: { ...row.scores, [comp]: v } } : row)),
@@ -592,15 +597,17 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
         }
       />
 
-      {/* Teacher entry sheet */}
-      {role === "TEACHER" && sheet && (
+      {/* Entry sheet — teachers enter their own scores; admin/owner can open
+          any subject read-only from "Subject submissions" to review what
+          was submitted without having to Reopen (and re-lock) it first. */}
+      {(role === "TEACHER" || role === "ADMIN" || role === "OWNER") && sheet && (
         <Card
           title={`${sheet.classSubject.subject} — ${sheet.classSubject.class}`}
           actions={
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               {sheet.submitted ? (
                 <Badge tone="success">Submitted to admin</Badge>
-              ) : (
+              ) : role === "TEACHER" ? (
                 <>
                   {autoSaveStatus === "saving" && <span style={{ fontSize: 12, color: "var(--duga-muted)" }}>Saving draft…</span>}
                   {autoSaveStatus === "saved" && <span style={{ fontSize: 12, color: "var(--duga-muted)" }}>Draft saved</span>}
@@ -608,9 +615,11 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
                   <Button variant="accent" size="sm" onClick={submitSheet} disabled={saving || sheetLoading}>
                     {saving ? "Submitting…" : "Submit to admin"}
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => setSheet(null)}>Close</Button>
                 </>
+              ) : (
+                <Badge tone="neutral">Not yet submitted</Badge>
               )}
+              <Button variant="outline" size="sm" onClick={() => setSheet(null)}>Close</Button>
             </div>
           }
           style={{ marginBottom: 24 }}
@@ -704,21 +713,21 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
                         {cs.classGroup.level.name} {cs.classGroup.name} · {cs.classGroup.students.length} students
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                        <Badge tone={tone}>{status.allSubmitted ? "Submitted" : `${pct}% marked`}</Badge>
+                        <Badge tone={tone}>{status.allSubmitted ? "Submitted" : `${pct}% entered`}</Badge>
                       </div>
                       <div style={{ marginBottom: 8 }}>
                         <ProgressBar pct={pct} tone={tone} />
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12.5, marginBottom: 14 }}>
                         <span style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--duga-muted)" }}>
-                          <Icon name="check" size={13} /> {status.entered} of {status.total} marked
+                          <Icon name="check" size={13} /> {status.entered} of {status.total} entered
                         </span>
                         {remaining > 0 && (
                           <span style={{ color: "var(--duga-danger)", fontWeight: 600 }}>{remaining} remaining</span>
                         )}
                       </div>
                       <Button variant="outline" size="sm" disabled={sheetLoading} onClick={() => openSheet(cs.id)}>
-                        <Icon name="assignment" size={14} /> {status.allSubmitted ? "View results" : status.entered > 0 ? "Continue marking" : "Start marking"}
+                        <Icon name="assignment" size={14} /> {status.allSubmitted ? "View scores" : status.entered > 0 ? "Continue entering scores" : "Enter scores"}
                       </Button>
                     </Card>
                   );
@@ -777,9 +786,14 @@ section h3{margin:16px 0 6px;font-size:14px;color:#1e3a8a;text-transform:upperca
                             </Badge>
                           </td>
                           <td>
-                            {row.status.submitted > 0 && (
-                              <Button size="sm" variant="ghost" onClick={() => reopenSubject(row.classSubjectId)}>Reopen</Button>
-                            )}
+                            <div style={{ display: "flex", gap: 6 }}>
+                              {row.status.entered > 0 && (
+                                <Button size="sm" variant="outline" disabled={sheetLoading} onClick={() => openSheet(row.classSubjectId, activeTermId)}>View</Button>
+                              )}
+                              {row.status.submitted > 0 && (
+                                <Button size="sm" variant="ghost" onClick={() => reopenSubject(row.classSubjectId)}>Reopen</Button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );

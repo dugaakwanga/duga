@@ -41,6 +41,18 @@ export default async function PortalLayout({ children }: { children: React.React
     sections = user.teacher ? await sectionsOfTeacher(user.teacher.id) : [];
     canSwitchSection = sections.length > 1;
   }
+
+  // Hostel is meaningless for a family with no boarding child — hide the nav
+  // link entirely rather than showing an empty "no allocation" page.
+  let hasBoarding = false;
+  if (user.role === "STUDENT") {
+    hasBoarding = user.student?.isBoarding ?? false;
+  } else if (user.role === "PARENT" && user.parent) {
+    hasBoarding = user.parent.students.some((link) => link.student.isBoarding);
+  } else {
+    hasBoarding = true; // staff always see Hostel (they manage it for whoever is boarding)
+  }
+
   return (
     <PortalShell
       user={{
@@ -55,6 +67,7 @@ export default async function PortalLayout({ children }: { children: React.React
         subfeatures,
         sections,
         canSwitchSection,
+        hasBoarding,
       }}
     >
       {children}

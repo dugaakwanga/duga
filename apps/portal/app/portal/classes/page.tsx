@@ -89,6 +89,7 @@ export default function ClassesPage() {
   const [schoolSections, setSchoolSections] = useState<SchoolSection[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [role, setRole] = useState<string>("");
+  const [teacherIdSelf, setTeacherIdSelf] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -155,7 +156,7 @@ export default function ClassesPage() {
   const load = useCallback(async () => {
     void section;
     try {
-      const d = await api<{ items: ClassGroup[]; levels: Level[]; sessions: Session[]; subjects: Subject[]; sections?: SchoolSection[]; teachers: Teacher[]; role: string }>("classes");
+      const d = await api<{ items: ClassGroup[]; levels: Level[]; sessions: Session[]; subjects: Subject[]; sections?: SchoolSection[]; teachers: Teacher[]; role: string; teacherId?: string | null }>("classes");
       setClasses(d.items);
       setLevels(d.levels);
       setSessions(d.sessions);
@@ -163,6 +164,7 @@ export default function ClassesPage() {
       setSchoolSections(d.sections ?? []);
       setTeachers(d.teachers ?? []);
       setRole(d.role);
+      setTeacherIdSelf(d.teacherId ?? null);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -408,17 +410,65 @@ export default function ClassesPage() {
             )}
           </div>
 
-          {/* Overview */}
-          {view.name === "overview" && (
+          {/* Overview — Owner/Admin get the whole-school structure browser
+              (Classes/Subjects/Levels/Sessions/Sections management). Anyone
+              else who can reach this page (Teacher, Bursar) just needs to see
+              the classes they're actually scoped to — the server already
+              filters `classes` to that set, so show it directly instead of
+              a "manage the whole school's structure" drill-down that was
+              never theirs to manage. */}
+          {view.name === "overview" && isAdmin && (
             <div className="classes-drill">
               <DrillCard icon="classes" title="Classes" subtitle="Class groups organised by school section" count={classes.length} label="classes" onClick={() => setView(section ? { name: "classes-list", section } : { name: "classes" })} />
               <DrillCard icon="notes" title="Subjects" subtitle="Subjects taught across your school sections" count={subjects.length} label="subjects" onClick={() => setView(section ? { name: "subjects-list", section } : { name: "subjects" })} />
               <DrillCard icon="classes" title="Levels" subtitle="Stages per section, e.g. Basic 1, JSS 1" count={levels.length} label="levels" onClick={() => setView(section ? { name: "levels-list", section } : { name: "levels" })} />
               <DrillCard icon="timetable" title="Sessions" subtitle="Academic years, e.g. 2025/2026" count={sessions.length} label="sessions" onClick={() => setView({ name: "sessions" })} />
-              {isAdmin && (
-                <DrillCard icon="classes" title="Sections" subtitle="Add, rename or remove your school sections" count={schoolSections.length} label="sections" onClick={() => setView({ name: "sections" })} />
-              )}
+              <DrillCard icon="classes" title="Sections" subtitle="Add, rename or remove your school sections" count={schoolSections.length} label="sections" onClick={() => setView({ name: "sections" })} />
             </div>
+          )}
+
+          {view.name === "overview" && !isAdmin && (
+            classes.length === 0 ? (
+              <EmptyState title={role === "TEACHER" ? "No classes assigned yet" : "No classes yet"} hint={role === "TEACHER" ? "Ask an admin to assign you to a class or subject." : "Check back later."} />
+            ) : (
+              Array.from(new Set(classes.map((c) => c.level.section))).map((sectionName) => {
+                const sectionClasses = [...classes.filter((c) => c.level.section === sectionName)].sort((a, b) => (a.level.order ?? 0) - (b.level.order ?? 0) || a.name.localeCompare(b.name));
+                return (
+                  <section key={sectionName} className="classes-section">
+                    <h2 style={{ fontSize: 17, margin: "0 0 12px", color: "var(--duga-primary-ink)" }}>
+                      {role === "TEACHER" ? "My classes" : sectionName}
+                      <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--duga-muted)", marginLeft: 6 }}>({sectionClasses.length})</span>
+                    </h2>
+                    <div className="classes-card-grid">
+                      {sectionClasses.map((c) => (
+                        <Card key={c.id} title={`${c.level.name} ${c.name}`} className="classes-card">
+                          <div style={{ fontSize: 13, color: "var(--duga-muted)", marginBottom: 8 }}>
+                            {c.session.name}
+                            {c.room ? ` · Room ${c.room}` : ""}
+                          </div>
+                          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                            <Badge tone={c.level.section === "PRIMARY" ? "info" : "accent"}>{c.level.section.toLowerCase()}</Badge>
+                            <Badge tone="neutral">{c._count?.students ?? 0} students</Badge>
+                            <Badge tone="neutral">{c.classSubjects?.length ?? 0} subjects</Badge>
+                            {c.formTeacherId === teacherIdSelf && <Badge tone="accent">You&apos;re the class teacher</Badge>}
+                          </div>
+                          <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginTop: 10 }}>
+                            Class teacher: {c.formTeacher ? `${c.formTeacher.user.firstName} ${c.formTeacher.user.lastName}` : "Not set"}
+                          </div>
+                          {(c.classSubjects?.length ?? 0) > 0 && (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 10 }}>
+                              {(c.classSubjects ?? []).map((cs) => (
+                                <Badge key={cs.id} tone="neutral">{cs.subject?.name}</Badge>
+                              ))}
+                            </div>
+                          )}
+                        </Card>
+                      ))}
+                    </div>
+                  </section>
+                );
+              })
+            )
           )}
 
           {/* Classes -> pick a category */}

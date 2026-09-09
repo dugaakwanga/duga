@@ -2051,6 +2051,34 @@ model GameProgress {
 // MODULE J — PARENT-TEACHER ASSOCIATION (PTA)
 // ----------------------------------------------------------------------------
 
+// "Family Corner" — a parent-facing content hub (recipes, parenting tips,
+// child health, study support, fun activities) that replaces giving parents
+// access to the school's student book catalogue. Admin/Owner author and
+// publish; parents only ever see isPublished:true items.
+enum FamilyContentCategory {
+  RECIPES
+  PARENTING_TIPS
+  CHILD_HEALTH
+  STUDY_SUPPORT
+  FUN_ACTIVITIES
+}
+
+model FamilyContent {
+  id                String                @id @default(cuid())
+  schoolId          String
+  category          FamilyContentCategory
+  title             String
+  body              String
+  imageUrl          String?
+  isPublished       Boolean               @default(true)
+  publishedByUserId String?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@index([schoolId, category])
+  @@index([schoolId, isPublished])
+}
+
 model PtaExecutive {
   id        String   @id @default(cuid())
   schoolId  String
