@@ -2,30 +2,49 @@ import { prisma } from "@duga/core/server";
 import { withinRadiusMeters, schoolConfig } from "@duga/core";
 import { logAudit } from "@duga/core/server";
 import type { Module } from ".";
-import { can, todayUTC, isoDay, str, num, resolveSection } from "../helpers";
+import { can, todayUTC, isoDay, str, num, resolveSection, sectionsOfTeacher } from "../helpers";
+import type { Ctx } from "@/app/api/v1/[...path]/route";
 
 // Resolve the staff member to clock for. When `targetUserId` is supplied the
-// caller clocks in/out on behalf of that staff member (proxy clock). The target
-// must be a staff account in the same school.
-async function resolveClockTarget(
-  schoolId: string,
-  actingUserId: string,
-  actingRole: string,
-  raw: unknown,
-): Promise<{ userId: string; proxyByUserId?: string }> {
+// caller clocks in/out on behalf of that staff member (a colleague standing
+// right there with them — not an office override, so this is still fully
+// geofenced and photo-verified like a self clock). An owner/admin may target
+// any staff account; a teacher may only target another teacher who shares at
+// least one of their sections, matching how the rest of the app scopes a
+// teacher's reach.
+async function resolveClockTarget(ctx: Ctx, raw: unknown): Promise<{ userId: string; proxyByUserId?: string }> {
+  const schoolId = ctx.session.user.schoolId;
+  const actingUserId = ctx.session.user.id;
+  const actingRole = ctx.session.user.role;
   const targetUserId = str(raw);
   if (!targetUserId || targetUserId === actingUserId) return { userId: actingUserId };
-  if (actingRole !== "OWNER" && actingRole !== "ADMIN") {
-    const err = new Error("Only an owner or admin can clock in or out for another staff member") as Error & { status?: number };
-    err.status = 403;
-    throw err;
+
+  if (actingRole === "OWNER" || actingRole === "ADMIN") {
+    const target = await prisma.user.findFirst({
+      where: { id: targetUserId, schoolId, role: { in: ["TEACHER", "ADMIN", "BURSAR", "OWNER"] } },
+      select: { id: true },
+    });
+    if (!target) throw new Error("Selected staff member not found in this school");
+    return { userId: target.id, proxyByUserId: actingUserId };
   }
-  const target = await prisma.user.findFirst({
-    where: { id: targetUserId, schoolId, role: { in: ["TEACHER", "ADMIN", "BURSAR", "OWNER"] } },
-    select: { id: true },
-  });
-  if (!target) throw new Error("Selected staff member not found in this school");
-  return { userId: target.id, proxyByUserId: actingUserId };
+
+  if (actingRole === "TEACHER" && ctx.session.user.teacher) {
+    const mySections = await sectionsOfTeacher(ctx.session.user.teacher.id);
+    const target = await prisma.user.findFirst({
+      where: { id: targetUserId, schoolId, role: "TEACHER" },
+      select: { id: true, teacher: { select: { id: true } } },
+    });
+    if (!target?.teacher) throw new Error("Selected staff member not found in this school");
+    const theirSections = await sectionsOfTeacher(target.teacher.id);
+    if (!mySections.some((s) => theirSections.includes(s))) {
+      throw new Error("You can only clock in a teacher who shares one of your sections");
+    }
+    return { userId: target.id, proxyByUserId: actingUserId };
+  }
+
+  const err = new Error("Only an owner, admin or teacher can clock in or out for another staff member") as Error & { status?: number };
+  err.status = 403;
+  throw err;
 }
 
 function parseAttendanceDate(value: string) {
@@ -234,30 +253,33 @@ export const attendanceModule: Module = {
     },
 
     // Resolve the staff member to clock for. When `targetUserId` is supplied
-    // the caller clocks in/out on behalf of that staff member (proxy clock).
-    // The target must be a staff account in the same school. Every proxy action
-    // is recorded on the target's attendance row AND in the audit log so it is
-    // visible to the owner/admin side.
+    // the caller clocks in/out on behalf of that staff member — a colleague
+    // standing right there with them, so this is still fully geofenced and
+    // requires a live photo of the person being clocked in, same as a self
+    // clock. Every such action is recorded on the target's attendance row AND
+    // in the audit log so it is visible to the owner/admin side.
     staffClockIn: async (ctx) => {
       can(ctx, "staff:clock");
       const schoolId = ctx.session.user.schoolId;
       const lat = num(ctx.body.lat);
       const lng = num(ctx.body.lng);
       if (lat === undefined || lng === undefined) throw new Error("Location is required to clock in");
+      const photoUrl = str(ctx.body.photoUrl);
+      const photoKey = str(ctx.body.photoKey);
+      if (!photoUrl) throw new Error("A live camera photo is required to clock in");
 
-      const target = await resolveClockTarget(schoolId, ctx.session.user.id, ctx.session.user.role, ctx.body.targetUserId);
+      const target = await resolveClockTarget(ctx, ctx.body.targetUserId);
 
       const school = await prisma.school.findUnique({ where: { id: schoolId } });
       const schoolLat = school?.gpsLat ?? schoolConfig.lat;
       const schoolLng = school?.gpsLng ?? schoolConfig.lng;
       const radius = schoolConfig.attendanceRadiusMeters;
       const check = withinRadiusMeters(lat, lng, schoolLat, schoolLng, radius);
-      // A proxy clock-in (an admin/owner clocking in someone without a
-      // smartphone) is a trusted manual override and isn't geofenced — the
-      // helper may reasonably be doing this from the office, not the gate.
-      // A staff member clocking in for themselves must be on school grounds.
-      if (!target.proxyByUserId && !check.within) {
-        throw new Error(`You're too far from the school to clock in (${Math.round(check.distanceM)}m away, must be within ${radius}m). Ask an admin to clock you in if this is wrong.`);
+      // Always geofenced — whoever is physically clocking in (self or a
+      // colleague standing with them) must be on school grounds. No office
+      // override; that's what the photo + radius check together replace.
+      if (!check.within) {
+        throw new Error(`You're too far from the school to clock in (${Math.round(check.distanceM)}m away, must be within ${radius}m).`);
       }
 
       const record = await prisma.staffAttendance.upsert({
@@ -268,6 +290,8 @@ export const attendanceModule: Module = {
           checkInLng: lng,
           checkInDistanceM: check.distanceM,
           checkInWithinRadius: check.within,
+          checkInPhotoUrl: photoUrl,
+          checkInPhotoKey: photoKey,
           locationLabel: str(ctx.body.locationLabel),
           deviceInfo: str(ctx.body.deviceInfo),
         },
@@ -280,6 +304,8 @@ export const attendanceModule: Module = {
           checkInLng: lng,
           checkInDistanceM: check.distanceM,
           checkInWithinRadius: check.within,
+          checkInPhotoUrl: photoUrl,
+          checkInPhotoKey: photoKey,
           locationLabel: str(ctx.body.locationLabel),
           deviceInfo: str(ctx.body.deviceInfo),
         },
@@ -295,41 +321,61 @@ export const attendanceModule: Module = {
       const lat = num(ctx.body.lat);
       const lng = num(ctx.body.lng);
       if (lat === undefined || lng === undefined) throw new Error("Location is required to clock out");
+      const photoUrl = str(ctx.body.photoUrl);
+      const photoKey = str(ctx.body.photoKey);
+      if (!photoUrl) throw new Error("A live camera photo is required to clock out");
 
-      const target = await resolveClockTarget(schoolId, ctx.session.user.id, ctx.session.user.role, ctx.body.targetUserId);
+      const target = await resolveClockTarget(ctx, ctx.body.targetUserId);
 
       const school = await prisma.school.findUnique({ where: { id: schoolId } });
       const check = withinRadiusMeters(lat, lng, school?.gpsLat ?? schoolConfig.lat, school?.gpsLng ?? schoolConfig.lng, schoolConfig.attendanceRadiusMeters);
-      if (!target.proxyByUserId && !check.within) {
-        throw new Error(`You're too far from the school to clock out (${Math.round(check.distanceM)}m away, must be within ${schoolConfig.attendanceRadiusMeters}m). Ask an admin to clock you out if this is wrong.`);
+      if (!check.within) {
+        throw new Error(`You're too far from the school to clock out (${Math.round(check.distanceM)}m away, must be within ${schoolConfig.attendanceRadiusMeters}m).`);
       }
       const record = await prisma.staffAttendance.upsert({
         where: { userId_date: { userId: target.userId, date: todayUTC() } },
-        update: { checkOutAt: new Date(), checkOutLat: lat, checkOutLng: lng, checkOutDistanceM: check.distanceM, checkOutWithinRadius: check.within },
-        create: { schoolId, userId: target.userId, date: todayUTC(), checkOutAt: new Date(), checkOutLat: lat, checkOutLng: lng, checkOutDistanceM: check.distanceM, checkOutWithinRadius: check.within },
+        update: { checkOutAt: new Date(), checkOutLat: lat, checkOutLng: lng, checkOutDistanceM: check.distanceM, checkOutWithinRadius: check.within, checkOutPhotoUrl: photoUrl, checkOutPhotoKey: photoKey },
+        create: { schoolId, userId: target.userId, date: todayUTC(), checkOutAt: new Date(), checkOutLat: lat, checkOutLng: lng, checkOutDistanceM: check.distanceM, checkOutWithinRadius: check.within, checkOutPhotoUrl: photoUrl, checkOutPhotoKey: photoKey },
       });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "staff.clockOut", entityType: "StaffAttendance", entityId: record.id, meta: { within: check.within, distanceM: check.distanceM, targetUserId: target.userId, proxyByUserId: target.proxyByUserId } });
       return { ...record, withinRadius: check.within, distanceMeters: check.distanceM, proxyByUserId: target.proxyByUserId ?? null };
     },
 
-    // List of staff members a staff account may clock in/out for.
+    // List of staff members a staff account may clock in/out for — an
+    // owner/admin can pick any staff account; a teacher can only pick another
+    // teacher who shares one of their sections (mirrors resolveClockTarget).
     staffClockTargets: async (ctx) => {
       can(ctx, "staff:clock");
-      const items = await prisma.user.findMany({
-        where: {
-          schoolId: ctx.session.user.schoolId,
-          status: "ACTIVE",
-          ...(ctx.session.user.role === "OWNER" || ctx.session.user.role === "ADMIN" ? { role: { in: ["TEACHER", "ADMIN", "BURSAR", "OWNER"] } } : { id: ctx.session.user.id }),
-        },
-        select: { id: true, firstName: true, lastName: true, role: true, teacher: { select: { staffNumber: true } }, admin: { select: { designation: true } } },
-        orderBy: { firstName: "asc" },
-      });
-      return { items };
+      const role = ctx.session.user.role;
+      if (role === "OWNER" || role === "ADMIN") {
+        const items = await prisma.user.findMany({
+          where: { schoolId: ctx.session.user.schoolId, status: "ACTIVE", role: { in: ["TEACHER", "ADMIN", "BURSAR", "OWNER"] } },
+          select: { id: true, firstName: true, lastName: true, role: true, teacher: { select: { staffNumber: true } }, admin: { select: { designation: true } } },
+          orderBy: { firstName: "asc" },
+        });
+        return { items };
+      }
+      if (role === "TEACHER" && ctx.session.user.teacher) {
+        const mySections = await sectionsOfTeacher(ctx.session.user.teacher.id);
+        const candidates = await prisma.user.findMany({
+          where: { schoolId: ctx.session.user.schoolId, status: "ACTIVE", role: "TEACHER", id: { not: ctx.session.user.id } },
+          select: { id: true, firstName: true, lastName: true, role: true, teacher: { select: { id: true, staffNumber: true } } },
+          orderBy: { firstName: "asc" },
+        });
+        const items = [];
+        for (const c of candidates) {
+          if (!c.teacher) continue;
+          const theirSections = await sectionsOfTeacher(c.teacher.id);
+          if (mySections.some((s) => theirSections.includes(s))) items.push(c);
+        }
+        return { items };
+      }
+      return { items: [] };
     },
 
     staffStatus: async (ctx) => {
       can(ctx, "staff:clock");
-      const target = await resolveClockTarget(ctx.session.user.schoolId, ctx.session.user.id, ctx.session.user.role, ctx.body.targetUserId);
+      const target = await resolveClockTarget(ctx, ctx.body.targetUserId);
       const record = await prisma.staffAttendance.findUnique({
         where: { userId_date: { userId: target.userId, date: todayUTC() } },
       });

@@ -10,9 +10,11 @@ interface StaffRecordRow {
   checkInAt: string | null;
   checkInDistanceM: number | null;
   checkInWithinRadius: boolean | null;
+  checkInPhotoUrl: string | null;
   checkOutAt: string | null;
   checkOutDistanceM: number | null;
   checkOutWithinRadius: boolean | null;
+  checkOutPhotoUrl: string | null;
   user: { firstName: string; lastName: string; role: string };
 }
 
@@ -100,7 +102,7 @@ export default function StaffClockRecordsPage() {
                     {flagged > 0 && <Badge tone="danger">{flagged} flagged</Badge>}
                   </summary>
                   <div style={{ marginTop: 8 }}>
-                    <Table headers={["Date", "Clock in", "In-distance", "Clock out", "Out-distance"]}>
+                    <Table headers={["Date", "Clock in", "In-distance", "Photo", "Clock out", "Out-distance", "Photo"]}>
                       {rows.map((r) => (
                         <tr key={r.id}>
                           <td>{new Date(r.date).toISOString().slice(0, 10)}</td>
@@ -113,6 +115,14 @@ export default function StaffClockRecordsPage() {
                             )}
                             {r.checkInDistanceM == null && "—"}
                           </td>
+                          <td>
+                            {r.checkInPhotoUrl ? (
+                              <a href={r.checkInPhotoUrl} target="_blank" rel="noreferrer">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={r.checkInPhotoUrl} alt="Clock-in photo" style={{ width: 36, height: 36, borderRadius: 6, objectFit: "cover", border: "1px solid var(--duga-border)" }} />
+                              </a>
+                            ) : "—"}
+                          </td>
                           <td>{t(r.checkOutAt)}</td>
                           <td>
                             {r.checkOutDistanceM != null && (
@@ -121,6 +131,14 @@ export default function StaffClockRecordsPage() {
                               </Badge>
                             )}
                             {r.checkOutDistanceM == null && "—"}
+                          </td>
+                          <td>
+                            {r.checkOutPhotoUrl ? (
+                              <a href={r.checkOutPhotoUrl} target="_blank" rel="noreferrer">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={r.checkOutPhotoUrl} alt="Clock-out photo" style={{ width: 36, height: 36, borderRadius: 6, objectFit: "cover", border: "1px solid var(--duga-border)" }} />
+                              </a>
+                            ) : "—"}
                           </td>
                         </tr>
                       ))}

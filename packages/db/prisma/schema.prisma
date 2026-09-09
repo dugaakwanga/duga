@@ -1043,6 +1043,13 @@ model StaffAttendance {
   checkOutLng          Float?
   checkOutDistanceM    Float?
   checkOutWithinRadius Boolean   @default(false)
+  // A live camera snapshot taken at the moment of clocking (never an
+  // uploaded file) — kept small for admin review, proof the person was
+  // actually physically present, not just their phone's GPS.
+  checkInPhotoUrl      String?
+  checkInPhotoKey      String?
+  checkOutPhotoUrl     String?
+  checkOutPhotoKey     String?
   locationLabel        String?
   deviceInfo           String?
   createdAt            DateTime  @default(now())

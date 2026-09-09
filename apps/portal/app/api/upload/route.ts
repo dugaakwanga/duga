@@ -52,6 +52,8 @@ export async function POST(request: NextRequest) {
       if (session.user.role === "STUDENT" || session.user.role === "PARENT") {
         throw new ForbiddenError("Students and parents cannot change their profile photo");
       }
+    } else if (purpose === "clock-photo") {
+      assertPermission(session.user.role, "staff:clock");
     } else {
       assertPermission(session.user.role, "gallery:manage");
     }
@@ -67,15 +69,18 @@ export async function POST(request: NextRequest) {
       const hint = purpose === "library" ? "Only PDF, EPUB and MOBI files are allowed" : "Only JPG, PNG, WebP and GIF images are allowed";
       return NextResponse.json({ ok: false, error: hint }, { status: 400 });
     }
-    const maxBytes = purpose === "library" ? 64 * 1024 * 1024 : 8 * 1024 * 1024;
+    // Clock photos are a client-compressed snapshot meant to stay tiny (a few
+    // tens of KB) — a much lower cap than a normal image upload catches a
+    // compression failure instead of silently storing a full-size photo.
+    const maxBytes = purpose === "library" ? 64 * 1024 * 1024 : purpose === "clock-photo" ? 512 * 1024 : 8 * 1024 * 1024;
     if (file.size > maxBytes) {
-      const label = purpose === "library" ? "64MB" : "8MB";
+      const label = purpose === "library" ? "64MB" : purpose === "clock-photo" ? "512KB" : "8MB";
       return NextResponse.json({ ok: false, error: `File must be under ${label}` }, { status: 400 });
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const name = `${crypto.randomUUID()}.${ext(mime, purpose)}`;
-    const folder = purpose === "library" ? "library" : purpose === "avatar" ? "avatars" : purpose === "student-photo" ? "students" : purpose === "school-logo" ? "school" : "gallery";
+    const folder = purpose === "library" ? "library" : purpose === "avatar" ? "avatars" : purpose === "student-photo" ? "students" : purpose === "school-logo" ? "school" : purpose === "clock-photo" ? "clock" : "gallery";
     const { url: fileUrl, key, bucket } = await uploadPublicFile({
       folder,
       name,
