@@ -1,9 +1,7 @@
 // Builds a printable student ID card PDF (front + back per student) on the
 // client, styled as a portrait badge — diagonal two-tone corner accents,
-// circular photo, bold name block — in the school's own brand colors.
-// Card size is CR80 (54mm x 85.6mm), the standard ID-card/badge size that
-// print shops and laminating pouches expect, rotated to portrait to suit a
-// centered vertical layout.
+// circular photo, bold name block. Every visual aspect (size, colors, which
+// fields show) is driven by IdCardConfig, set by the admin.
 
 export interface IdCardSchool {
   name: string;
@@ -25,14 +23,6 @@ export interface IdCardStudent {
   photoUrl: string | null;
   code: string; // signed gate token, encoded into the QR
 }
-
-const CARD_W = 54;
-const CARD_H = 85.6;
-
-// Brand colors — falls back to DUGA's own navy/gold if a school hasn't set
-// its own theme (no per-school color is stored yet; see note in the caller).
-const INK = "#111827";
-const MUTED = "#6b7280";
 
 // Fetches an (often cross-origin, publicly-readable) image URL and returns it
 // as a data URL jsPDF can embed. Never throws — a card should still render
@@ -70,25 +60,64 @@ function verifyUrl(token: string): string {
   return `${base}/verify/${token}`;
 }
 
-export interface IdCardTheme {
+export type IdCardSize = "SMALL" | "STANDARD" | "LARGE";
+
+export interface IdCardConfig {
   primary: string;
   accent: string;
-  background: boolean;
+  inkColor: string;
+  mutedColor: string;
+  showBackground: boolean;
+  size: IdCardSize;
+  showLogo: boolean;
+  showClassSection: boolean;
+  showAdmissionNumber: boolean;
+  showDateOfBirth: boolean;
+  showGender: boolean;
+  showQrCode: boolean;
 }
 
-export const DEFAULT_ID_CARD_THEME: IdCardTheme = { primary: "#1e3a5f", accent: "#c8a448", background: true };
+export const DEFAULT_ID_CARD_CONFIG: IdCardConfig = {
+  primary: "#1e3a5f",
+  accent: "#c8a448",
+  inkColor: "#111827",
+  mutedColor: "#6b7280",
+  showBackground: true,
+  size: "STANDARD",
+  showLogo: true,
+  // Off by default per school policy — a card doesn't need to disclose a
+  // student's class/section on its face.
+  showClassSection: false,
+  showAdmissionNumber: true,
+  showDateOfBirth: false,
+  showGender: false,
+  showQrCode: true,
+};
+
+// Base card is CR80 (54mm x 85.6mm), the standard ID-card/badge size that
+// print shops and laminating pouches expect. SMALL/LARGE scale every
+// dimension (card size, photo, fonts, QR) by the same factor so the
+// carefully-tuned proportions hold at any size.
+const SCALE: Record<IdCardSize, number> = { SMALL: 0.85, STANDARD: 1, LARGE: 1.2 };
+const BASE_W = 54;
+const BASE_H = 85.6;
 
 export async function downloadIdCardsPdf(
   school: IdCardSchool,
   students: IdCardStudent[],
-  theme: IdCardTheme = DEFAULT_ID_CARD_THEME,
+  config: IdCardConfig = DEFAULT_ID_CARD_CONFIG,
 ): Promise<void> {
   const { jsPDF } = await import("jspdf");
   const QRCode = (await import("qrcode")).default;
 
+  const scale = SCALE[config.size];
+  const CARD_W = BASE_W * scale;
+  const CARD_H = BASE_H * scale;
+  const s = (n: number) => n * scale; // scale a mm/pt value
+
   const doc = new jsPDF({ unit: "mm", format: [CARD_W, CARD_H], orientation: "portrait" });
-  const logoDataUrl = await toDataUrl(school.logoUrl);
-  const { primary, accent } = theme;
+  const logoDataUrl = config.showLogo ? await toDataUrl(school.logoUrl) : null;
+  const { primary, accent, inkColor, mutedColor } = config;
 
   // Subtle faceted-glass background — a handful of large, low-contrast
   // triangles layered behind the content, echoing the reference badge's
@@ -96,7 +125,7 @@ export async function downloadIdCardsPdf(
   function backgroundTexture() {
     doc.setFillColor("#ffffff");
     doc.rect(0, 0, CARD_W, CARD_H, "F");
-    if (!theme.background) return;
+    if (!config.showBackground) return;
     const light1 = "#f4f5f7";
     const light2 = "#ececf0";
     doc.setFillColor(light1);
@@ -112,8 +141,8 @@ export async function downloadIdCardsPdf(
   // Two-tone diagonal triangle in one corner — the accent color forms a thin
   // border peeking out from behind the primary-color triangle.
   function cornerTriangle(corner: "tl" | "br") {
-    const big = 20;
-    const small = 15.5;
+    const big = s(20);
+    const small = s(15.5);
     doc.setDrawColor(accent);
     doc.setFillColor(accent);
     if (corner === "tl") {
@@ -130,50 +159,50 @@ export async function downloadIdCardsPdf(
   // Returns the y position content can safely start below. Uses the short
   // name as the bold headline (mirrors the reference template's single-word
   // brand mark) since a school's full legal name routinely overflows a
-  // 54mm-wide card — the full name still appears, in small print, wrapped
-  // and measured dynamically so it can never overlap what follows it.
+  // narrow card — the full name still appears, in small print, wrapped and
+  // measured dynamically so it can never overlap what follows it.
   function header() {
     backgroundTexture();
     cornerTriangle("tl");
     cornerTriangle("br");
-    let y = 6;
+    let y = s(6);
     if (logoDataUrl) {
       try {
         // jsPDF embeds images uncompressed by default, which can balloon a
         // batch of ID cards to tens of MB — "FAST" keeps a real photo/logo
         // file's size in the same ballpark in the output PDF.
-        doc.addImage(logoDataUrl, imageFormat(logoDataUrl), CARD_W / 2 - 4, y, 8, 8, undefined, "FAST");
-        y += 10;
+        doc.addImage(logoDataUrl, imageFormat(logoDataUrl), CARD_W / 2 - s(4), y, s(8), s(8), undefined, "FAST");
+        y += s(10);
       } catch {
         /* skip a logo image jsPDF can't decode rather than failing the card */
       }
     }
     doc.setTextColor(primary);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text((school.shortName || school.name).toUpperCase(), CARD_W / 2, y + 3, { align: "center" });
-    y += 6.5;
+    doc.setFontSize(s(10));
+    doc.text((school.shortName || school.name).toUpperCase(), CARD_W / 2, y + s(3), { align: "center" });
+    y += s(6.5);
 
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(5.2);
-    doc.setTextColor(MUTED);
-    const nameLines = doc.splitTextToSize(school.name, CARD_W - 12);
+    doc.setFontSize(s(5.2));
+    doc.setTextColor(mutedColor);
+    const nameLines = doc.splitTextToSize(school.name, CARD_W - s(12));
     doc.text(nameLines, CARD_W / 2, y, { align: "center" });
-    y += nameLines.length * 2.3 + 2;
+    y += nameLines.length * s(2.3) + s(2);
     return y;
   }
 
   function divider(y: number) {
     doc.setDrawColor(primary);
-    doc.setLineWidth(0.5);
-    doc.line(CARD_W / 2 - 9, y, CARD_W / 2 + 9, y);
+    doc.setLineWidth(s(0.5));
+    doc.line(CARD_W / 2 - s(9), y, CARD_W / 2 + s(9), y);
   }
 
   let first = true;
-  for (const s of students) {
+  for (const st of students) {
     const [photoDataUrl, qrDataUrl] = await Promise.all([
-      toDataUrl(s.photoUrl),
-      QRCode.toDataURL(verifyUrl(s.code), { width: 240, margin: 1, color: { dark: primary } }),
+      toDataUrl(st.photoUrl),
+      config.showQrCode ? QRCode.toDataURL(verifyUrl(st.code), { width: 240, margin: 1, color: { dark: primary } }) : Promise.resolve(null),
     ]);
 
     // ---- Front ----
@@ -182,15 +211,15 @@ export async function downloadIdCardsPdf(
 
     let y = header();
 
-    const photoR = 10;
+    const photoR = s(10);
     const photoCx = CARD_W / 2;
-    const photoCy = y + photoR + 3;
+    const photoCy = y + photoR + s(3);
     doc.setDrawColor(accent);
-    doc.setLineWidth(1);
-    doc.circle(photoCx, photoCy, photoR + 1.4, "S");
+    doc.setLineWidth(s(1));
+    doc.circle(photoCx, photoCy, photoR + s(1.4), "S");
     doc.setDrawColor(primary);
-    doc.setLineWidth(0.6);
-    doc.circle(photoCx, photoCy, photoR + 0.6, "S");
+    doc.setLineWidth(s(0.6));
+    doc.circle(photoCx, photoCy, photoR + s(0.6), "S");
 
     if (photoDataUrl) {
       try {
@@ -209,83 +238,106 @@ export async function downloadIdCardsPdf(
       doc.circle(photoCx, photoCy, photoR, "F");
       doc.setTextColor(primary);
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(16);
-      doc.text(`${s.firstName[0] ?? ""}${s.lastName[0] ?? ""}`.toUpperCase(), photoCx, photoCy + 2.5, { align: "center" });
+      doc.setFontSize(s(16));
+      doc.text(`${st.firstName[0] ?? ""}${st.lastName[0] ?? ""}`.toUpperCase(), photoCx, photoCy + s(2.5), { align: "center" });
     }
 
-    y = photoCy + photoR + 5;
-    doc.setTextColor(INK);
+    y = photoCy + photoR + s(5);
+    doc.setTextColor(inkColor);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    const nameLines = doc.splitTextToSize(`${s.firstName} ${s.lastName}`.toUpperCase(), CARD_W - 8);
+    doc.setFontSize(s(10));
+    const nameLines = doc.splitTextToSize(`${st.firstName} ${st.lastName}`.toUpperCase(), CARD_W - s(8));
     doc.text(nameLines, CARD_W / 2, y, { align: "center" });
-    y += (nameLines.length - 1) * 4;
+    y += (nameLines.length - 1) * s(4);
 
-    y += 3;
+    y += s(3);
     divider(y);
+    y += s(4);
 
-    y += 4;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.5);
-    doc.setTextColor(MUTED);
-    doc.text(s.className ? `${s.className} · ${s.section}` : s.section, CARD_W / 2, y, { align: "center" });
+    if (config.showClassSection) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(s(7.5));
+      doc.setTextColor(mutedColor);
+      doc.text(st.className ? `${st.className} · ${st.section}` : st.section, CARD_W / 2, y, { align: "center" });
+      y += s(4.5);
+    }
 
-    y += 4.5;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.8);
-    doc.setTextColor(primary);
-    doc.text(`ID ${s.admissionNumber}`, CARD_W / 2, y, { align: "center" });
+    if (config.showDateOfBirth && st.dateOfBirth) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(s(6.2));
+      doc.setTextColor(mutedColor);
+      doc.text(`DOB ${new Date(st.dateOfBirth).toLocaleDateString()}`, CARD_W / 2, y, { align: "center" });
+      y += s(4);
+    }
 
-    // Flows right after the ID line rather than pinning to the card's bottom
-    // edge — a fixed bottom offset collided with this text block on the
-    // 85.6mm card once real spacing was checked against a rendered proof.
-    y += 2.5;
-    const qrSize = 12;
-    doc.addImage(qrDataUrl, "PNG", CARD_W / 2 - qrSize / 2, y, qrSize, qrSize);
+    if (config.showGender && st.gender) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(s(6.2));
+      doc.setTextColor(mutedColor);
+      doc.text(st.gender, CARD_W / 2, y, { align: "center" });
+      y += s(4);
+    }
+
+    if (config.showAdmissionNumber) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(s(6.8));
+      doc.setTextColor(primary);
+      doc.text(`ID ${st.admissionNumber}`, CARD_W / 2, y, { align: "center" });
+      y += s(2.5);
+    }
+
+    if (config.showQrCode && qrDataUrl) {
+      const qrSize = s(12);
+      doc.addImage(qrDataUrl, "PNG", CARD_W / 2 - qrSize / 2, y, qrSize, qrSize);
+    }
 
     // ---- Back ----
     doc.addPage([CARD_W, CARD_H], "portrait");
     let by = header();
-    by += 4;
+    by += s(4);
     doc.setTextColor(primary);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    const headingLines = doc.splitTextToSize("TERMS & CONDITIONS", CARD_W - 10);
+    doc.setFontSize(s(9));
+    const headingLines = doc.splitTextToSize("TERMS & CONDITIONS", CARD_W - s(10));
     doc.text(headingLines, CARD_W / 2, by, { align: "center" });
-    by += (headingLines.length - 1) * 4 + 3;
+    by += (headingLines.length - 1) * s(4) + s(3);
     divider(by);
 
-    by += 5;
+    by += s(5);
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.2);
-    doc.setTextColor(INK);
-    const lineH = 2.7;
-    const p1 = doc.splitTextToSize("Carry this card at all times on school premises.", CARD_W - 10);
+    doc.setFontSize(s(6.2));
+    doc.setTextColor(inkColor);
+    const lineH = s(2.7);
+    const p1 = doc.splitTextToSize("Carry this card at all times on school premises.", CARD_W - s(10));
     doc.text(p1, CARD_W / 2, by, { align: "center" });
-    by += p1.length * lineH + 3;
+    by += p1.length * lineH + s(3);
 
-    const p2 = doc.splitTextToSize("If found, please return to the school address below.", CARD_W - 10);
+    const p2 = doc.splitTextToSize("If found, please return to the school address below.", CARD_W - s(10));
     doc.text(p2, CARD_W / 2, by, { align: "center" });
-    by += p2.length * lineH + 4;
+    by += p2.length * lineH + s(4);
+
+    if (config.showAdmissionNumber) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(s(6.5));
+      doc.setTextColor(primary);
+      doc.text(`ID ${st.admissionNumber}`, CARD_W / 2, by, { align: "center" });
+      by += s(2.5);
+    }
+    if (config.showQrCode && qrDataUrl) {
+      const qrSize2 = s(12);
+      doc.addImage(qrDataUrl, "PNG", CARD_W / 2 - qrSize2 / 2, by, qrSize2, qrSize2);
+      by += qrSize2 + s(4);
+    }
 
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.5);
-    doc.setTextColor(primary);
-    doc.text(`ID ${s.admissionNumber}`, CARD_W / 2, by, { align: "center" });
-    by += 2.5;
-    const qrSize2 = 12;
-    doc.addImage(qrDataUrl, "PNG", CARD_W / 2 - qrSize2 / 2, by, qrSize2, qrSize2);
-    by += qrSize2 + 4;
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(5.5);
-    doc.setTextColor(MUTED);
+    doc.setFontSize(s(5.5));
+    doc.setTextColor(mutedColor);
     if (school.phone) {
       doc.text(school.phone, CARD_W / 2, by, { align: "center" });
-      by += 2.8;
+      by += s(2.8);
     }
     if (school.address) {
-      const addr = doc.splitTextToSize(school.address, CARD_W - 10);
+      const addr = doc.splitTextToSize(school.address, CARD_W - s(10));
       doc.text(addr, CARD_W / 2, by, { align: "center" });
     }
   }

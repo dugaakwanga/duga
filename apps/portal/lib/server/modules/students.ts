@@ -6,18 +6,45 @@ import { can, pick, str, num, bool, idArray, studentScope, feeInfoOf, assertCont
 
 const ID_CARD_THEME_KEY = "idCardTheme";
 
-export interface IdCardTheme {
+export type IdCardSize = "SMALL" | "STANDARD" | "LARGE";
+
+export interface IdCardConfig {
   primary: string;
   accent: string;
-  background: boolean;
+  inkColor: string;
+  mutedColor: string;
+  showBackground: boolean;
+  size: IdCardSize;
+  showLogo: boolean;
+  showClassSection: boolean;
+  showAdmissionNumber: boolean;
+  showDateOfBirth: boolean;
+  showGender: boolean;
+  showQrCode: boolean;
 }
 
-const DEFAULT_ID_CARD_THEME: IdCardTheme = { primary: "#1e3a5f", accent: "#c8a448", background: true };
+const DEFAULT_ID_CARD_CONFIG: IdCardConfig = {
+  primary: "#1e3a5f",
+  accent: "#c8a448",
+  inkColor: "#111827",
+  mutedColor: "#6b7280",
+  showBackground: true,
+  size: "STANDARD",
+  showLogo: true,
+  showClassSection: false,
+  showAdmissionNumber: true,
+  showDateOfBirth: false,
+  showGender: false,
+  showQrCode: true,
+};
 
-async function readIdCardTheme(schoolId: string): Promise<IdCardTheme> {
+// Reads from a plain schoolId+key setting row and merges over the defaults,
+// so adding a new config field here never requires a migration for schools
+// that saved a config before that field existed.
+async function readIdCardTheme(schoolId: string): Promise<IdCardConfig> {
   const row = await prisma.schoolSetting.findUnique({ where: { schoolId_key: { schoolId, key: ID_CARD_THEME_KEY } } });
-  if (!row || !row.value || typeof row.value !== "object") return DEFAULT_ID_CARD_THEME;
-  return { ...DEFAULT_ID_CARD_THEME, ...(row.value as object) } as IdCardTheme;
+  if (!row || !row.value || typeof row.value !== "object") return DEFAULT_ID_CARD_CONFIG;
+  return { ...DEFAULT_ID_CARD_CONFIG, ...(row.value as object) } as IdCardConfig;
 }
 
 // Create or update the primary linked parent for a student. If an email is
@@ -432,10 +459,24 @@ export const studentsModule: Module = {
       const schoolId = ctx.session.user.schoolId;
       const current = await readIdCardTheme(schoolId);
       const hex = /^#[0-9a-fA-F]{6}$/;
-      const primary = typeof ctx.body.primary === "string" && hex.test(ctx.body.primary) ? ctx.body.primary : current.primary;
-      const accent = typeof ctx.body.accent === "string" && hex.test(ctx.body.accent) ? ctx.body.accent : current.accent;
-      const background = typeof ctx.body.background === "boolean" ? ctx.body.background : current.background;
-      const theme: IdCardTheme = { primary, accent, background };
+      const b = ctx.body;
+      const color = (v: unknown, fallback: string) => (typeof v === "string" && hex.test(v) ? v : fallback);
+      const flag = (v: unknown, fallback: boolean) => (typeof v === "boolean" ? v : fallback);
+      const size: IdCardSize = b.size === "SMALL" || b.size === "LARGE" || b.size === "STANDARD" ? b.size : current.size;
+      const theme: IdCardConfig = {
+        primary: color(b.primary, current.primary),
+        accent: color(b.accent, current.accent),
+        inkColor: color(b.inkColor, current.inkColor),
+        mutedColor: color(b.mutedColor, current.mutedColor),
+        showBackground: flag(b.showBackground, current.showBackground),
+        size,
+        showLogo: flag(b.showLogo, current.showLogo),
+        showClassSection: flag(b.showClassSection, current.showClassSection),
+        showAdmissionNumber: flag(b.showAdmissionNumber, current.showAdmissionNumber),
+        showDateOfBirth: flag(b.showDateOfBirth, current.showDateOfBirth),
+        showGender: flag(b.showGender, current.showGender),
+        showQrCode: flag(b.showQrCode, current.showQrCode),
+      };
       await prisma.schoolSetting.upsert({
         where: { schoolId_key: { schoolId, key: ID_CARD_THEME_KEY } },
         update: { value: theme as never },
