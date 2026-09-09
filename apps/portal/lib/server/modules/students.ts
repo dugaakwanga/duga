@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@duga/core/server";
 import { signGateToken, hasPermission } from "@duga/core";
 import type { Module } from ".";
-import { can, pick, str, num, bool, idArray, studentScope, feeInfoOf, assertContactFree, resolveSection } from "../helpers";
+import { can, pick, str, num, bool, idArray, studentScope, feeInfoOf, feeDaysBetween, assertContactFree, resolveSection } from "../helpers";
 
 const ID_CARD_THEME_KEY = "idCardTheme";
 
@@ -196,7 +196,10 @@ export const studentsModule: Module = {
     const dateOfBirth = str(b.dateOfBirth) ? new Date(String(b.dateOfBirth)) : undefined;
     const isBoarding = bool(b.isBoarding) ?? false;
     const feeAmount = num(b.feeAmount) ?? 0;
-    const feeDays = Math.max(0, num(b.feeDays) ?? 0);
+    const feeStartDate = str(b.feeStartDate) ? new Date(String(b.feeStartDate)) : null;
+    const feeEndDate = str(b.feeEndDate) ? new Date(String(b.feeEndDate)) : null;
+    if (feeEndDate && feeStartDate && feeEndDate <= feeStartDate) throw new Error("Fee end date must be after the start date");
+    const feeDays = feeDaysBetween(feeStartDate, feeEndDate);
 
     if (!firstName || !lastName || !classGroupId) throw new Error("firstName, lastName and classGroupId are required");
 
@@ -240,6 +243,8 @@ export const studentsModule: Module = {
         currentClassGroupId: classGroup.id,
         feeAmount,
         feeDays,
+        feeStartDate,
+        feeEndDate,
         feePaidThrough,
       },
     });
@@ -348,19 +353,26 @@ export const studentsModule: Module = {
 
   // Promote / change class
   actions: {
-    // Configure a student's fee plan. Payments, not configuration, reopen access.
+    // Configure a student's fee plan. Payments, not configuration, reopen
+    // access. Bursars hold fees:manage and need to set fees day-to-day —
+    // students:manage is deliberately withheld from them (no add/edit/
+    // delete student records), so this checks fees:manage instead of
+    // piggybacking on the general student-management permission.
     setFee: async (ctx) => {
-      can(ctx, "students:manage");
+      can(ctx, "fees:manage");
       const schoolId = ctx.session.user.schoolId;
       const feeAmount = num(ctx.body.feeAmount) ?? 0;
-      const feeDays = Math.max(0, num(ctx.body.feeDays) ?? 0);
+      const feeStartDate = str(ctx.body.feeStartDate) ? new Date(String(ctx.body.feeStartDate)) : null;
+      const feeEndDate = str(ctx.body.feeEndDate) ? new Date(String(ctx.body.feeEndDate)) : null;
+      if (feeEndDate && feeStartDate && feeEndDate <= feeStartDate) throw new Error("Fee end date must be after the start date");
+      const feeDays = feeDaysBetween(feeStartDate, feeEndDate);
       const student = await prisma.student.findFirst({ where: { id: ctx.id, schoolId } });
       if (!student) throw new Error("Student not found");
       const updated = await prisma.student.update({
         where: { id: ctx.id },
-        data: { feeAmount, feeDays, ...(feeAmount <= 0 || feeDays <= 0 ? { feePaidThrough: null } : {}) },
+        data: { feeAmount, feeDays, feeStartDate, feeEndDate, ...(feeAmount <= 0 || feeDays <= 0 ? { feePaidThrough: null } : {}) },
       });
-      await logAudit({ schoolId, userId: ctx.session.user.id, action: "student.fee.set", entityType: "Student", entityId: ctx.id, meta: { feeAmount, feeDays } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "student.fee.set", entityType: "Student", entityId: ctx.id, meta: { feeAmount, feeDays, feeStartDate, feeEndDate } });
       return { ...updated, fee: feeInfoOf(updated) };
     },
     promote: async (ctx) => {

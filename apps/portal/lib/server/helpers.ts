@@ -270,13 +270,31 @@ export function isoDay(date: Date): string {
 export interface StudentFeeInfo {
   feeAmount: string;
   feeDays: number;
+  feeStartDate: string | null;
+  feeEndDate: string | null;
   feePaidThrough: string | null;
   usedDays: number;
   daysRemaining: number;
   expired: boolean;
 }
 
-export function feeInfoOf(student: { feeAmount: { toString(): string } | string | null; feeDays: number | null; feePaidThrough: Date | null; enrollmentDate: Date }): StudentFeeInfo {
+// The fee-setting UI collects a start/end date (typically a term's dates,
+// not an arbitrary day count) — this derives the day count the existing
+// payment-proration math (feeInfoOf, grantFeeAccessForPayment) runs on.
+export function feeDaysBetween(start: Date | null, end: Date | null): number {
+  if (!start || !end) return 0;
+  const days = Math.round((end.getTime() - start.getTime()) / 86400000);
+  return Math.max(0, days);
+}
+
+export function feeInfoOf(student: {
+  feeAmount: { toString(): string } | string | null;
+  feeDays: number | null;
+  feeStartDate?: Date | null;
+  feeEndDate?: Date | null;
+  feePaidThrough: Date | null;
+  enrollmentDate: Date;
+}): StudentFeeInfo {
   const amount = typeof student.feeAmount === "string" ? student.feeAmount : (student.feeAmount as { toString(): string })?.toString() ?? "0";
   const feeDays = student.feeDays ?? 0;
   const paidThrough = student.feePaidThrough;
@@ -291,6 +309,8 @@ export function feeInfoOf(student: { feeAmount: { toString(): string } | string 
   return {
     feeAmount: amount,
     feeDays,
+    feeStartDate: student.feeStartDate ? student.feeStartDate.toISOString() : null,
+    feeEndDate: student.feeEndDate ? student.feeEndDate.toISOString() : null,
     feePaidThrough: paidThrough ? paidThrough.toISOString() : null,
     usedDays,
     daysRemaining,

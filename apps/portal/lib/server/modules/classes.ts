@@ -47,7 +47,7 @@ export const classesModule: Module = {
       prisma.academicSession.findMany({
         where: { schoolId },
         orderBy: { createdAt: "desc" },
-        include: { terms: { select: { id: true, name: true, termNumber: true, status: true }, orderBy: { termNumber: "asc" } } },
+        include: { terms: { select: { id: true, name: true, termNumber: true, status: true, startDate: true, endDate: true }, orderBy: { termNumber: "asc" } } },
       }),
       prisma.classGroup.findMany({
         where: { schoolId, ...(visibleIds ? { id: { in: visibleIds } } : {}), ...(section ? { level: { section } } : {}) },

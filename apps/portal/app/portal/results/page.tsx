@@ -559,6 +559,20 @@ export default function ResultsPage() {
     }
   }
 
+  async function deleteSubjectScores(csId: string, subjectLabel: string) {
+    if (!activeTermId && terms.length) setActiveTermId(terms.find((t) => t.status === "ACTIVE")?.id ?? terms[0]?.id ?? "");
+    const termId = activeTermId || terms[0]?.id || "";
+    if (!termId) return alert("No term selected.");
+    if (!confirm(`Permanently delete all entered scores for ${subjectLabel} this term? This cannot be undone.`)) return;
+    try {
+      await api("results/deleteScores", { method: "POST", body: { classSubjectId: csId, termId } });
+      setSubmissions((prev) => ({ ...prev, [csId]: { entered: 0, total: prev[csId]?.total ?? 0, submitted: 0, allSubmitted: false } }));
+      setRankMsg("Subject scores deleted.");
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
   async function publishStudent(rc: ReportCard) {
     if (!rc.termId) return;
     if (!confirm(`Publish the report card for ${rc.student.user.firstName} ${rc.student.user.lastName}?`)) return;
@@ -831,6 +845,9 @@ export default function ResultsPage() {
                               )}
                               {row.status.submitted > 0 && (
                                 <Button size="sm" variant="ghost" onClick={() => reopenSubject(row.classSubjectId)}>Reopen</Button>
+                              )}
+                              {row.status.entered > 0 && (
+                                <Button size="sm" variant="danger" onClick={() => deleteSubjectScores(row.classSubjectId, row.subjectName)}>Delete</Button>
                               )}
                             </div>
                           </td>

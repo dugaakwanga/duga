@@ -32,9 +32,15 @@ export function getActiveSection(): string | null {
 
 export async function api<T = unknown>(path: string, opts: Opts = {}): Promise<T> {
   const { method = "GET", body, query, loading = true } = opts;
-  let url = `/api/v1/${path.replace(/^\//, "")}`;
-  const q = new URLSearchParams();
-  if (activeSection && !query?.section) q.set("section", activeSection);
+  // `path` sometimes arrives with its own "?..." query string already
+  // embedded (callers building it inline). Parse that instead of blindly
+  // appending our own "?section=..." after it — two "?"s in one URL means
+  // everything past the first is one opaque query value, silently
+  // corrupting whatever param happened to be last (e.g. a date).
+  const [rawPath, rawQuery] = path.replace(/^\//, "").split("?");
+  let url = `/api/v1/${rawPath}`;
+  const q = new URLSearchParams(rawQuery ?? "");
+  if (activeSection && !q.has("section") && !query?.section) q.set("section", activeSection);
   if (query) {
     for (const [k, v] of Object.entries(query)) if (v !== undefined) q.set(k, String(v));
   }

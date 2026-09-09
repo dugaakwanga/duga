@@ -329,6 +329,11 @@ model Student {
   currentClassGroupId String?
   feeAmount           Decimal       @default(0)
   feeDays             Int           @default(0)
+  // The actual billing period an admin/bursar set (typically a term's dates)
+  // — feeDays above is derived from this and kept for the existing
+  // proration math; these two are what the fee-setting UI shows and edits.
+  feeStartDate        DateTime?
+  feeEndDate          DateTime?
   feePaidThrough      DateTime?
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt

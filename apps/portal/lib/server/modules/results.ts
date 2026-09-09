@@ -265,7 +265,11 @@ export const resultsModule: Module = {
     saveScores: async (ctx) => {
       can(ctx, "results:enter");
       const schoolId = ctx.session.user.schoolId;
-      const teacher = ctx.session.user.teacher;
+      // Scope to "own subject" only when acting AS a teacher — an
+      // owner/admin who happens to also hold a Teacher profile (staff who
+      // both administrate and teach) must still get full access here, not
+      // be treated as if they were entering scores for their own subject.
+      const teacher = ctx.session.user.role === "TEACHER" ? ctx.session.user.teacher : null;
       const classSubjectId = str(ctx.body.classSubjectId);
       const termId = str(ctx.body.termId);
       const rows = Array.isArray(ctx.body.rows) ? (ctx.body.rows as Array<{ studentId: string; scores?: Record<string, unknown> }>) : [];
@@ -319,7 +323,7 @@ export const resultsModule: Module = {
     submitScores: async (ctx) => {
       can(ctx, "results:enter");
       const schoolId = ctx.session.user.schoolId;
-      const teacher = ctx.session.user.teacher;
+      const teacher = ctx.session.user.role === "TEACHER" ? ctx.session.user.teacher : null;
       const classSubjectId = str(ctx.body.classSubjectId);
       const termId = str(ctx.body.termId);
       if (!classSubjectId || !termId) throw new Error("classSubjectId and termId required");
@@ -365,6 +369,20 @@ export const resultsModule: Module = {
         data: { submitted: false, submittedAt: null },
       });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "results.scoresReopened", entityType: "ClassSubject", entityId: classSubjectId, meta: { termId } });
+      return { count: result.count };
+    },
+
+    // Admin permanently deletes a subject's scores for a term (distinct from
+    // reopen, which only unlocks them for the teacher to correct) — for a
+    // subject entered/submitted in error and needing a clean restart.
+    deleteScores: async (ctx) => {
+      can(ctx, "results:publish");
+      const schoolId = ctx.session.user.schoolId;
+      const classSubjectId = str(ctx.body.classSubjectId);
+      const termId = str(ctx.body.termId);
+      if (!classSubjectId || !termId) throw new Error("classSubjectId and termId required");
+      const result = await prisma.subjectScore.deleteMany({ where: { schoolId, classSubjectId, termId } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "results.scoresDeleted", entityType: "ClassSubject", entityId: classSubjectId, meta: { termId, count: result.count } });
       return { count: result.count };
     },
 
@@ -448,7 +466,7 @@ export const resultsModule: Module = {
       const schoolId = ctx.session.user.schoolId;
       const classSubjectId = str(ctx.body.classSubjectId);
       const termId = str(ctx.body.termId);
-      const teacher = ctx.session.user.teacher;
+      const teacher = ctx.session.user.role === "TEACHER" ? ctx.session.user.teacher : null;
       if (!classSubjectId) throw new Error("classSubjectId required");
       if (teacher) {
         const own = await prisma.classSubject.findFirst({ where: { id: classSubjectId, teacherId: teacher.id } });

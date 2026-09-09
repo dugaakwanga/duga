@@ -9,6 +9,8 @@ import { downloadIdCardsPdf, DEFAULT_ID_CARD_CONFIG, type IdCardSchool, type IdC
 interface FeeInfo {
   feeAmount: string;
   feeDays: number;
+  feeStartDate: string | null;
+  feeEndDate: string | null;
   feePaidThrough: string | null;
   usedDays: number;
   daysRemaining: number;
@@ -58,7 +60,7 @@ export default function StudentsPage() {
   const [promoteTarget, setPromoteTarget] = useState<Student | null>(null);
   const [promoteForm, setPromoteForm] = useState<Record<string, string>>({});
   const [levels, setLevels] = useState<{ id: string; name: string; section: string }[]>([]);
-  const [sessions, setSessions] = useState<{ id: string; name: string }[]>([]);
+  const [sessions, setSessions] = useState<{ id: string; name: string; terms?: { id: string; status: string; startDate: string | null; endDate: string | null }[] }[]>([]);
   const [newClassOpen, setNewClassOpen] = useState(false);
   const [newClass, setNewClass] = useState<Record<string, string>>({});
   const [creatingClass, setCreatingClass] = useState(false);
@@ -127,10 +129,21 @@ export default function StudentsPage() {
   }, [section]);
 
   useEffect(() => {
-    api<{ items: ClassOption[]; levels: { id: string; name: string; section: string }[]; sessions: { id: string; name: string }[] }>("classes")
+    api<{ items: ClassOption[]; levels: { id: string; name: string; section: string }[]; sessions: { id: string; name: string; terms?: { id: string; status: string; startDate: string | null; endDate: string | null }[] }[] }>("classes")
       .then((d) => { setClasses(d.items); setLevels(d.levels ?? []); setSessions(d.sessions ?? []); })
       .catch(() => setClasses([]));
   }, []);
+
+  // The fee-setting inputs default to the current term's dates (most fee
+  // plans are "this term's fees") — an admin/bursar can still override them.
+  const activeTermDates = (() => {
+    const terms = sessions.flatMap((s) => s.terms ?? []);
+    const active = terms.find((t) => t.status === "ACTIVE") ?? terms[0];
+    return {
+      start: active?.startDate ? active.startDate.slice(0, 10) : "",
+      end: active?.endDate ? active.endDate.slice(0, 10) : "",
+    };
+  })();
 
   async function printIdCards(studentIds: string[], key: string) {
     if (studentIds.length === 0) return;
@@ -171,7 +184,12 @@ export default function StudentsPage() {
   async function save() {
     setSaving(true);
     try {
-      await api("students", { method: "POST", body: form });
+      const body = {
+        ...form,
+        feeStartDate: form.feeStartDate ?? activeTermDates.start,
+        feeEndDate: form.feeEndDate ?? activeTermDates.end,
+      };
+      await api("students", { method: "POST", body });
       setOpen(false);
       setForm({});
       load();
@@ -227,7 +245,13 @@ export default function StudentsPage() {
     if (!feeTarget) return;
     setSaving(true);
     try {
-      await api(`students/${feeTarget.id}/setFee`, { method: "POST", body: feeForm });
+      const body = {
+        ...feeForm,
+        feeAmount: feeForm.feeAmount ?? feeTarget.fee?.feeAmount ?? "0",
+        feeStartDate: feeForm.feeStartDate ?? (feeTarget.fee?.feeStartDate ? feeTarget.fee.feeStartDate.slice(0, 10) : activeTermDates.start),
+        feeEndDate: feeForm.feeEndDate ?? (feeTarget.fee?.feeEndDate ? feeTarget.fee.feeEndDate.slice(0, 10) : activeTermDates.end),
+      };
+      await api(`students/${feeTarget.id}/setFee`, { method: "POST", body });
       setFeeTarget(null);
       load();
     } catch (e) {
@@ -324,9 +348,10 @@ export default function StudentsPage() {
   function feeBadge(s: Student) {
     if (!s.fee || (!s.fee.feeAmount || Number(s.fee.feeAmount) === 0)) return <Badge tone="neutral">No fee set</Badge>;
     if (s.fee.expired) return <Badge tone="danger">Expired</Badge>;
+    const until = s.fee.feeEndDate ? new Date(s.fee.feeEndDate).toLocaleDateString() : null;
     return (
       <Badge tone={s.fee.daysRemaining <= 7 ? "warning" : "success"}>
-        {s.fee.daysRemaining} day{s.fee.daysRemaining === 1 ? "" : "s"} left
+        {until ? `Due ${until}` : `${s.fee.daysRemaining} day${s.fee.daysRemaining === 1 ? "" : "s"} left`}
       </Badge>
     );
   }
@@ -553,8 +578,11 @@ export default function StudentsPage() {
           <Field label="School fee amount (₦)">
             <Input type="number" value={form.feeAmount ?? ""} onChange={(e) => setForm({ ...form, feeAmount: e.target.value })} placeholder="e.g. 150000" />
           </Field>
-          <Field label="Fee covers (days)" hint="Access runs for this many days from enrollment; the portal locks when it ends.">
-            <Input type="number" value={form.feeDays ?? ""} onChange={(e) => setForm({ ...form, feeDays: e.target.value })} placeholder="e.g. 180" />
+          <Field label="Fee period — start date" hint="Defaults to the current term.">
+            <Input type="date" value={form.feeStartDate ?? activeTermDates.start} onChange={(e) => setForm({ ...form, feeStartDate: e.target.value })} />
+          </Field>
+          <Field label="Fee period — end date" hint="The portal locks when this date passes and the fee isn't fully paid.">
+            <Input type="date" value={form.feeEndDate ?? activeTermDates.end} onChange={(e) => setForm({ ...form, feeEndDate: e.target.value })} />
           </Field>
           <Field label="Temp password">
             <Input value={form.tempPassword ?? ""} onChange={(e) => setForm({ ...form, tempPassword: e.target.value })} placeholder="default: password123" />
@@ -578,9 +606,11 @@ export default function StudentsPage() {
             <Input value={form.parentTempPassword ?? ""} onChange={(e) => setForm({ ...form, parentTempPassword: e.target.value })} placeholder="default: parent123" />
           </Field>
         </div>
-        {Number(form.feeDays) > 0 && (
+        {(form.feeStartDate ?? activeTermDates.start) && (form.feeEndDate ?? activeTermDates.end) && (
           <div style={{ marginTop: 10 }}>
-            <Alert tone="info">This sets the fee plan: {form.feeDays} days of access when the full amount is paid. Access begins after payment; part-payments grant proportional days.</Alert>
+            <Alert tone="info">
+              This sets the fee plan for {form.feeStartDate ?? activeTermDates.start} to {form.feeEndDate ?? activeTermDates.end}, unlocked once the full amount is paid. Access begins after payment; a part-payment grants the matching proportion of that period.
+            </Alert>
           </div>
         )}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
@@ -688,13 +718,24 @@ export default function StudentsPage() {
           <Field label="School fee amount (₦)" required>
             <Input type="number" value={feeForm.feeAmount ?? (feeTarget?.fee?.feeAmount ?? "")} onChange={(e) => setFeeForm({ ...feeForm, feeAmount: e.target.value })} placeholder="e.g. 150000" />
           </Field>
-          <Field label="Fee covers (days)" required hint="Days of access this payment covers, counted from now.">
-            <Input type="number" value={feeForm.feeDays ?? (feeTarget?.fee?.feeDays ? String(feeTarget.fee.feeDays) : "")} onChange={(e) => setFeeForm({ ...feeForm, feeDays: e.target.value })} placeholder="e.g. 180" />
+          <Field label="Fee period — start date" required hint="Defaults to the current term.">
+            <Input
+              type="date"
+              value={feeForm.feeStartDate ?? (feeTarget?.fee?.feeStartDate ? feeTarget.fee.feeStartDate.slice(0, 10) : activeTermDates.start)}
+              onChange={(e) => setFeeForm({ ...feeForm, feeStartDate: e.target.value })}
+            />
+          </Field>
+          <Field label="Fee period — end date" required hint="The portal locks when this date passes and the fee isn't fully paid.">
+            <Input
+              type="date"
+              value={feeForm.feeEndDate ?? (feeTarget?.fee?.feeEndDate ? feeTarget.fee.feeEndDate.slice(0, 10) : activeTermDates.end)}
+              onChange={(e) => setFeeForm({ ...feeForm, feeEndDate: e.target.value })}
+            />
           </Field>
         </div>
-        {Number(feeForm.feeDays) > 0 && (
+        {(feeForm.feeStartDate ?? feeTarget?.fee?.feeStartDate ?? activeTermDates.start) && (feeForm.feeEndDate ?? feeTarget?.fee?.feeEndDate ?? activeTermDates.end) && (
           <div style={{ marginTop: 10 }}>
-            <Alert tone="info">This updates the fee plan. Access begins only after payment, and a part-payment grants the matching proportion of days.</Alert>
+            <Alert tone="info">This updates the fee plan. Access begins only after payment, and a part-payment grants the matching proportion of that period.</Alert>
           </div>
         )}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>

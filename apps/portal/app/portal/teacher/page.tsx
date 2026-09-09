@@ -41,6 +41,7 @@ export default function TeacherHomePage() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [groupBy, setGroupBy] = useState<"subject" | "teacher">("subject");
   const { section } = useSection();
 
   const load = useCallback(async () => {
@@ -75,6 +76,23 @@ export default function TeacherHomePage() {
     ? Array.from(
         subjects.reduce((map, s) => {
           const key = s.teacher ? `${s.teacher.user.firstName} ${s.teacher.user.lastName}` : "Unassigned";
+          const list = map.get(key) ?? [];
+          list.push(s);
+          map.set(key, list);
+          return map;
+        }, new Map<string, SubjectRow[]>()),
+      ).sort(([a], [b]) => a.localeCompare(b))
+    : [];
+
+  // A class-subject row exists once per class (e.g. "Basic Science" appears
+  // once for every class it's taught in), so a flat list reads as a
+  // ridiculous number of "subjects" when it's really one subject taught
+  // across many classes. Group by subject name instead — the subject
+  // appears once, with the classes it's taught in nested underneath.
+  const bySubject = isManager
+    ? Array.from(
+        subjects.reduce((map, s) => {
+          const key = s.subject.name;
           const list = map.get(key) ?? [];
           list.push(s);
           map.set(key, list);
@@ -120,8 +138,74 @@ export default function TeacherHomePage() {
           )}
 
           {isManager ? (
-            <Card title={`Teaching by staff (${byTeacher.length} teachers)`}>
-              {byTeacher.length === 0 ? (
+            <Card
+              title={groupBy === "subject" ? `Teaching by subject (${bySubject.length} subjects)` : `Teaching by staff (${byTeacher.length} teachers)`}
+              actions={
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button
+                    className={groupBy === "subject" ? "duga-btn duga-btn--accent duga-btn--sm" : "duga-btn duga-btn--outline duga-btn--sm"}
+                    onClick={() => setGroupBy("subject")}
+                  >
+                    By subject
+                  </button>
+                  <button
+                    className={groupBy === "teacher" ? "duga-btn duga-btn--accent duga-btn--sm" : "duga-btn duga-btn--outline duga-btn--sm"}
+                    onClick={() => setGroupBy("teacher")}
+                  >
+                    By staff
+                  </button>
+                </div>
+              }
+            >
+              {groupBy === "subject" ? (
+                bySubject.length === 0 ? (
+                  <EmptyState title="No class subjects assigned yet" hint="Assign subjects to classes from Classes." />
+                ) : (
+                  bySubject.map(([name, rows]) => {
+                    const classCount = new Set(rows.map((r) => r.classGroup.name + r.classGroup.level.name)).size;
+                    const notes = rows.reduce((a, r) => a + r._count.lessonNotes, 0);
+                    const assignments = rows.reduce((a, r) => a + r._count.assignments, 0);
+                    const tests = rows.reduce((a, r) => a + r._count.tests, 0);
+                    return (
+                      <details key={name} open={bySubject.length <= 5} style={{ marginBottom: 10 }}>
+                        <summary
+                          style={{
+                            cursor: "pointer",
+                            padding: "10px 12px",
+                            borderRadius: 8,
+                            background: "var(--duga-surface-2, #f4f6f9)",
+                            fontWeight: 700,
+                            fontSize: 14,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                          }}
+                        >
+                          {name}
+                          <span style={{ fontWeight: 400, fontSize: 12.5, color: "var(--duga-muted)" }}>
+                            {classCount} class{classCount === 1 ? "" : "es"} · {notes} notes · {assignments} assignments · {tests} CBT
+                          </span>
+                        </summary>
+                        <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                          {rows.map((s) => (
+                            <div key={s.id} className="duga-card__pad" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, border: "1px solid var(--duga-border)", borderRadius: 8 }}>
+                              <div>
+                                <div style={{ fontWeight: 600 }}>
+                                  {s.classGroup.level.name} {s.classGroup.name}
+                                  <span style={{ color: "var(--duga-muted)", fontWeight: 400 }}> · {s.teacher ? `${s.teacher.user.firstName} ${s.teacher.user.lastName}` : "Unassigned"}</span>
+                                </div>
+                                <div style={{ fontSize: 12.5, color: "var(--duga-muted)" }}>
+                                  {s.classGroup._count.students} students · {s._count.lessonNotes} notes · {s._count.assignments} assignments · {s._count.tests} CBT
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    );
+                  })
+                )
+              ) : byTeacher.length === 0 ? (
                 <EmptyState title="No class subjects assigned yet" hint="Assign teachers to class subjects from Classes." />
               ) : (
                 byTeacher.map(([name, rows]) => {
