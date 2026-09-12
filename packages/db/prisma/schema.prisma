@@ -572,6 +572,7 @@ model Term {
   studentAttendance    StudentAttendance[]
   subjectScores        SubjectScore[]
   calendarEvents       CalendarEvent[]
+  assessmentLocks      AssessmentLock[]
 
   @@unique([schoolId, sessionId, termNumber])
   @@index([sessionId])
@@ -711,6 +712,7 @@ model ClassSubject {
   reportCardItems  ReportCardItem[]
   liveClasses      LiveClass[]
   subjectScores    SubjectScore[]
+  assessmentLocks  AssessmentLock[]
 
   @@unique([classGroupId, subjectId])
   @@index([schoolId])
@@ -1225,6 +1227,29 @@ model SubjectScore {
   @@unique([classSubjectId, studentId, termId])
   @@index([classSubjectId])
   @@index([studentId])
+  @@index([schoolId])
+}
+
+// Granular score-entry lock, independent per assessment component (e.g. one
+// of ResultConfig.components — "CA1", "Test", "Assignment", "Exam"...) rather
+// than one all-or-nothing SubjectScore.submitted flag for a class-subject's
+// term. A teacher can keep entering "Exam" while "Assignment" is locked, and
+// an admin reopens (deletes) just that one component's row rather than the
+// whole subject. SubjectScore.submitted stays as a legacy "fully submitted"
+// convenience flag, kept in sync with "every configured component locked".
+model AssessmentLock {
+  id             String   @id @default(cuid())
+  schoolId       String
+  classSubjectId String
+  termId         String
+  component      String
+  lockedAt       DateTime @default(now())
+  lockedByUserId String?
+
+  classSubject ClassSubject @relation(fields: [classSubjectId], references: [id], onDelete: Cascade)
+  term         Term         @relation(fields: [termId], references: [id], onDelete: Cascade)
+
+  @@unique([classSubjectId, termId, component])
   @@index([schoolId])
 }
 

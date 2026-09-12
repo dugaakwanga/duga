@@ -112,6 +112,7 @@ interface EntrySheet {
   classSubject: { id: string; subject: string; class: string };
   config: ResultConfig;
   submitted: boolean;
+  lockedComponents: string[];
   rows: EntryRow[];
 }
 
@@ -483,7 +484,7 @@ export default function ResultsPage() {
   }, [sheet?.rows]);
 
   function setRow(r: EntryRow, comp: string, val: string) {
-    if (!sheet) return;
+    if (!sheet || sheet.lockedComponents.includes(comp)) return;
     // Clamp to the component's admin-set maximum so what's stored always
     // matches what's displayed — previously only the computed CA/Exam
     // totals were capped server-side, while the raw per-component value
@@ -510,13 +511,46 @@ export default function ResultsPage() {
         loading: false,
         body: { classSubjectId: sheet.classSubject.id, termId: activeTermId, rows: sheet.rows.map((r) => ({ studentId: r.studentId, scores: r.scores })) },
       });
-      await api("results/submitScores", { method: "POST", body: { classSubjectId: sheet.classSubject.id, termId: activeTermId } });
-      setSheet((s) => (s ? { ...s, submitted: true, rows: s.rows.map((r) => ({ ...r, submitted: true })) } : s));
+      const res = await api<{ locked: string[]; fullyLocked: boolean }>("results/submitScores", { method: "POST", body: { classSubjectId: sheet.classSubject.id, termId: activeTermId } });
+      setSheet((s) => (s ? { ...s, submitted: res.fullyLocked, lockedComponents: [...new Set([...s.lockedComponents, ...res.locked])], rows: s.rows.map((r) => ({ ...r, submitted: res.fullyLocked })) } : s));
       setRankMsg("Submitted to the admin. Scores for this subject are now locked.");
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  // Lock (or, for an admin, reopen) just one assessment component instead of
+  // the whole subject — "assignments can be locked independently while tests
+  // and exams remain open for progressive entry".
+  async function lockComponent(name: string) {
+    if (!sheet) return;
+    setError(null);
+    try {
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+      await api("results/saveScores", {
+        method: "POST",
+        loading: false,
+        body: { classSubjectId: sheet.classSubject.id, termId: activeTermId, rows: sheet.rows.map((r) => ({ studentId: r.studentId, scores: r.scores })) },
+      });
+      const res = await api<{ locked: string[]; fullyLocked: boolean }>("results/submitScores", { method: "POST", body: { classSubjectId: sheet.classSubject.id, termId: activeTermId, component: name } });
+      setSheet((s) => (s ? { ...s, submitted: res.fullyLocked, lockedComponents: [...new Set([...s.lockedComponents, ...res.locked])] } : s));
+      setRankMsg(`"${name}" locked.`);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function reopenComponent(name: string) {
+    if (!sheet) return;
+    setError(null);
+    try {
+      await api("results/reopenScores", { method: "POST", body: { classSubjectId: sheet.classSubject.id, termId: activeTermId, component: name } });
+      setSheet((s) => (s ? { ...s, submitted: false, lockedComponents: s.lockedComponents.filter((c) => c !== name) } : s));
+      setRankMsg(`"${name}" reopened for editing.`);
+    } catch (e) {
+      setError((e as Error).message);
     }
   }
 
@@ -687,11 +721,32 @@ export default function ResultsPage() {
                   <tr>
                     <th>#</th>
                     <th>Student</th>
-                    {sheet.config.components.map((c) => (
-                      <th key={c.name} style={{ width: 76 }} title={`Max ${c.max}`}>
-                        {c.name} {c.category === "EXAM" ? `(${c.max})` : ""}
-                      </th>
-                    ))}
+                    {sheet.config.components.map((c) => {
+                      const isLocked = sheet.lockedComponents.includes(c.name);
+                      return (
+                        <th key={c.name} style={{ width: 84 }} title={`Max ${c.max}`}>
+                          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                            <span>{c.name} {c.category === "EXAM" ? `(${c.max})` : ""}</span>
+                            {isLocked ? (
+                              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                <span style={{ fontSize: 10, fontWeight: 700, color: "var(--duga-muted)" }}>🔒 Locked</span>
+                                {role !== "TEACHER" && (
+                                  <button className="duga-btn duga-btn--sm duga-btn--ghost" style={{ fontSize: 10, padding: "0 4px" }} onClick={() => reopenComponent(c.name)}>
+                                    Reopen
+                                  </button>
+                                )}
+                              </span>
+                            ) : (
+                              role === "TEACHER" && (
+                                <button className="duga-btn duga-btn--sm duga-btn--ghost" style={{ fontSize: 10, padding: "0 4px" }} onClick={() => lockComponent(c.name)}>
+                                  Lock
+                                </button>
+                              )
+                            )}
+                          </div>
+                        </th>
+                      );
+                    })}
                     <th>Total</th>
                   </tr>
                 </thead>
@@ -711,7 +766,7 @@ export default function ResultsPage() {
                               type="number"
                               min={0}
                               max={c.max}
-                              disabled={sheet.submitted || r.submitted}
+                              disabled={sheet.lockedComponents.includes(c.name) || role === "ADMIN"}
                               style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--duga-border)", borderRadius: 8, fontSize: 14 }}
                               value={r.scores[c.name] ?? ""}
                               onChange={(e) => setRow(r, c.name, String(e.target.valueAsNumber ?? ""))}
@@ -725,7 +780,7 @@ export default function ResultsPage() {
                 </tbody>
               </table>
               <div style={{ marginTop: 10, fontSize: 12.5, color: "var(--duga-muted)" }}>
-                CA ties at {sheet.config.caCap} across its components; Exam at {sheet.config.examCap}. Once submitted, scores lock until an admin reopens them.
+                CA ties at {sheet.config.caCap} across its components; Exam at {sheet.config.examCap}. Lock a component to submit it independently — the rest stay open for entry until locked too. Once locked, only an admin can reopen it.
               </div>
             </div>
           )}

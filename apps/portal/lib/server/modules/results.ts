@@ -47,6 +47,16 @@ async function schoolAndReportCardConfig(schoolId: string, section?: string) {
   };
 }
 
+// Which assessment components (e.g. "Assignment", "Test", "Exam" — whatever
+// ResultConfig.components names for this section) are currently locked for a
+// class-subject's term. Independent per component, so a teacher can keep
+// entering "Exam" scores while "Assignment" stays locked from an earlier
+// submission, instead of the old single classSubject-wide submitted flag.
+async function lockedComponentSet(classSubjectId: string, termId: string): Promise<Set<string>> {
+  const locks = await prisma.assessmentLock.findMany({ where: { classSubjectId, termId }, select: { component: true } });
+  return new Set(locks.map((l) => l.component));
+}
+
 async function submissionSummary(
   schoolId: string,
   classSubjects: Array<{ id: string; classGroup: { students: Array<{ id: string }> } }>,
@@ -264,6 +274,13 @@ export const resultsModule: Module = {
     // ResultConfig components.
     saveScores: async (ctx) => {
       can(ctx, "results:enter");
+      // An admin can view results and reopen a locked component for the
+      // teacher to correct, but never edits an individual score directly —
+      // only the class teacher (or the owner, who has unrestricted override
+      // everywhere else in the app) enters scores.
+      if (ctx.session.user.role === "ADMIN") {
+        throw new Error("Admins can't edit scores directly. Reopen the relevant component so the class teacher can correct it.");
+      }
       const schoolId = ctx.session.user.schoolId;
       // Scope to "own subject" only when acting AS a teacher — an
       // owner/admin who happens to also hold a Teacher profile (staff who
@@ -287,89 +304,129 @@ export const resultsModule: Module = {
       const rosterIds = new Set(roster.map((student) => student.id));
       if (rows.some((row) => !rosterIds.has(row.studentId))) throw new Error("Scores can only be entered for active students in this class");
 
-      // Locked once submitted (until an admin reopens), and outside the
-      // calendar's results-entry window (owner/admin can still enter/correct
-      // scores outside the window — only teacher entry is auto-locked).
+      const config = await getResultConfig(schoolId, classSubject.classGroup.level.section);
+      const compNames = new Set(config.components.map((c) => c.name));
+
+      // Locked per component (until an admin reopens that component), and
+      // outside the calendar's results-entry window — owner/admin can still
+      // enter/correct scores outside the window and past any component lock;
+      // only teacher entry is restricted by either.
+      const locked = teacher ? await lockedComponentSet(classSubjectId, termId) : new Set<string>();
       if (teacher) {
-        const locked = await prisma.subjectScore.findFirst({ where: { classSubjectId, termId, submitted: true }, take: 1 });
-        if (locked) throw new Error("These scores have been submitted to the admin and are locked. Ask an admin to reopen them.");
+        if (compNames.size > 0 && [...compNames].every((n) => locked.has(n))) {
+          throw new Error("These scores have been submitted to the admin and are locked. Ask an admin to reopen them.");
+        }
         const windowOpen = await assessmentWindowOpen(schoolId, "RESULTS", { classSubjectId, section: classSubject.classGroup.level.section });
         if (!windowOpen) throw new Error("The results entry window is closed for this term.");
       }
 
-      const config = await getResultConfig(schoolId, classSubject.classGroup.level.section);
-      const compNames = new Set(config.components.map((c) => c.name));
+      // Fetch existing rows once so a locked component's stored value is
+      // preserved (not wiped) when the caller's payload can't touch it —
+      // saveScores sends a whole row per student, not a per-field patch.
+      const existing = await prisma.subjectScore.findMany({ where: { schoolId, classSubjectId, termId } });
+      const existingByStudent = new Map(existing.map((row) => [row.studentId, row]));
 
       for (const r of rows) {
+        const existingScores = (existingByStudent.get(r.studentId)?.scores as Record<string, number> | null | undefined) ?? {};
         const scores: Record<string, number> = {};
+        for (const name of compNames) {
+          if (locked.has(name) && typeof existingScores[name] === "number") scores[name] = existingScores[name];
+        }
         const raw = r.scores && typeof r.scores === "object" ? (r.scores as Record<string, unknown>) : {};
         for (const [k, v] of Object.entries(raw)) {
-          if (!compNames.has(k)) continue;
+          if (!compNames.has(k) || locked.has(k)) continue;
           const n = typeof v === "number" ? v : typeof v === "string" && v !== "" ? Number(v) : NaN;
           if (typeof n === "number" && !Number.isNaN(n)) scores[k] = n;
         }
         const { ca, exam, total } = computeScoreTotals(config, scores);
         await prisma.subjectScore.upsert({
           where: { classSubjectId_studentId_termId: { classSubjectId, studentId: r.studentId, termId } },
-          update: { scores: scores as never, caTotal: ca, examTotal: exam, total, enteredByTeacherId: teacher?.id, submitted: false, submittedAt: null },
-          create: { schoolId, classSubjectId, studentId: r.studentId, termId, scores: scores as never, caTotal: ca, examTotal: exam, total, enteredByTeacherId: teacher?.id, submitted: false },
+          update: { scores: scores as never, caTotal: ca, examTotal: exam, total, enteredByTeacherId: teacher?.id },
+          create: { schoolId, classSubjectId, studentId: r.studentId, termId, scores: scores as never, caTotal: ca, examTotal: exam, total, enteredByTeacherId: teacher?.id },
         });
       }
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "results.scoresEntered", entityType: "ClassSubject", entityId: classSubjectId, meta: { termId, rows: rows.length } });
       return { count: rows.length };
     },
 
-    // Teacher submits a subject's scores to the admin (locks them).
+    // Teacher (or admin) locks one assessment component — or, when `component`
+    // is omitted, every component currently configured for the section — for
+    // a class-subject's term. SubjectScore.submitted (and the review-request
+    // notification) only fires once every configured component is locked.
     submitScores: async (ctx) => {
       can(ctx, "results:enter");
       const schoolId = ctx.session.user.schoolId;
       const teacher = ctx.session.user.role === "TEACHER" ? ctx.session.user.teacher : null;
       const classSubjectId = str(ctx.body.classSubjectId);
       const termId = str(ctx.body.termId);
+      const componentParam = str(ctx.body.component);
       if (!classSubjectId || !termId) throw new Error("classSubjectId and termId required");
-      let own: { id: string; subject: { name: string }; classGroup: { name: string; level: { name: string; section: string } } } | null = null;
+
+      const cs = await prisma.classSubject.findFirst({
+        where: { id: classSubjectId, schoolId, ...(teacher ? { teacherId: teacher.id } : {}) },
+        select: { id: true, subject: { select: { name: true } }, classGroup: { select: { name: true, level: { select: { name: true, section: true } } } } },
+      });
+      if (!cs) throw new Error(teacher ? "You can only submit scores for your own subjects" : "Class subject not found");
       if (teacher) {
-        own = await prisma.classSubject.findFirst({
-          where: { id: classSubjectId, teacherId: teacher.id },
-          select: { id: true, subject: { select: { name: true } }, classGroup: { select: { name: true, level: { select: { name: true, section: true } } } } },
-        });
-        if (!own) throw new Error("You can only submit scores for your own subjects");
-        const windowOpen = await assessmentWindowOpen(schoolId, "RESULTS", { classSubjectId, section: own.classGroup.level.section });
+        const windowOpen = await assessmentWindowOpen(schoolId, "RESULTS", { classSubjectId, section: cs.classGroup.level.section });
         if (!windowOpen) throw new Error("The results entry window is closed for this term.");
       }
-      const result = await prisma.subjectScore.updateMany({
-        where: { schoolId, classSubjectId, termId },
-        data: { submitted: true, submittedAt: new Date() },
-      });
 
-      // Let the admin/owner team know a subject is ready for review — they
-      // previously had no signal that a teacher had submitted scores.
-      const reviewers = await prisma.user.findMany({ where: { schoolId, role: { in: ["OWNER", "ADMIN"] }, status: "ACTIVE" }, select: { id: true } });
-      if (reviewers.length) {
-        const label = own ? `${own.subject.name} — ${own.classGroup.level.name} ${own.classGroup.name}` : "A subject";
-        await dispatchToMany(
-          reviewers.map((r) => r.id),
-          { schoolId, type: "results", title: "Results submitted for review", body: `${label} results have been submitted and are ready to review.`, link: "/portal/results" },
-        );
+      const config = await getResultConfig(schoolId, cs.classGroup.level.section);
+      const compNames = config.components.map((c) => c.name);
+      const toLock = componentParam ? (compNames.includes(componentParam) ? [componentParam] : []) : compNames;
+      if (toLock.length === 0) throw new Error(componentParam ? "Unknown assessment component" : "No assessment components configured for this section");
+
+      await prisma.$transaction(
+        toLock.map((component) =>
+          prisma.assessmentLock.upsert({
+            where: { classSubjectId_termId_component: { classSubjectId, termId, component } },
+            update: {},
+            create: { schoolId, classSubjectId, termId, component, lockedByUserId: ctx.session.user.id },
+          }),
+        ),
+      );
+
+      const nowLocked = await lockedComponentSet(classSubjectId, termId);
+      const fullyLocked = compNames.length > 0 && compNames.every((n) => nowLocked.has(n));
+      if (fullyLocked) {
+        await prisma.subjectScore.updateMany({ where: { schoolId, classSubjectId, termId }, data: { submitted: true, submittedAt: new Date() } });
+
+        // Let the admin/owner team know a subject is ready for review — they
+        // previously had no signal that a teacher had submitted scores.
+        const reviewers = await prisma.user.findMany({ where: { schoolId, role: { in: ["OWNER", "ADMIN"] }, status: "ACTIVE" }, select: { id: true } });
+        if (reviewers.length) {
+          const label = `${cs.subject.name} — ${cs.classGroup.level.name} ${cs.classGroup.name}`;
+          await dispatchToMany(
+            reviewers.map((r) => r.id),
+            { schoolId, type: "results", title: "Results submitted for review", body: `${label} results have been submitted and are ready to review.`, link: "/portal/results" },
+          );
+        }
       }
 
-      await logAudit({ schoolId, userId: ctx.session.user.id, action: "results.scoresSubmitted", entityType: "ClassSubject", entityId: classSubjectId, meta: { termId, count: result.count } });
-      return { count: result.count };
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "results.scoresSubmitted", entityType: "ClassSubject", entityId: classSubjectId, meta: { termId, locked: toLock, fullyLocked } });
+      return { locked: toLock, fullyLocked };
     },
 
-    // Admin reopens a subject so teachers can edit/complete scores again.
+    // Admin "unlock-to-edit": reopens one component (or, when `component` is
+    // omitted, every locked component) so a teacher can correct scores again
+    // — the admin never edits scores directly, only reopens the window for
+    // the teacher to. Every reopen is audit-logged with which component(s)
+    // and by whom.
     reopenScores: async (ctx) => {
       can(ctx, "results:publish");
       const schoolId = ctx.session.user.schoolId;
       const classSubjectId = str(ctx.body.classSubjectId);
       const termId = str(ctx.body.termId);
+      const componentParam = str(ctx.body.component);
       if (!classSubjectId || !termId) throw new Error("classSubjectId and termId required");
-      const result = await prisma.subjectScore.updateMany({
-        where: { schoolId, classSubjectId, termId },
-        data: { submitted: false, submittedAt: null },
+      const removed = await prisma.assessmentLock.deleteMany({
+        where: { classSubjectId, termId, ...(componentParam ? { component: componentParam } : {}) },
       });
-      await logAudit({ schoolId, userId: ctx.session.user.id, action: "results.scoresReopened", entityType: "ClassSubject", entityId: classSubjectId, meta: { termId } });
-      return { count: result.count };
+      // Reopening any component means the subject is no longer fully locked.
+      await prisma.subjectScore.updateMany({ where: { schoolId, classSubjectId, termId }, data: { submitted: false, submittedAt: null } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "results.scoresReopened", entityType: "ClassSubject", entityId: classSubjectId, meta: { termId, component: componentParam ?? "ALL", removed: removed.count } });
+      return { count: removed.count };
     },
 
     // Admin permanently deletes a subject's scores for a term (distinct from
@@ -477,9 +534,10 @@ export const resultsModule: Module = {
         include: { subject: true, classGroup: { include: { level: true, students: { include: { user: { select: { firstName: true, lastName: true } } } } } } },
       });
       if (!cs) throw new Error("Class subject not found");
-      const [config, scores] = await Promise.all([
+      const [config, scores, lockedSet] = await Promise.all([
         getResultConfig(schoolId, cs.classGroup.level.section),
         prisma.subjectScore.findMany({ where: { classSubjectId, termId: termId ?? "" } }),
+        lockedComponentSet(classSubjectId, termId ?? ""),
       ]);
       const scoreMap = new Map(scores.map((s) => [s.studentId, s]));
       const anySubmitted = scores.some((s) => s.submitted);
@@ -505,6 +563,7 @@ export const resultsModule: Module = {
         classSubject: { id: cs.id, subject: cs.subject.name, class: `${cs.classGroup.level.name} ${cs.classGroup.name}` },
         config,
         submitted: anySubmitted,
+        lockedComponents: [...lockedSet],
         rows,
       };
     },
