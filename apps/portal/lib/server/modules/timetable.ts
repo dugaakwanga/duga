@@ -459,5 +459,99 @@ export const timetableModule: Module = {
       await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "timetable.examDeleted", entityType: "ExamTimetableEntry", entityId: ctx.id });
       return entry;
     },
+
+    // Bulk-create regular periods from a CSV (see /portal/timetable's
+    // "Import CSV" modal for the template). Rows are applied one at a time,
+    // each through the same validateRegularEntry conflict check as a manual
+    // "Add period" — a bad row is reported and skipped rather than failing
+    // the whole file, and a later row in the same file correctly sees an
+    // earlier row's entry as a potential clash since each create commits
+    // before the next row is validated.
+    importCsv: async (ctx) => {
+      can(ctx, "timetable:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const csv = str(ctx.body.csv);
+      if (!csv) throw new Error("csv text required");
+      const section = await resolveSection(ctx);
+
+      const lines = csv.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      if (lines.length < 2) throw new Error("CSV has no data rows");
+      const header = (lines[0] ?? "").split(",").map((h) => h.trim().toLowerCase());
+      const colIndex = (name: string) => header.indexOf(name);
+      const idx = {
+        level: colIndex("level"),
+        klass: colIndex("class"),
+        day: colIndex("day"),
+        period: colIndex("period"),
+        start: colIndex("starttime"),
+        end: colIndex("endtime"),
+        subject: colIndex("subject"),
+        teacher: colIndex("teacher"),
+        room: colIndex("room"),
+        term: colIndex("term"),
+      };
+      if ([idx.level, idx.klass, idx.day, idx.period, idx.start, idx.end, idx.subject, idx.teacher].some((i) => i < 0)) {
+        throw new Error("CSV header must include: Level, Class, Day, Period, StartTime, EndTime, Subject, Teacher (Room and Term are optional)");
+      }
+
+      const [classGroups, subjects, teachers, terms] = await Promise.all([
+        prisma.classGroup.findMany({ where: { schoolId, ...(section ? { level: { section } } : {}) }, include: { level: true } }),
+        prisma.subject.findMany({ where: { schoolId, ...(section ? { section } : {}) } }),
+        prisma.teacher.findMany({ where: { schoolId }, include: { user: { select: { firstName: true, lastName: true } } } }),
+        prisma.term.findMany({ where: { schoolId } }),
+      ]);
+      const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+
+      const results: Array<{ row: number; ok: boolean; error?: string }> = [];
+      for (let i = 1; i < lines.length; i++) {
+        const rowNum = i + 1;
+        try {
+          const cells = (lines[i] ?? "").split(",").map((c) => c.trim());
+          const levelName = cells[idx.level] ?? "";
+          const className = cells[idx.klass] ?? "";
+          const classGroup = classGroups.find((c) => c.level.name.toLowerCase() === levelName.toLowerCase() && c.name.toLowerCase() === className.toLowerCase());
+          if (!classGroup) throw new Error(`Class "${levelName} ${className}" not found`);
+
+          const dayRaw = (cells[idx.day] ?? "").toLowerCase();
+          const dayOfWeek = /^\d+$/.test(dayRaw) ? Number(dayRaw) : dayNames.indexOf(dayRaw);
+          if (dayOfWeek < 0) throw new Error(`Unknown day "${cells[idx.day]}"`);
+
+          const periodNumber = Number(cells[idx.period]);
+          const startTime = cells[idx.start] ?? "";
+          const endTime = cells[idx.end] ?? "";
+
+          const subjectName = cells[idx.subject] ?? "";
+          const subject = subjects.find((s) => s.name.toLowerCase() === subjectName.toLowerCase());
+          if (!subject) throw new Error(`Subject "${subjectName}" not found`);
+
+          const teacherName = cells[idx.teacher] ?? "";
+          const teacher = teachers.find((t) => `${t.user.firstName} ${t.user.lastName}`.toLowerCase() === teacherName.toLowerCase());
+          if (!teacher) throw new Error(`Teacher "${teacherName}" not found`);
+
+          const room = idx.room >= 0 ? (cells[idx.room] || undefined) : undefined;
+          const termName = idx.term >= 0 ? cells[idx.term] : undefined;
+          const term = termName ? terms.find((t) => t.name.toLowerCase() === termName.toLowerCase()) : undefined;
+          if (termName && !term) throw new Error(`Term "${termName}" not found`);
+
+          const classSubject = await prisma.classSubject.findFirst({
+            where: { schoolId, classGroupId: classGroup.id, subjectId: subject.id, teacherId: teacher.id },
+            select: { id: true },
+          });
+
+          const input: RegularEntryInput = { classGroupId: classGroup.id, teacherId: teacher.id, subjectId: subject.id, classSubjectId: classSubject?.id, termId: term?.id, dayOfWeek, periodNumber, startTime, endTime, room };
+          await validateRegularEntry(schoolId, input);
+          await prisma.timetableEntry.create({
+            data: { schoolId, termId: term?.id, classGroupId: classGroup.id, classSubjectId: classSubject?.id, subjectId: subject.id, teacherId: teacher.id, dayOfWeek, periodNumber, startTime, endTime, room },
+          });
+          results.push({ row: rowNum, ok: true });
+        } catch (e) {
+          results.push({ row: rowNum, ok: false, error: (e as Error).message });
+        }
+      }
+
+      const created = results.filter((r) => r.ok).length;
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "timetable.imported", entityType: "Timetable", meta: { created, failed: results.length - created } });
+      return { created, failed: results.length - created, results };
+    },
   },
 };

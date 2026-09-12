@@ -443,10 +443,42 @@
 @media (max-width: 700px) {
   .tt-grid { overflow-x: auto; padding-bottom: 6px; }
 }
-.tt-cell { background: #fff; border: 1px solid var(--duga-border); border-radius: 10px; padding: 10px; font-size: 12.5px; font-weight: 600; min-height: 64px; transition: border-color 0.15s ease, box-shadow 0.15s ease; }
+.tt-cell { background: #fff; border: 1px solid var(--duga-border); border-radius: 10px; padding: 10px; font-size: 12.5px; font-weight: 600; min-height: 64px; transition: border-color 0.15s ease, box-shadow 0.15s ease; min-width: 0; }
 .tt-cell:hover { border-color: var(--duga-primary-pale); box-shadow: var(--duga-shadow-sm); }
-.tt-cell strong { display: block; font-size: 13px; color: var(--duga-primary); font-weight: 700; }
+/* Single-line + ellipsis rather than wrapping: the grid column itself is
+   capped by minmax(0,1fr), so this only affects legibility, not whether
+   the row fits the screen — a long subject name gets truncated instead of
+   breaking mid-word across five or six tiny lines. */
+.tt-cell strong, .tt-cell > div, .tt-cell span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.tt-cell strong { font-size: 13px; color: var(--duga-primary); font-weight: 700; }
 .tt-cell span { color: var(--duga-muted); font-weight: 600; }
+.tt-cell + .tt-cell { margin-top: 6px; }
+
+/* One-class-at-a-time weekly grid (period rows x day columns), for
+   tablet/desktop. minmax(0,1fr) columns mean it genuinely fits the viewport
+   instead of forcing horizontal scroll. Below 560px there just isn't room
+   for five legible day columns, so .tt-daylist (a stacked day-by-day list,
+   full-width rows, no truncation) takes over instead — see the media query
+   below, which toggles which of the two is shown. */
+.tt-grid2 { display: grid; gap: 6px; align-items: stretch; }
+.tt-grid2__corner { }
+.tt-grid2__head { font-size: 11px; font-weight: 750; text-transform: uppercase; letter-spacing: 0.04em; color: var(--duga-muted); text-align: center; padding: 6px 2px; }
+.tt-grid2__period { font-size: 12px; font-weight: 750; color: var(--duga-muted); display: flex; align-items: center; justify-content: center; }
+.tt-grid2__cell { min-width: 0; }
+
+.tt-daylist { display: none; }
+.tt-daylist__day { margin-bottom: 18px; }
+.tt-daylist__day:last-child { margin-bottom: 0; }
+.tt-daylist__day-head { font-size: 13px; font-weight: 750; text-transform: uppercase; letter-spacing: 0.04em; color: var(--duga-ink); padding-bottom: 6px; margin-bottom: 8px; border-bottom: 1px solid var(--duga-border); }
+.tt-daylist__empty { font-size: 12.5px; color: var(--duga-muted); padding: 2px 0 4px; }
+.tt-daylist .tt-cell + .tt-cell { margin-top: 8px; }
+/* Full-width rows have room to wrap normally instead of truncating. */
+.tt-daylist .tt-cell strong, .tt-daylist .tt-cell > div, .tt-daylist .tt-cell span { white-space: normal; overflow: visible; text-overflow: clip; }
+
+@media (max-width: 560px) {
+  .tt-grid2 { display: none; }
+  .tt-daylist { display: block; }
+}
 
 /* ==========================================================================
    Login — editorial split
