@@ -211,31 +211,53 @@ export const feesModule: Module = {
 
       // Avoid two database round trips per student when generating a whole
       // school's invoices. This is a common source of slow admin responses.
-      const [classGroups, existingInvoices] = await Promise.all([
+      const [classGroups, existingInvoices, priorUnpaidInvoices] = await Promise.all([
         prisma.classGroup.findMany({ where: { schoolId, id: { in: students.map((s) => s.currentClassGroupId).filter((id): id is string => Boolean(id)) } }, select: { id: true, levelId: true } }),
         prisma.invoice.findMany({ where: { schoolId, termId, studentId: { in: students.map((s) => s.id) } }, select: { studentId: true } }),
+        // Debt ledger: any earlier term's invoice this student still owes on
+        // (any prior term, not just the immediately preceding one) gets
+        // pulled forward as a distinct line item on the new invoice, rather
+        // than silently staying billed-but-forgotten on the old one.
+        prisma.invoice.findMany({
+          where: { schoolId, studentId: { in: students.map((s) => s.id) }, termId: { not: termId }, balance: { gt: 0 }, status: { notIn: ["CARRIED_FORWARD", "WAIVED"] } },
+          include: { term: true },
+        }),
       ]);
       const levelByClassGroup = new Map(classGroups.map((group) => [group.id, group.levelId]));
       const invoicedStudentIds = new Set(existingInvoices.map((invoice) => invoice.studentId));
+      const priorDebtByStudent = new Map<string, typeof priorUnpaidInvoices>();
+      for (const inv of priorUnpaidInvoices) {
+        priorDebtByStudent.set(inv.studentId, [...(priorDebtByStudent.get(inv.studentId) ?? []), inv]);
+      }
 
       let created = 0;
       let invoiceSeq = (await prisma.invoice.count({ where: { schoolId } })) + 1;
 
       for (const student of students) {
-        // determine applicable structures by level/section/class
+        // determine applicable structures by level/section/class/boarding-or-day
         const studentLevelId = student.currentClassGroupId ? levelByClassGroup.get(student.currentClassGroupId) : undefined;
         const applicable = structures.filter(
           (s) =>
             (!s.classGroupId || s.classGroupId === student.currentClassGroupId) &&
             (!s.levelId || s.levelId === studentLevelId) &&
-            (!s.section || s.section === student.section),
+            (!s.section || s.section === student.section) &&
+            (s.appliesTo === "ALL" || (s.appliesTo === "BOARDING") === student.isBoarding),
         );
         if (applicable.length === 0) continue;
 
         if (invoicedStudentIds.has(student.id)) continue;
 
-        const totalAmount = applicable.reduce((a, s) => a + Number(s.amount), 0);
-        await prisma.invoice.create({
+        const priorDebt = priorDebtByStudent.get(student.id) ?? [];
+        const broughtForward = priorDebt.reduce((a, inv) => a + Number(inv.balance), 0);
+
+        const totalAmount = applicable.reduce((a, s) => a + Number(s.amount), 0) + broughtForward;
+        const items: Array<{ feeTypeId: string | null; description: string; amount: number }> = applicable.map((s) => ({ feeTypeId: s.feeTypeId, description: s.feeType.name, amount: Number(s.amount) }));
+        if (broughtForward > 0) {
+          const fromTerms = [...new Set(priorDebt.map((inv) => inv.term?.name).filter((n): n is string => Boolean(n)))].join(", ");
+          items.push({ feeTypeId: null, description: `Balance brought forward${fromTerms ? ` (${fromTerms})` : ""}`, amount: broughtForward });
+        }
+
+        const invoice = await prisma.invoice.create({
           data: {
             schoolId,
             studentId: student.id,
@@ -246,17 +268,21 @@ export const feesModule: Module = {
             balance: totalAmount,
             status: "UNPAID",
             issuedAt: new Date(),
-            items: {
-              create: applicable.map((s) => ({
-                feeTypeId: s.feeTypeId,
-                description: s.feeType.name,
-                amount: s.amount,
-              })),
-            },
+            items: { create: items },
           },
         });
         invoiceSeq += 1;
         created += 1;
+
+        // The old invoices' debt now lives on the new one — mark them so
+        // "outstanding balance" reporting doesn't count it twice.
+        if (priorDebt.length) {
+          await prisma.invoice.updateMany({
+            where: { id: { in: priorDebt.map((inv) => inv.id) } },
+            data: { balance: 0, status: "CARRIED_FORWARD" },
+          });
+          await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.balanceCarriedForward", entityType: "Invoice", entityId: invoice.id, meta: { studentId: student.id, broughtForward, fromInvoiceIds: priorDebt.map((inv) => inv.id) } });
+        }
       }
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.invoicesGenerated", entityType: "Invoice", meta: { termId, classGroupId, created } });
       return { created };
@@ -337,6 +363,8 @@ export const feesModule: Module = {
       const feeTypeId = str(ctx.body.feeTypeId);
       const amount = num(ctx.body.amount);
       if (!feeTypeId || amount === undefined) throw new Error("feeTypeId and amount required");
+      const appliesToRaw = str(ctx.body.appliesTo);
+      const appliesTo = appliesToRaw === "BOARDING" || appliesToRaw === "DAY" ? appliesToRaw : "ALL";
       const fs = await prisma.feeStructure.create({
         data: {
           schoolId,
@@ -345,6 +373,7 @@ export const feesModule: Module = {
           section: str(ctx.body.section) as "PRIMARY" | "SECONDARY" | undefined,
           levelId: str(ctx.body.levelId),
           classGroupId: str(ctx.body.classGroupId),
+          appliesTo,
           amount,
         },
       });
@@ -390,6 +419,10 @@ export const feesModule: Module = {
       if (ctx.body.section !== undefined) data.section = (str(ctx.body.section) as "PRIMARY" | "SECONDARY" | undefined) ?? null;
       if (ctx.body.levelId !== undefined) data.levelId = str(ctx.body.levelId) ?? null;
       if (ctx.body.classGroupId !== undefined) data.classGroupId = str(ctx.body.classGroupId) ?? null;
+      if (ctx.body.appliesTo !== undefined) {
+        const appliesToRaw = str(ctx.body.appliesTo);
+        data.appliesTo = appliesToRaw === "BOARDING" || appliesToRaw === "DAY" ? appliesToRaw : "ALL";
+      }
       if (ctx.body.amount !== undefined) data.amount = num(ctx.body.amount) ?? existing.amount;
       const fs = await prisma.feeStructure.update({ where: { id: ctx.id }, data });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.structureUpdated", entityType: "FeeStructure", entityId: ctx.id, meta: { amount: data.amount } });

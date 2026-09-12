@@ -48,6 +48,7 @@ interface FeeStructure {
   level: { id: string; name: string } | null;
   classGroup: { id: string; name: string; level: { id: string; name: string } } | null;
   section: string | null;
+  appliesTo: "ALL" | "BOARDING" | "DAY";
 }
 
 interface Term {
@@ -326,6 +327,7 @@ export default function FeesPage() {
         section: s.section ?? "",
         levelId: s.level?.id ?? "",
         classGroupId: s.classGroup?.id ?? "",
+        appliesTo: s.appliesTo ?? "ALL",
       });
     }
     setSetupOpen(true);
@@ -562,7 +564,7 @@ export default function FeesPage() {
             {feeStructures.length === 0 ? (
               <EmptyState title="No fee structures yet" hint="Attach an amount to a fee type for a class, level, section or term." />
             ) : (
-              <Table headers={["Fee", "Amount", "Term", "Scope", ""]}>
+              <Table headers={["Fee", "Amount", "Term", "Scope", "Student type", ""]}>
                 {feeStructures.map((s) => (
                   <tr key={s.id}>
                     <td>{s.feeType.name}</td>
@@ -574,6 +576,9 @@ export default function FeesPage() {
                         : s.level
                           ? `${s.section ?? ""} ${s.level.name}`
                           : s.section ?? "All classes"}
+                    </td>
+                    <td>
+                      {s.appliesTo === "BOARDING" ? <Badge tone="info">Boarding only</Badge> : s.appliesTo === "DAY" ? <Badge tone="info">Day only</Badge> : "All students"}
                     </td>
                     <td>
                       <div style={{ display: "flex", gap: 6 }}>
@@ -664,6 +669,13 @@ export default function FeesPage() {
                 {classGroups.map((c) => (
                   <option key={c.id} value={c.id}>{c.level.name} {c.name}</option>
                 ))}
+              </Select>
+            </Field>
+            <Field label="Student type" hint="Charge this fee only to boarding or only to day students, or leave as All.">
+              <Select value={form.appliesTo ?? "ALL"} onChange={(e) => setForm({ ...form, appliesTo: e.target.value })}>
+                <option value="ALL">All students</option>
+                <option value="BOARDING">Boarding only</option>
+                <option value="DAY">Day only</option>
               </Select>
             </Field>
           </>

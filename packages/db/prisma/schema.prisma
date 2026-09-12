@@ -112,6 +112,19 @@ enum InvoiceStatus {
   PAID
   OVERPAID
   WAIVED
+  // This invoice's remaining balance was rolled into a later term's invoice
+  // as a "balance brought forward" line item — distinct from WAIVED (which
+  // means the school forgave the debt) so reporting can tell the two apart.
+  CARRIED_FORWARD
+}
+
+// Which student type a FeeStructure amount applies to. ALL (the default)
+// keeps existing behaviour for schools that don't differentiate; BOARDING/DAY
+// let a cashier set a different amount for the same fee type/level/term.
+enum FeeApplicability {
+  ALL
+  BOARDING
+  DAY
 }
 
 enum PaymentMethod {
@@ -1471,16 +1484,17 @@ model FeeType {
 }
 
 model FeeStructure {
-  id           String   @id @default(cuid())
+  id           String            @id @default(cuid())
   schoolId     String
   feeTypeId    String
   termId       String?
   section      String?
   levelId      String?
   classGroupId String?
+  appliesTo    FeeApplicability  @default(ALL)
   amount       Decimal
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
 
   feeType    FeeType     @relation(fields: [feeTypeId], references: [id], onDelete: Cascade)
   term       Term?       @relation(fields: [termId], references: [id])
