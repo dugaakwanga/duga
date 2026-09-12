@@ -375,6 +375,7 @@ model Student {
   gameProgress         GameProgress[]
   bookLoans            BookLoan[]
   gateLogs             GateLog[]
+  paperExamSubmissions PaperExamSubmission[]
 
   @@unique([schoolId, admissionNumber])
   @@index([schoolId])
@@ -573,6 +574,7 @@ model Term {
   subjectScores        SubjectScore[]
   calendarEvents       CalendarEvent[]
   assessmentLocks      AssessmentLock[]
+  paperExamSubmissions PaperExamSubmission[]
 
   @@unique([schoolId, sessionId, termNumber])
   @@index([sessionId])
@@ -713,6 +715,7 @@ model ClassSubject {
   liveClasses      LiveClass[]
   subjectScores    SubjectScore[]
   assessmentLocks  AssessmentLock[]
+  paperExamSubmissions PaperExamSubmission[]
 
   @@unique([classGroupId, subjectId])
   @@index([schoolId])
@@ -1292,6 +1295,51 @@ model AssessmentLock {
 
   @@unique([classSubjectId, termId, component])
   @@index([schoolId])
+}
+
+enum PaperExamStatus {
+  // AI hasn't graded it yet (just uploaded, or a grade attempt failed).
+  PENDING
+  // AI has suggested a score; waiting on the teacher to vet it.
+  AI_GRADED
+  // Teacher approved (with or without adjusting the score) — the approved
+  // score is written into SubjectScore.scores[component], subject to the
+  // same component lock as any other score entry.
+  APPROVED
+  // Teacher rejected the AI's grading (e.g. it clearly misread the script).
+  REJECTED
+}
+
+// A photographed/scanned handwritten answer script for one student's paper
+// exam, AI-graded against an optional teacher-supplied answer key/rubric,
+// and always vetted by a teacher before the score counts — the AI only ever
+// *suggests* a score here; APPROVED is what actually reaches SubjectScore.
+model PaperExamSubmission {
+  id                   String              @id @default(cuid())
+  schoolId             String
+  studentId            String
+  classSubjectId       String
+  termId               String?
+  component            String
+  imageUrls            Json
+  answerKey            String?
+  maxScore             Int
+  aiScore              Int?
+  aiFeedback           String?
+  status               PaperExamStatus     @default(PENDING)
+  teacherScore         Int?
+  reviewedByUserId     String?
+  reviewedAt           DateTime?
+  submittedByUserId    String?
+  createdAt            DateTime            @default(now())
+
+  student      Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  classSubject ClassSubject @relation(fields: [classSubjectId], references: [id], onDelete: Cascade)
+  term         Term?        @relation(fields: [termId], references: [id])
+
+  @@index([schoolId])
+  @@index([studentId])
+  @@index([classSubjectId])
 }
 
 model CaScore {

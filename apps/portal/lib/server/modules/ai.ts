@@ -17,8 +17,14 @@ import type { Ctx } from "@/app/api/v1/[...path]/route";
 // ---------------------------------------------------------------------------
 
 const DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
+// OpenRouter's free-tier router: picks a currently-free model that actually
+// supports what the request needs (here, image input) rather than us having
+// to hardcode a specific vision model, whose free availability changes.
+// DEFAULT_MODEL above is text-only and cannot grade a photographed script.
+const DEFAULT_VISION_MODEL = "openrouter/free";
 
 const MODEL = process.env.OPENROUTER_MODEL || DEFAULT_MODEL;
+const VISION_MODEL = process.env.OPENROUTER_VISION_MODEL || DEFAULT_VISION_MODEL;
 const API_KEY = process.env.OPENROUTER_API_KEY || "";
 
 function available(): boolean {
@@ -76,6 +82,55 @@ async function generate(system: string, prompt: string | ChatTurn[], temperature
   const data = await res.json();
   const text = String(data?.choices?.[0]?.message?.content ?? "").trim();
   if (!text) throw new Error("The AI assistant returned an empty reply. Please try again.");
+  return text;
+}
+
+// Same shape as generate(), but for a prompt that includes one or more
+// images — routed to VISION_MODEL (a text-only model would either error or
+// silently ignore the images). Used by paperExam.ts for AI-assisted grading.
+export async function generateVision(system: string, prompt: string, imageUrls: string[], maxTokens = 2000): Promise<string> {
+  if (!available()) {
+    throw new Error("AI is not configured yet. Add an OPENROUTER_API_KEY to the server environment to enable the assistant.");
+  }
+  const content = [
+    { type: "text", text: prompt },
+    ...imageUrls.map((url) => ({ type: "image_url", image_url: { url } })),
+  ];
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${API_KEY}` },
+    body: JSON.stringify({
+      model: VISION_MODEL,
+      messages: [{ role: "system", content: system }, { role: "user", content }],
+      temperature: 0.2,
+      max_tokens: maxTokens,
+    }),
+  });
+  // The free vision router can fail with either a non-2xx status or (less
+  // commonly) a 200 whose body is an error object instead of choices — both
+  // handled the same way, extracting the provider's own message when there
+  // is one rather than dumping raw JSON at the teacher. Free vision models
+  // are more heavily rate-limited than the text model — a retry a minute
+  // later often succeeds even when this one didn't.
+  const data = await res.json().catch(() => null);
+  if (!res.ok || data?.error) {
+    const providerMessage = data?.error?.message ? String(data.error.message) : null;
+    const err = new Error(
+      providerMessage
+        ? `The AI couldn't grade this right now (${providerMessage.slice(0, 200)}). Free vision models are often busy — try again in a minute.`
+        : `AI provider error (${res.status}). Free vision models are often busy — try again in a minute.`,
+    ) as Error & { status?: number };
+    err.status = 502;
+    throw err;
+  }
+  const message = data?.choices?.[0]?.message;
+  // The free router can land on a "thinking"-style model whose final answer
+  // is in `content`, but which — if it ran out of tokens mid-thought — only
+  // has its chain-of-thought in `reasoning`. Prefer content; fall back to
+  // reasoning rather than surfacing a confusing "empty reply" when there was
+  // real (if messier) output.
+  const text = String(message?.content || message?.reasoning || "").trim();
+  if (!text) throw new Error("The AI returned an empty reply — the selected free vision model may be temporarily unavailable. Please try again.");
   return text;
 }
 

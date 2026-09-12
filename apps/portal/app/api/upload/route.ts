@@ -54,6 +54,10 @@ export async function POST(request: NextRequest) {
       }
     } else if (purpose === "clock-photo") {
       assertPermission(session.user.role, "staff:clock");
+    } else if (purpose === "paper-exam") {
+      // Any signed-in student (uploading their own script) or staff member
+      // (submitting on a student's behalf) may upload — paperExam.ts's own
+      // actions gate who can grade/approve what happens with it next.
     } else {
       assertPermission(session.user.role, "gallery:manage");
     }
@@ -81,7 +85,7 @@ export async function POST(request: NextRequest) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const name = `${crypto.randomUUID()}.${ext(mime, purpose)}`;
-    const folder = purpose === "library" ? "library" : purpose === "scheme" ? "scheme" : purpose === "avatar" ? "avatars" : purpose === "student-photo" ? "students" : purpose === "school-logo" ? "school" : purpose === "clock-photo" ? "clock" : "gallery";
+    const folder = purpose === "library" ? "library" : purpose === "scheme" ? "scheme" : purpose === "paper-exam" ? "paper-exams" : purpose === "avatar" ? "avatars" : purpose === "student-photo" ? "students" : purpose === "school-logo" ? "school" : purpose === "clock-photo" ? "clock" : "gallery";
     const { url: fileUrl, key, bucket } = await uploadPublicFile({
       folder,
       name,
