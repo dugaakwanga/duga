@@ -194,7 +194,21 @@ export default function LearningPage() {
               ? "Your lesson notes, assignments, tests and live classes."
               : "Lesson notes, assignments, tests and live classes."
         }
-        actions={canManage ? <Button onClick={() => setOpen(true)}><Icon name="plus" size={16} /> New</Button> : undefined}
+        actions={
+          canManage ? (
+            // CBT tests need a question builder this page never had — the old
+            // "New test" here left a test permanently stuck at zero questions
+            // (its own modal said "managed via the API", which doesn't exist).
+            // Teacher/CBT is the real authoring page; link there instead.
+            kind === "tests" ? (
+              <Link href="/portal/teacher/cbt" className="duga-btn duga-btn--primary duga-btn--md" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <Icon name="plus" size={16} /> New test
+              </Link>
+            ) : (
+              <Button onClick={() => setOpen(true)}><Icon name="plus" size={16} /> New</Button>
+            )
+          ) : undefined
+        }
       />
       <Tabs
         tabs={visibleTabs}

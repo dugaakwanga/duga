@@ -4,6 +4,18 @@
    DUGA Portal — navy + white + silver
    ========================================================================== */
 
+/* Safety net: this app has ~40 portal pages and not every one has been
+   individually audited for a stray wide element (an un-wrapped table, a
+   fixed-width row). Rather than let one such element push the whole
+   document wider than the viewport — which produces exactly the confusing
+   "page is scrolled sideways, text is clipped on the left" mobile bug users
+   keep hitting — clip horizontal overflow at the root. A page-specific fix
+   is still the right move when one is found; this just stops a missed one
+   from breaking the whole page while it's outstanding.               */
+html, body {
+  overflow-x: hidden;
+}
+
 .portal-body {
   background: var(--duga-surface);
   color: var(--duga-ink);
@@ -131,6 +143,13 @@
 }
 
 .portal-topbar__signout span { display: inline; }
+/* Icon-only on narrow screens (see below) needs to read as "sign out" at a
+   glance without the label — a plain gray icon blends into the bell/avatar
+   next to it. Tinting it the same danger red used everywhere else in the
+   app for a destructive/exit action gives it a distinct, recognizable
+   affordance instead of relying on an abstract door-and-arrow glyph alone. */
+.portal-topbar__signout { color: var(--duga-danger, #c0392b); }
+.portal-topbar__signout:hover { color: var(--duga-danger, #c0392b); opacity: 0.8; }
 @media (max-width: 560px) {
   .portal-topbar { padding: 0 14px; gap: 10px; height: 58px; }
   .portal-topbar__signout span { display: none; }

@@ -503,17 +503,21 @@ export default function ResultsPage() {
     setError(null);
     setRankMsg("");
     try {
-      // Flush the latest edits first — submitting shouldn't race the
+      // Flush the latest edits first (admin never enters scores directly, so
+      // there's nothing of theirs to flush, and the endpoint rejects an
+      // admin's call outright) — locking shouldn't race a teacher's
       // debounced auto-save and lock in stale (or no) scores.
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-      await api("results/saveScores", {
-        method: "POST",
-        loading: false,
-        body: { classSubjectId: sheet.classSubject.id, termId: activeTermId, rows: sheet.rows.map((r) => ({ studentId: r.studentId, scores: r.scores })) },
-      });
+      if (role !== "ADMIN") {
+        await api("results/saveScores", {
+          method: "POST",
+          loading: false,
+          body: { classSubjectId: sheet.classSubject.id, termId: activeTermId, rows: sheet.rows.map((r) => ({ studentId: r.studentId, scores: r.scores })) },
+        });
+      }
       const res = await api<{ locked: string[]; fullyLocked: boolean }>("results/submitScores", { method: "POST", body: { classSubjectId: sheet.classSubject.id, termId: activeTermId } });
       setSheet((s) => (s ? { ...s, submitted: res.fullyLocked, lockedComponents: [...new Set([...s.lockedComponents, ...res.locked])], rows: s.rows.map((r) => ({ ...r, submitted: res.fullyLocked })) } : s));
-      setRankMsg("Submitted to the admin. Scores for this subject are now locked.");
+      setRankMsg("Locked.");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -529,11 +533,13 @@ export default function ResultsPage() {
     setError(null);
     try {
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-      await api("results/saveScores", {
-        method: "POST",
-        loading: false,
-        body: { classSubjectId: sheet.classSubject.id, termId: activeTermId, rows: sheet.rows.map((r) => ({ studentId: r.studentId, scores: r.scores })) },
-      });
+      if (role !== "ADMIN") {
+        await api("results/saveScores", {
+          method: "POST",
+          loading: false,
+          body: { classSubjectId: sheet.classSubject.id, termId: activeTermId, rows: sheet.rows.map((r) => ({ studentId: r.studentId, scores: r.scores })) },
+        });
+      }
       const res = await api<{ locked: string[]; fullyLocked: boolean }>("results/submitScores", { method: "POST", body: { classSubjectId: sheet.classSubject.id, termId: activeTermId, component: name } });
       setSheet((s) => (s ? { ...s, submitted: res.fullyLocked, lockedComponents: [...new Set([...s.lockedComponents, ...res.locked])] } : s));
       setRankMsg(`"${name}" locked.`);
@@ -692,19 +698,22 @@ export default function ResultsPage() {
           title={`${sheet.classSubject.subject} — ${sheet.classSubject.class}`}
           actions={
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              {sheet.submitted ? (
-                <Badge tone="success">Submitted to admin</Badge>
-              ) : role === "TEACHER" ? (
+              {role === "TEACHER" && (
                 <>
-                  {autoSaveStatus === "saving" && <span style={{ fontSize: 12, color: "var(--duga-muted)" }}>Saving draft…</span>}
-                  {autoSaveStatus === "saved" && <span style={{ fontSize: 12, color: "var(--duga-muted)" }}>Draft saved</span>}
-                  {autoSaveStatus === "error" && <span style={{ fontSize: 12, color: "var(--duga-danger, #b91c1c)" }}>Draft not saved — check your connection</span>}
-                  <Button variant="accent" size="sm" onClick={submitSheet} disabled={saving || sheetLoading}>
-                    {saving ? "Submitting…" : "Submit to admin"}
-                  </Button>
+                  {autoSaveStatus === "saving" && <span style={{ fontSize: 12, color: "var(--duga-muted)" }}>Saving…</span>}
+                  {autoSaveStatus === "saved" && <span style={{ fontSize: 12, color: "var(--duga-muted)" }}>Saved</span>}
+                  {autoSaveStatus === "error" && <span style={{ fontSize: 12, color: "var(--duga-danger, #b91c1c)" }}>Not saved — check your connection</span>}
+                  <Badge tone={sheet.submitted ? "success" : "neutral"}>{sheet.submitted ? "Locked by admin" : "Open for entry"}</Badge>
                 </>
-              ) : (
-                <Badge tone="neutral">Not yet submitted</Badge>
+              )}
+              {(role === "ADMIN" || role === "OWNER") && (
+                sheet.submitted ? (
+                  <Badge tone="success">Fully locked</Badge>
+                ) : (
+                  <Button variant="accent" size="sm" onClick={submitSheet} disabled={saving || sheetLoading}>
+                    {saving ? "Locking…" : "Lock all"}
+                  </Button>
+                )
               )}
               <Button variant="outline" size="sm" onClick={() => setSheet(null)}>Close</Button>
             </div>
@@ -730,14 +739,14 @@ export default function ResultsPage() {
                             {isLocked ? (
                               <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                                 <span style={{ fontSize: 10, fontWeight: 700, color: "var(--duga-muted)" }}>🔒 Locked</span>
-                                {role !== "TEACHER" && (
+                                {(role === "ADMIN" || role === "OWNER") && (
                                   <button className="duga-btn duga-btn--sm duga-btn--ghost" style={{ fontSize: 10, padding: "0 4px" }} onClick={() => reopenComponent(c.name)}>
                                     Reopen
                                   </button>
                                 )}
                               </span>
                             ) : (
-                              role === "TEACHER" && (
+                              (role === "ADMIN" || role === "OWNER") && (
                                 <button className="duga-btn duga-btn--sm duga-btn--ghost" style={{ fontSize: 10, padding: "0 4px" }} onClick={() => lockComponent(c.name)}>
                                   Lock
                                 </button>
@@ -780,7 +789,7 @@ export default function ResultsPage() {
                 </tbody>
               </table>
               <div style={{ marginTop: 10, fontSize: 12.5, color: "var(--duga-muted)" }}>
-                CA ties at {sheet.config.caCap} across its components; Exam at {sheet.config.examCap}. Lock a component to submit it independently — the rest stay open for entry until locked too. Once locked, only an admin can reopen it.
+                CA ties at {sheet.config.caCap} across its components; Exam at {sheet.config.examCap}. {role === "TEACHER" ? "An admin locks each component when it's ready — you can keep entering scores into any component until then." : "Lock a component independently, or reopen one you've already locked — the rest stay untouched either way."}
               </div>
             </div>
           )}

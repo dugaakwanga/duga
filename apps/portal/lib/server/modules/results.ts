@@ -349,28 +349,26 @@ export const resultsModule: Module = {
       return { count: rows.length };
     },
 
-    // Teacher (or admin) locks one assessment component — or, when `component`
-    // is omitted, every component currently configured for the section — for
-    // a class-subject's term. SubjectScore.submitted (and the review-request
-    // notification) only fires once every configured component is locked.
+    // Admin/owner locks one assessment component — or, when `component` is
+    // omitted, every component currently configured for the section — for a
+    // class-subject's term. Locking (like reopening) is admin-only: a
+    // teacher only ever enters scores into whatever's still unlocked, never
+    // decides when entry closes. SubjectScore.submitted (and the
+    // review-request notification) only fires once every configured
+    // component is locked.
     submitScores: async (ctx) => {
-      can(ctx, "results:enter");
+      can(ctx, "results:publish");
       const schoolId = ctx.session.user.schoolId;
-      const teacher = ctx.session.user.role === "TEACHER" ? ctx.session.user.teacher : null;
       const classSubjectId = str(ctx.body.classSubjectId);
       const termId = str(ctx.body.termId);
       const componentParam = str(ctx.body.component);
       if (!classSubjectId || !termId) throw new Error("classSubjectId and termId required");
 
       const cs = await prisma.classSubject.findFirst({
-        where: { id: classSubjectId, schoolId, ...(teacher ? { teacherId: teacher.id } : {}) },
+        where: { id: classSubjectId, schoolId },
         select: { id: true, subject: { select: { name: true } }, classGroup: { select: { name: true, level: { select: { name: true, section: true } } } } },
       });
-      if (!cs) throw new Error(teacher ? "You can only submit scores for your own subjects" : "Class subject not found");
-      if (teacher) {
-        const windowOpen = await assessmentWindowOpen(schoolId, "RESULTS", { classSubjectId, section: cs.classGroup.level.section });
-        if (!windowOpen) throw new Error("The results entry window is closed for this term.");
-      }
+      if (!cs) throw new Error("Class subject not found");
 
       const config = await getResultConfig(schoolId, cs.classGroup.level.section);
       const compNames = config.components.map((c) => c.name);
