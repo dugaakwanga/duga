@@ -54,15 +54,18 @@ function parseAttendanceDate(value: string) {
   return date;
 }
 
-async function assertClassTeacher(schoolId: string, classGroupId: string, teacherId?: string) {
-  if (!teacherId) throw new Error("Only class teachers can take attendance");
+// Who may mark/edit a given class's attendance: a teacher only for a class
+// where they are the form teacher, or an owner/admin for any class in the
+// school (school-wide "admin attendance management" — including retroactive
+// correction of a date already taken by the class teacher).
+async function resolveMarkableClass(schoolId: string, classGroupId: string, role: string, teacherId?: string) {
   const classGroup = await prisma.classGroup.findFirst({ where: { id: classGroupId, schoolId }, include: { level: true } });
-  if (!classGroup || classGroup.formTeacherId !== teacherId) {
-    const err = new Error("You can only take attendance for a class where you are the class teacher") as Error & { status?: number };
-    err.status = 403;
-    throw err;
-  }
-  return classGroup;
+  if (!classGroup) throw new Error("Class not found");
+  if (role === "OWNER" || role === "ADMIN") return classGroup;
+  if (role === "TEACHER" && teacherId && classGroup.formTeacherId === teacherId) return classGroup;
+  const err = new Error("You can only take attendance for a class where you are the class teacher") as Error & { status?: number };
+  err.status = 403;
+  throw err;
 }
 
 export const attendanceModule: Module = {
@@ -148,11 +151,11 @@ export const attendanceModule: Module = {
     const entries = Array.isArray(ctx.body.entries) ? (ctx.body.entries as Array<{ studentId: string; status: string; remark?: string }>) : [];
     if (entries.length === 0) throw new Error("No attendance entries provided");
 
-    // Attendance is taken only by the class teacher. Admins and owners can
-    // monitor records but cannot mark attendance on a class teacher's behalf.
+    // Attendance is taken by the class teacher, or school-wide by an
+    // owner/admin — including retroactively correcting a date already taken.
     const role = ctx.session.user.role;
-    if (role !== "TEACHER") throw new Error("Only class teachers can take student attendance");
-    const classGroup = await assertClassTeacher(schoolId, classGroupId, teacher?.id);
+    if (!["TEACHER", "OWNER", "ADMIN"].includes(role)) throw new Error("Only class teachers or admins can take student attendance");
+    const classGroup = await resolveMarkableClass(schoolId, classGroupId, role, teacher?.id);
     const section = await resolveSection(ctx);
     if (section && classGroup.level.section !== section) throw new Error("You can only take attendance in your active section");
 
@@ -178,7 +181,14 @@ export const attendanceModule: Module = {
       });
       results.push(row);
     }
-    await logAudit({ schoolId, userId: ctx.session.user.id, action: "attendance.taken", entityType: "StudentAttendance", meta: { classGroupId, date, count: results.length } });
+    const isAdminOverride = (role === "OWNER" || role === "ADMIN") && dateObj.getTime() < todayUTC().getTime();
+    await logAudit({
+      schoolId,
+      userId: ctx.session.user.id,
+      action: isAdminOverride ? "attendance.overridden" : "attendance.taken",
+      entityType: "StudentAttendance",
+      meta: { classGroupId, date, count: results.length, actorRole: role },
+    });
     return { count: results.length };
   },
 
@@ -194,10 +204,11 @@ export const attendanceModule: Module = {
       const date = ctx.query.get("date") ?? isoDay(new Date());
       const dateObj = parseAttendanceDate(date);
 
-      // Only the class teacher may load an attendance-taking roster.
+      // The class teacher, or an owner/admin (school-wide), may load an
+      // attendance-taking roster — including for a past date, to correct it.
       const role = ctx.session.user.role;
-      if (role !== "TEACHER") throw new Error("Only class teachers can take student attendance");
-      const classGroup = await assertClassTeacher(schoolId, classGroupId, ctx.session.user.teacher?.id);
+      if (!["TEACHER", "OWNER", "ADMIN"].includes(role)) throw new Error("Only class teachers or admins can take student attendance");
+      const classGroup = await resolveMarkableClass(schoolId, classGroupId, role, ctx.session.user.teacher?.id);
       const section = await resolveSection(ctx);
       if (section && classGroup.level.section !== section) throw new Error("You can only take attendance in your active section");
 
