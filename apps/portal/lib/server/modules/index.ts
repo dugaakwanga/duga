@@ -45,6 +45,7 @@ import { promotionModule } from "./promotion";
 import { securityModule } from "./security";
 import { admissionsTestModule } from "./admissionsTest";
 import { calendarModule } from "./calendar";
+import { schemeModule } from "./scheme";
 
 export const modules: Record<string, Module> = {
   dashboard: dashboardModule,
@@ -81,6 +82,7 @@ export const modules: Record<string, Module> = {
   security: securityModule,
   admissionsTest: admissionsTestModule,
   calendar: calendarModule,
+  scheme: schemeModule,
 };
 
 export type { Ctx };

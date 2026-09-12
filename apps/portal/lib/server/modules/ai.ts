@@ -1,6 +1,7 @@
 import type { Module } from ".";
 import { can, str, num } from "../helpers";
 import { generateSmartTimetable } from "./timetable";
+import { findSchemeChunks } from "./scheme";
 import { checkRateLimit } from "@duga/core/server";
 import { hasPermission, type Role } from "@duga/core";
 import type { Ctx } from "@/app/api/v1/[...path]/route";
@@ -210,6 +211,39 @@ export const aiModule: Module = {
       }`;
       const reply = await generate(system, prompt, 0.7, 1200);
       return { reply };
+    },
+
+    // Lesson-note draft grounded in the school's uploaded scheme of work
+    // (see scheme.ts) when a matching subject/level section was found, so
+    // the note follows the actual official curriculum instead of whatever
+    // topic the teacher free-typed. Falls back to the generic `draft`
+    // prompt when nothing's been uploaded yet or nothing matches.
+    draftLesson: async (ctx) => {
+      can(ctx, "ai:use");
+      assertAiRateLimit(ctx);
+      const subject = str(ctx.body.subject) ?? "the subject";
+      const level = str(ctx.body.level);
+      const topic = str(ctx.body.topic);
+      const week = str(ctx.body.week);
+
+      const matches = await findSchemeChunks(ctx.session.user.schoolId, { levelName: level, subjectName: subject, topicHint: topic });
+
+      if (matches.length === 0) {
+        const system = "You write structured lesson notes with: Objectives, Key points (bulleted), Teaching activity, and Quick assessment.";
+        const prompt = `Subject: ${subject}\nTopic: ${topic ?? "(choose an appropriate topic for this subject and level)"}${level ? `\nLevel/Class: ${level}` : ""}${week ? `\nWeek: ${week}` : ""}`;
+        const reply = await generate(system, prompt, 0.7, 1200);
+        return { reply, grounded: false };
+      }
+
+      const excerpt = matches.map((m) => `--- ${m.subjectName}${m.levelName ? ` (${m.levelName})` : ""}${m.term ? `, ${m.term} TERM` : ""} ---\n${m.text}`).join("\n\n");
+      const system =
+        "You write structured lesson notes for a Nigerian school teacher, strictly grounded in the official scheme-of-work excerpt provided. " +
+        "Use ONLY topics/subtopics that actually appear in the excerpt — if a specific week or topic was requested, find it in the excerpt " +
+        "(the excerpt is a raw extract from a PDF, so formatting may be messy — read past that). " +
+        "Output: Objectives, Key points (bulleted), Teaching activity, and Quick assessment.";
+      const prompt = `Scheme of work excerpt:\n${excerpt}\n\n---\nDraft a lesson note for Subject: ${subject}${level ? `, Level/Class: ${level}` : ""}${week ? `, Week ${week}` : ""}${topic ? `, Topic: ${topic}` : " — pick the most relevant week/topic from the excerpt above"}.`;
+      const reply = await generate(system, prompt, 0.6, 1400);
+      return { reply, grounded: true, sections: matches.map((m) => ({ subjectName: m.subjectName, levelName: m.levelName, term: m.term })) };
     },
 
     // Owner/admin: build the whole class timetable with a single smart,

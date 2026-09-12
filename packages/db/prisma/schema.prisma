@@ -1230,6 +1230,47 @@ model SubjectScore {
   @@index([schoolId])
 }
 
+// An uploaded scheme-of-work document (e.g. a NERDC-aligned curriculum PDF),
+// parsed into per-subject/level/term chunks so the AI lesson-note generator
+// can ground a draft in the school's actual official curriculum instead of
+// a generic topic the teacher typed in free text.
+model SchemeOfWork {
+  id               String   @id @default(cuid())
+  schoolId         String
+  section          String
+  title            String
+  uploadedByUserId String?
+  createdAt        DateTime @default(now())
+
+  chunks SchemeOfWorkChunk[]
+
+  @@index([schoolId])
+}
+
+// One (subject, level, term) section of a scheme document — the document
+// repeats a subject's header once per term, so splitting on each header
+// occurrence naturally yields one chunk per term already. `text` is the raw
+// extracted section (week-by-week topics/subtopics) handed to the AI as-is;
+// levelName/subjectName/term are best-effort tags for the subject/level
+// picker, not a strict parse — the AI reads the real text to find a specific
+// week or topic within it.
+model SchemeOfWorkChunk {
+  id          String  @id @default(cuid())
+  schemeId    String
+  levelName   String?
+  subjectName String
+  term        String?
+  text        String
+  pageStart   Int?
+  pageEnd     Int?
+
+  scheme SchemeOfWork @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+
+  @@index([schemeId])
+  @@index([levelName])
+  @@index([subjectName])
+}
+
 // Granular score-entry lock, independent per assessment component (e.g. one
 // of ResultConfig.components — "CA1", "Test", "Assignment", "Exam"...) rather
 // than one all-or-nothing SubjectScore.submitted flag for a class-subject's

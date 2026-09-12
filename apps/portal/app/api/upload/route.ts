@@ -21,7 +21,7 @@ const IMAGE_TYPES: Record<string, string> = {
 };
 
 function ext(mime: string, purpose: string): string {
-  if (purpose === "library") {
+  if (purpose === "library" || purpose === "scheme") {
     return LIBRARY_TYPES[mime] ?? "pdf";
   }
   return IMAGE_TYPES[mime] ?? "jpg";
@@ -40,8 +40,8 @@ export async function POST(request: NextRequest) {
     const stateUrl = new URL(request.url);
     const purpose = stateUrl.searchParams.get("purpose") ?? "gallery";
 
-    if (purpose === "library") {
-      assertPermission(session.user.role, "library:manage");
+    if (purpose === "library" || purpose === "scheme") {
+      assertPermission(session.user.role, purpose === "scheme" ? "settings:manage" : "library:manage");
     } else if (purpose === "student-photo") {
       assertPermission(session.user.role, "students:manage");
     } else if (purpose === "school-logo") {
@@ -63,24 +63,25 @@ export async function POST(request: NextRequest) {
     if (!(file instanceof File)) {
       return NextResponse.json({ ok: false, error: "No file uploaded" }, { status: 400 });
     }
-    const mime = file.type || (purpose === "library" ? "application/pdf" : "image/jpeg");
-    const allowed = purpose === "library" ? LIBRARY_TYPES : IMAGE_TYPES;
+    const isDocument = purpose === "library" || purpose === "scheme";
+    const mime = file.type || (isDocument ? "application/pdf" : "image/jpeg");
+    const allowed = isDocument ? LIBRARY_TYPES : IMAGE_TYPES;
     if (!allowed[mime]) {
-      const hint = purpose === "library" ? "Only PDF, EPUB and MOBI files are allowed" : "Only JPG, PNG, WebP and GIF images are allowed";
+      const hint = isDocument ? "Only PDF, EPUB and MOBI files are allowed" : "Only JPG, PNG, WebP and GIF images are allowed";
       return NextResponse.json({ ok: false, error: hint }, { status: 400 });
     }
     // Clock photos are a client-compressed snapshot meant to stay tiny (a few
     // tens of KB) — a much lower cap than a normal image upload catches a
     // compression failure instead of silently storing a full-size photo.
-    const maxBytes = purpose === "library" ? 64 * 1024 * 1024 : purpose === "clock-photo" ? 512 * 1024 : 8 * 1024 * 1024;
+    const maxBytes = isDocument ? 64 * 1024 * 1024 : purpose === "clock-photo" ? 512 * 1024 : 8 * 1024 * 1024;
     if (file.size > maxBytes) {
-      const label = purpose === "library" ? "64MB" : purpose === "clock-photo" ? "512KB" : "8MB";
+      const label = isDocument ? "64MB" : purpose === "clock-photo" ? "512KB" : "8MB";
       return NextResponse.json({ ok: false, error: `File must be under ${label}` }, { status: 400 });
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const name = `${crypto.randomUUID()}.${ext(mime, purpose)}`;
-    const folder = purpose === "library" ? "library" : purpose === "avatar" ? "avatars" : purpose === "student-photo" ? "students" : purpose === "school-logo" ? "school" : purpose === "clock-photo" ? "clock" : "gallery";
+    const folder = purpose === "library" ? "library" : purpose === "scheme" ? "scheme" : purpose === "avatar" ? "avatars" : purpose === "student-photo" ? "students" : purpose === "school-logo" ? "school" : purpose === "clock-photo" ? "clock" : "gallery";
     const { url: fileUrl, key, bucket } = await uploadPublicFile({
       folder,
       name,

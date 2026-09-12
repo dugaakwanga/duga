@@ -382,6 +382,15 @@ export default function SettingsPage() {
             </Link>
           </Card>
 
+          <Card title="Scheme of Work" style={{ marginTop: 16 }}>
+            <div style={{ fontSize: 13.5, color: "var(--duga-ink-2)", marginBottom: 12 }}>
+              Upload the school's official curriculum so the AI assistant can draft lesson notes grounded in it, not just a generic topic.
+            </div>
+            <Link href="/portal/settings/scheme" className="duga-btn duga-btn--outline duga-btn--sm" style={{ display: "inline-flex" }}>
+              Manage scheme of work
+            </Link>
+          </Card>
+
           {data.role === "OWNER" && (
             <Card title="Finance access" style={{ marginTop: 16 }}>
               <div style={{ fontSize: 13.5, color: "var(--duga-ink-2)", marginBottom: 12 }}>
