@@ -784,30 +784,32 @@ export default function GamesPage() {
           ) : !board || board.length === 0 ? (
             <EmptyState title="No scores yet" hint="Scores appear here once students play an assigned game." />
           ) : (
-            <table className="duga-table">
-              <thead>
-                <tr>
-                  <th>Rank</th>
-                  <th>Student</th>
-                  <th>Class</th>
-                  <th>Games</th>
-                  <th>Best</th>
-                  <th>Total points</th>
-                </tr>
-              </thead>
-              <tbody>
-                {board.map((row) => (
-                  <tr key={row.studentId}>
-                    <td><strong>{RANK_MEDALS[row.rank - 1] ?? row.rank}</strong></td>
-                    <td>{row.name}<div style={{ fontSize: 12, color: "var(--duga-muted)" }}>{row.section.toLowerCase()}</div></td>
-                    <td>{row.className ?? "—"}</td>
-                    <td>{row.games}</td>
-                    <td>{row.best}</td>
-                    <td>{row.rewardPoints}</td>
+            <div className="duga-table-wrap">
+              <table className="duga-table">
+                <thead>
+                  <tr>
+                    <th>Rank</th>
+                    <th>Student</th>
+                    <th>Class</th>
+                    <th>Games</th>
+                    <th>Best</th>
+                    <th>Total points</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {board.map((row) => (
+                    <tr key={row.studentId}>
+                      <td><strong>{RANK_MEDALS[row.rank - 1] ?? row.rank}</strong></td>
+                      <td>{row.name}<div style={{ fontSize: 12, color: "var(--duga-muted)" }}>{row.section.toLowerCase()}</div></td>
+                      <td>{row.className ?? "—"}</td>
+                      <td>{row.games}</td>
+                      <td>{row.best}</td>
+                      <td>{row.rewardPoints}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </Modal>
@@ -934,18 +936,20 @@ export default function GamesPage() {
               {managing.invites.length === 0 ? (
                 <p style={{ fontSize: 12.5, color: "var(--duga-muted)", marginTop: 6 }}>No students have invited a friend to this game yet.</p>
               ) : (
-                <table className="duga-table" style={{ marginTop: 8 }}>
-                  <thead><tr><th>Guest</th><th>Status</th><th>Score</th></tr></thead>
-                  <tbody>
-                    {managing.invites.map((inv) => (
-                      <tr key={inv.id}>
-                        <td>{inv.guestName || inv.guestEmail}</td>
-                        <td><Badge tone={inv.status === "PLAYED" ? "success" : "neutral"}>{inv.status}</Badge></td>
-                        <td>{inv.score ?? "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <div className="duga-table-wrap" style={{ marginTop: 8 }}>
+                  <table className="duga-table">
+                    <thead><tr><th>Guest</th><th>Status</th><th>Score</th></tr></thead>
+                    <tbody>
+                      {managing.invites.map((inv) => (
+                        <tr key={inv.id}>
+                          <td>{inv.guestName || inv.guestEmail}</td>
+                          <td><Badge tone={inv.status === "PLAYED" ? "success" : "neutral"}>{inv.status}</Badge></td>
+                          <td>{inv.score ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           </div>
@@ -985,19 +989,21 @@ export default function GamesPage() {
         ) : myInvites.length === 0 ? (
           <EmptyState title="No invites sent yet" hint="Use “Invite a friend” on any game you're playing." />
         ) : (
-          <table className="duga-table">
-            <thead><tr><th>Guest</th><th>Status</th><th>Score</th><th></th></tr></thead>
-            <tbody>
-              {myInvites.map((inv) => (
-                <tr key={inv.id}>
-                  <td>{inv.guestName || inv.guestEmail}</td>
-                  <td><Badge tone={inv.status === "PLAYED" ? "success" : "neutral"}>{inv.status}</Badge></td>
-                  <td>{inv.score ?? "—"}</td>
-                  <td>{inv.status !== "PLAYED" && <Button size="sm" variant="ghost" onClick={() => copyInviteLink(inv)}>Copy link</Button>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="duga-table-wrap">
+            <table className="duga-table">
+              <thead><tr><th>Guest</th><th>Status</th><th>Score</th><th></th></tr></thead>
+              <tbody>
+                {myInvites.map((inv) => (
+                  <tr key={inv.id}>
+                    <td>{inv.guestName || inv.guestEmail}</td>
+                    <td><Badge tone={inv.status === "PLAYED" ? "success" : "neutral"}>{inv.status}</Badge></td>
+                    <td>{inv.score ?? "—"}</td>
+                    <td>{inv.status !== "PLAYED" && <Button size="sm" variant="ghost" onClick={() => copyInviteLink(inv)}>Copy link</Button>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Modal>
     </div>

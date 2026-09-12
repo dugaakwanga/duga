@@ -11,7 +11,14 @@
 }
 
 .portal-body { background: var(--portal-canvas); color: #26324a; }
-.portal-shell { grid-template-columns: 246px minmax(0, 1fr); }
+/* Only override the shell's grid on desktop — on mobile globals.css collapses
+   it to a single column and turns the sidebar into an off-canvas overlay
+   (see the max-width: 900px block there). An unconditional rule here would
+   win the cascade (this file loads after globals.css) and force a 246px
+   sidebar column back in on every viewport, crushing the content column. */
+@media (min-width: 901px) {
+  .portal-shell { grid-template-columns: 246px minmax(0, 1fr); }
+}
 
 /* Navigation is quiet by default; colour identifies the active destination. */
 .portal-sidebar {

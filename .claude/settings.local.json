@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(node -e \"const fs=require\\('fs'\\); const b=fs.readFileSync\\('public/_idcard-preview/sample-card.pdf'\\); console.log\\(b.length, b.slice\\(0,20\\).toString\\(\\)\\)\")",
+      "Bash(node -e ' *)"
+    ]
+  }
+}
