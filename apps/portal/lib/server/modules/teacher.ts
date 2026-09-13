@@ -211,14 +211,18 @@ export const teacherModule: Module = {
       const requested = str(ctx.query.get("classGroupId"));
       const selected = formClasses.find((c) => c.id === requested) ?? formClasses[0]!;
 
-      const [students, classSubjects] = await Promise.all([
-        prisma.student.findMany({ where: { schoolId, currentClassGroupId: selected.id, status: "ACTIVE" }, select: { id: true } }),
+      const [roster, classSubjects] = await Promise.all([
+        prisma.student.findMany({
+          where: { schoolId, currentClassGroupId: selected.id, status: "ACTIVE" },
+          include: { user: { select: { firstName: true, lastName: true } } },
+          orderBy: { admissionNumber: "asc" },
+        }),
         prisma.classSubject.findMany({
           where: { schoolId, classGroupId: selected.id },
           select: { id: true, subject: { select: { name: true } }, teacher: { select: { user: { select: { firstName: true, lastName: true } } } } },
         }),
       ]);
-      const studentIds = students.map((s) => s.id);
+      const studentIds = roster.map((s) => s.id);
 
       // Attendance trend for this class over the last 7 days.
       const since = new Date();
@@ -284,13 +288,80 @@ export const teacherModule: Module = {
 
       const lastAttendance = attendance[attendance.length - 1];
 
+      // Per-student roster — "click a student, see their own performance"
+      // starts here. Attendance is over every record on file (not just the
+      // 7-day trend above, which is the class-wide chart), same window the
+      // student's own attendance page uses.
+      const rosterAttendance = studentIds.length
+        ? await prisma.studentAttendance.findMany({ where: { schoolId, studentId: { in: studentIds } }, select: { studentId: true, status: true } })
+        : [];
+      const attendanceByStudent = new Map<string, { present: number; total: number }>();
+      for (const r of rosterAttendance) {
+        const e = attendanceByStudent.get(r.studentId) ?? { present: 0, total: 0 };
+        e.total += 1;
+        if (r.status === "PRESENT" || r.status === "LATE") e.present += 1;
+        attendanceByStudent.set(r.studentId, e);
+      }
+      const students = roster.map((s) => {
+        const a = attendanceByStudent.get(s.id);
+        return {
+          id: s.id,
+          name: `${s.user.firstName} ${s.user.lastName}`,
+          admissionNumber: s.admissionNumber,
+          attendanceRate: a && a.total > 0 ? Math.round((a.present / a.total) * 100) : null,
+        };
+      });
+
       return {
         classes: formClasses.map((c) => ({ id: c.id, name: `${c.level.name} ${c.name}`, studentCount: c._count.students })),
         selectedClassId: selected.id,
         studentCount: studentIds.length,
         attendance,
         subjects,
+        students,
         todayAttendanceRate: lastAttendance?.value ?? null,
+      };
+    },
+
+    // One student's own performance — the class teacher's active-term report
+    // card (subject-by-subject scores, whatever comment/behavioral grades
+    // are already on it) plus their all-time attendance rate. Scoped so a
+    // teacher can only ever pull up a student who is actually in their own
+    // form class.
+    studentCard: async (ctx) => {
+      can(ctx, "classes:view");
+      const teacher = ctx.session.user.teacher;
+      if (!teacher) throw new Error("Only a class teacher can view this");
+      const schoolId = ctx.session.user.schoolId;
+      const studentId = str(ctx.query.get("studentId"));
+      if (!studentId) throw new Error("studentId required");
+
+      const student = await prisma.student.findFirst({
+        where: { id: studentId, schoolId },
+        include: { user: { select: { firstName: true, lastName: true } }, classGroup: true },
+      });
+      if (!student || !student.classGroup || student.classGroup.formTeacherId !== teacher.id) {
+        const err = new Error("You can only view students in your own class") as Error & { status?: number };
+        err.status = 403;
+        throw err;
+      }
+
+      const activeTerm = await prisma.term.findFirst({ where: { schoolId, status: "ACTIVE" } });
+      const reportCard = activeTerm
+        ? await prisma.reportCard.findUnique({
+            where: { studentId_termId: { studentId, termId: activeTerm.id } },
+            include: { items: { include: { subject: true }, orderBy: { subject: { name: "asc" } } } },
+          })
+        : null;
+
+      const records = await prisma.studentAttendance.findMany({ where: { schoolId, studentId }, select: { status: true } });
+      const present = records.filter((r) => r.status === "PRESENT" || r.status === "LATE").length;
+
+      return {
+        student: { id: student.id, name: `${student.user.firstName} ${student.user.lastName}`, admissionNumber: student.admissionNumber },
+        activeTerm: activeTerm ? { id: activeTerm.id, name: activeTerm.name } : null,
+        reportCard,
+        attendance: { total: records.length, present, rate: records.length ? Math.round((present / records.length) * 100) : 0 },
       };
     },
   },
