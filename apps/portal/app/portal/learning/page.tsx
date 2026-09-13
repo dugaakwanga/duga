@@ -202,9 +202,18 @@ export default function LearningPage() {
             // "New test" here left a test permanently stuck at zero questions
             // (its own modal said "managed via the API", which doesn't exist).
             // Teacher/CBT is the real authoring page; link there instead.
+            //
+            // Same problem for notes: this page's plain modal (just Topic +
+            // Content) has none of Lesson Notes' scheme-of-work topic picker,
+            // AI drafting, or illustrations — link to the real authoring page
+            // there too instead of a second, worse way to create a note.
             kind === "tests" ? (
               <Link href="/portal/teacher/cbt" className="duga-btn duga-btn--primary duga-btn--md" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                 <Icon name="plus" size={16} /> New test
+              </Link>
+            ) : kind === "notes" ? (
+              <Link href="/portal/teacher/notes" className="duga-btn duga-btn--primary duga-btn--md" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <Icon name="plus" size={16} /> New note
               </Link>
             ) : (
               <Button onClick={() => setOpen(true)}><Icon name="plus" size={16} /> New</Button>
