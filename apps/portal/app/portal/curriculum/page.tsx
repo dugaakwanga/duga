@@ -128,17 +128,21 @@ export default function CurriculumPage() {
 
   // Per-chunk formatted tables, layered on top of whatever browse() already
   // returned cached (tableJson) — keyed here too so a freshly-formatted
-  // table shows immediately without waiting on a full reload.
+  // table shows immediately without waiting on a full reload. Triggered
+  // automatically the first time a section is opened (see the <details>
+  // onToggle below) rather than needing an extra click.
   const [tables, setTables] = useState<Record<string, ChunkTable>>({});
   const [formattingId, setFormattingId] = useState<string | null>(null);
+  const [formatErrors, setFormatErrors] = useState<Record<string, string>>({});
 
   async function formatTable(chunkId: string) {
     setFormattingId(chunkId);
+    setFormatErrors((e) => ({ ...e, [chunkId]: "" }));
     try {
       const d = await api<{ table: ChunkTable }>(`scheme/${chunkId}/formatTable`, { method: "POST", body: {} });
       setTables((t) => ({ ...t, [chunkId]: d.table }));
     } catch (e) {
-      alert((e as Error).message);
+      setFormatErrors((err) => ({ ...err, [chunkId]: (e as Error).message }));
     } finally {
       setFormattingId(null);
     }
@@ -373,9 +377,15 @@ export default function CurriculumPage() {
                               <div style={{ display: "grid", gap: 8, marginTop: 6 }}>
                                 {lvl.chunks.map((c) => {
                                   const table = tables[c.id] ?? c.tableJson;
+                                  const isFormatting = formattingId === c.id;
+                                  const formatError = formatErrors[c.id];
                                   return (
                                     <Card key={c.id} style={{ background: "var(--duga-surface-2, #f8f9fb)" }}>
-                                      <details>
+                                      <details
+                                        onToggle={(e) => {
+                                          if (e.currentTarget.open && !table && !isFormatting) formatTable(c.id);
+                                        }}
+                                      >
                                         <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 13.5 }}>
                                           {c.term ? `${c.term} Term` : "Term not specified"}
                                         </summary>
@@ -387,15 +397,22 @@ export default function CurriculumPage() {
                                               </tr>
                                             ))}
                                           </Table>
+                                        ) : isFormatting ? (
+                                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 13, color: "var(--duga-muted)" }}>
+                                            <Spinner size={16} /> Arranging as a table…
+                                          </div>
                                         ) : (
-                                          <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 13, lineHeight: 1.6, marginTop: 12, color: "var(--duga-ink-2)" }}>
-                                            {c.text}
-                                          </pre>
+                                          <>
+                                            {formatError && <Alert tone="danger">{formatError}</Alert>}
+                                            <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 13, lineHeight: 1.6, marginTop: 12, color: "var(--duga-ink-2)" }}>
+                                              {c.text}
+                                            </pre>
+                                          </>
                                         )}
                                         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                                          {!table && (
-                                            <Button size="sm" variant="outline" loading={formattingId === c.id} onClick={() => formatTable(c.id)}>
-                                              Show as a table
+                                          {!table && !isFormatting && (
+                                            <Button size="sm" variant="outline" onClick={() => formatTable(c.id)}>
+                                              {formatError ? "Try again" : "Show as a table"}
                                             </Button>
                                           )}
                                           {data.canEdit && (

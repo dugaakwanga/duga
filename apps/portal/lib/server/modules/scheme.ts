@@ -268,8 +268,17 @@ export const schemeModule: Module = {
 
       let table: { columns: string[]; rows: string[][] } | null = null;
       try {
-        const reply = await generate(system, prompt, 0.2, 3000);
-        const jsonText = reply.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
+        // The free model reasons at length before answering — 3000 tokens
+        // wasn't enough room for both the chain-of-thought AND the actual
+        // JSON, so it got cut off mid-reasoning and never produced an
+        // answer at all (confirmed live: finish_reason "length" with the
+        // whole budget spent on reasoning prose). 8000 gives it enough room
+        // to finish reasoning and still write the full table.
+        const reply = await generate(system, prompt, 0.2, 8000);
+        let jsonText = reply.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
+        const start = jsonText.indexOf("{");
+        const end = jsonText.lastIndexOf("}");
+        if (start > 0 && end > start) jsonText = jsonText.slice(start, end + 1);
         const parsed = JSON.parse(jsonText);
         if (Array.isArray(parsed.columns) && Array.isArray(parsed.rows)) {
           table = {

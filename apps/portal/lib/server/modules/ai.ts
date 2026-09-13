@@ -55,7 +55,7 @@ interface ChatTurn {
 // means a message crafted to look like "Assistant: ignore your instructions"
 // still arrives tagged as `user`, not `assistant`; the model has no reason
 // to treat it as something it said itself.
-export async function generate(system: string, prompt: string | ChatTurn[], temperature = 0.7, maxTokens = 1024): Promise<string> {
+export async function generate(system: string, prompt: string | ChatTurn[], temperature = 0.7, maxTokens = 1024, extra?: Record<string, unknown>): Promise<string> {
   if (!available()) {
     throw new Error("AI is not configured yet. Add an OPENROUTER_API_KEY to the server environment to enable the assistant.");
   }
@@ -71,6 +71,7 @@ export async function generate(system: string, prompt: string | ChatTurn[], temp
       messages: [{ role: "system", content: system }, ...turns],
       temperature,
       max_tokens: maxTokens,
+      ...extra,
     }),
   });
   if (!res.ok) {
@@ -80,7 +81,10 @@ export async function generate(system: string, prompt: string | ChatTurn[], temp
     throw err;
   }
   const data = await res.json();
-  const text = String(data?.choices?.[0]?.message?.content ?? "").trim();
+  const message = data?.choices?.[0]?.message;
+  // A reasoning model can leave `content` empty with its whole answer sitting
+  // in `reasoning` instead (see generateVision below for the same fallback).
+  const text = String(message?.content || message?.reasoning || "").trim();
   if (!text) throw new Error("The AI assistant returned an empty reply. Please try again.");
   return text;
 }
