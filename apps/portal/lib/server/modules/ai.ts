@@ -188,6 +188,20 @@ export const aiModule: Module = {
           return { reply: `I couldn't build the timetable: ${(e as Error).message}` };
         }
       }
+      // "Generate/draw/create a picture/diagram/image of X" — routed to
+      // Pollinations.ai (free, no key needed; see teacher/notes/page.tsx for
+      // the same endpoint used by the lesson-note illustration button)
+      // instead of the text model, which cannot produce an image at all.
+      const wantsImage =
+        /\b(image|picture|photo|diagram|illustration|drawing|poster|graphic)\b/i.test(prompt) &&
+        /\b(generate|create|make|draw|design|show me)\b/i.test(prompt);
+      if (wantsImage) {
+        const subjectMatch = prompt.match(/(?:of|showing|about|depicting)\s+(.+)$/i);
+        const subject = (subjectMatch?.[1] ?? prompt).replace(/[.?!]+$/, "").trim();
+        const imagePrompt = `${subject}, simple clean educational illustration for a Nigerian school, no watermark, no text`;
+        const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt)}?width=768&height=512&nologo=true`;
+        return { reply: `Here you go — an image of ${subject}:`, imageUrl };
+      }
       // The shell tells us which portal page the user is on so the assistant
       // can ground its help in what they are actually trying to do.
       const page = String(ctx.body.page ?? "").trim();

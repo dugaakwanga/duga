@@ -452,7 +452,7 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
   const [notifCount, setNotifCount] = useState(0);
 
   const [aiOpen, setAiOpen] = useState(false);
-  const [aiMessages, setAiMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const [aiMessages, setAiMessages] = useState<Array<{ role: "user" | "assistant"; content: string; imageUrl?: string }>>([]);
   const [aiInput, setAiInput] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
   const [aiPreset, setAiPreset] = useState<string | null>(null);
@@ -484,8 +484,8 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
     setAiPreset(null);
     setAiBusy(true);
     try {
-      const d = await api<{ reply: string }>("ai/chat", { method: "POST", body: { messages: [...aiMessages, { role: "user", content: prompt }], page: pathname, section: getActiveSection() ?? undefined }, loading: false });
-      setAiMessages((prev) => [...prev, { role: "assistant", content: d.reply }]);
+      const d = await api<{ reply: string; imageUrl?: string }>("ai/chat", { method: "POST", body: { messages: [...aiMessages, { role: "user", content: prompt }], page: pathname, section: getActiveSection() ?? undefined }, loading: false });
+      setAiMessages((prev) => [...prev, { role: "assistant", content: d.reply, imageUrl: d.imageUrl }]);
     } catch (e) {
       setAiMessages((prev) => [...prev, { role: "assistant", content: (e as Error).message }]);
     } finally {
@@ -698,7 +698,13 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
                 <div className="duga-ai__msgs">
                   {aiMessages.map((m, i) => (
                     <div key={i} className={`duga-ai__msg ${m.role}`}>
-                      <div className="duga-ai__bubble">{m.content}</div>
+                      <div className="duga-ai__bubble">
+                        {m.content}
+                        {m.imageUrl && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={m.imageUrl} alt="" style={{ display: "block", width: "100%", maxWidth: 260, marginTop: 8, borderRadius: 8 }} />
+                        )}
+                      </div>
                     </div>
                   ))}
                   {aiBusy && (
