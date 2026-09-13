@@ -97,13 +97,26 @@ export default function TeacherNotesPage() {
     setOpen(true);
   }
 
+  // Loads an image and resolves its URL once ready, or rejects — same probe
+  // technique as generateIllustration, wrapped as a promise so it can be
+  // awaited inline while a draft is being assembled.
+  function loadIllustration(prompt: string): Promise<string> {
+    const url = illustrationUrl(prompt);
+    return new Promise((resolve, reject) => {
+      const probe = new Image();
+      probe.onload = () => resolve(url);
+      probe.onerror = () => reject(new Error("image failed"));
+      probe.src = url;
+    });
+  }
+
   async function generateFromScheme() {
     const cs = options.find((o) => o.id === form.classSubjectId);
     if (!cs) return alert("Choose a class subject first");
     setGenerating(true);
     setGroundedHint(null);
     try {
-      const res = await api<{ reply: string; grounded: boolean }>("ai/draftLesson", {
+      const res = await api<{ reply: string; grounded: boolean; illustration?: string | null }>("ai/draftLesson", {
         method: "POST",
         body: {
           subject: cs.subject.name,
@@ -112,12 +125,34 @@ export default function TeacherNotesPage() {
           week: form.week || undefined,
         },
       });
-      setForm((f) => ({ ...f, content: res.reply }));
-      setGroundedHint(
-        res.grounded
-          ? "Drafted from your uploaded scheme of work."
-          : "No matching scheme of work section found — this is a generic draft. Upload one in Settings → Scheme of Work for a curriculum-grounded draft.",
-      );
+      // Lesson-note content is displayed as plain text (no markdown
+      // rendering) both here and on the student-facing Learning page, so an
+      // inline "![...](...)" reference would just show as literal syntax.
+      // The images list is what actually renders as pictures in both
+      // places — the model's [[ILLUSTRATION_HERE]] token just marks that a
+      // picture belongs with this note at all, so it's stripped from the
+      // text and the generated image is added to that list instead.
+      const content = res.reply.replace(/\n?\[\[ILLUSTRATION_HERE\]\]\n?/, "\n").trim();
+      let illustrated = false;
+      if (res.illustration) {
+        setGeneratingImage(true);
+        try {
+          const prompt = `simple educational diagram: ${res.illustration}, for a ${cs.classGroup.level.name} ${cs.subject.name} class, labeled, clean line art, no watermark, no text`;
+          const url = await loadIllustration(prompt);
+          setImages((prev) => [...prev, url]);
+          illustrated = true;
+        } catch {
+          // The AI still identified a good illustration idea — the note
+          // text itself is unaffected either way, so just skip the image.
+        } finally {
+          setGeneratingImage(false);
+        }
+      }
+      setForm((f) => ({ ...f, content }));
+      const base = res.grounded
+        ? "Drafted from your uploaded scheme of work."
+        : "No matching scheme of work section found — this is a generic draft. Upload one in Settings → Scheme of Work for a curriculum-grounded draft.";
+      setGroundedHint(illustrated ? `${base} Added a matching illustration to the images below.` : base);
     } catch (e) {
       alert((e as Error).message);
     } finally {
