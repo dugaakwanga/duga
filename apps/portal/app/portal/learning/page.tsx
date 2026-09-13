@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { PageHeader, Card, Badge, Button, Modal, Field, Input, Textarea, Alert, Spinner, EmptyState, Tabs, Icon, Select } from "@duga/ui";
 import { api } from "@/lib/client/api";
+import { groupClassSubjectsBySubject } from "@/lib/client/classSubjectOptions";
 
 type Kind = "notes" | "assignments" | "tests" | "live";
 
@@ -299,10 +300,12 @@ export default function LearningPage() {
         <Field label="Class subject" required>
           <Select value={form.classSubjectId ?? ""} onChange={(e) => setForm({ ...form, classSubjectId: e.target.value })}>
             <option value="">Select a class subject…</option>
-            {options.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.subject.name} — {o.classGroup?.level.name ?? ""} {o.classGroup?.name ?? ""}
-              </option>
+            {groupClassSubjectsBySubject(options).map((g) => (
+              <optgroup key={g.subject} label={g.subject}>
+                {g.items.map((o) => (
+                  <option key={o.id} value={o.id}>{o.classGroup?.level.name ?? ""} {o.classGroup?.name ?? ""}</option>
+                ))}
+              </optgroup>
             ))}
           </Select>
         </Field>

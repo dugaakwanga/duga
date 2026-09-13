@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { PageHeader, Card, Badge, Button, Input, Textarea, Select, Modal, Alert, Spinner, EmptyState, Icon } from "@duga/ui";
 import { api } from "@/lib/client/api";
+import { groupClassSubjectsBySubject } from "@/lib/client/classSubjectOptions";
 
 interface ClassSubjectOption {
   id: string;
@@ -151,8 +152,12 @@ export default function TeacherNotesPage() {
             <label style={{ fontSize: 12.5, fontWeight: 600, display: "block", marginBottom: 6 }}>Class subject</label>
             <Select value={form.classSubjectId ?? ""} onChange={(e) => setForm({ ...form, classSubjectId: e.target.value })}>
               <option value="">Select a class subject…</option>
-              {options.map((o) => (
-                <option key={o.id} value={o.id}>{o.subject.name} — {o.classGroup.level.name} {o.classGroup.name}</option>
+              {groupClassSubjectsBySubject(options).map((g) => (
+                <optgroup key={g.subject} label={g.subject}>
+                  {g.items.map((o) => (
+                    <option key={o.id} value={o.id}>{o.classGroup.level.name} {o.classGroup.name}</option>
+                  ))}
+                </optgroup>
               ))}
             </Select>
           </div>
