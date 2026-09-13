@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { PageHeader, Card, Select, Alert, Spinner, EmptyState, Badge, Button, Modal, Field, Input, Textarea, Tabs, Table } from "@duga/ui";
+import { PageHeader, Card, Select, Alert, Spinner, EmptyState, Badge, Button, Modal, Field, Input, Textarea, Tabs, Table, Icon } from "@duga/ui";
 import { api } from "@/lib/client/api";
 import { useSection } from "@/components/SectionContext";
+import { downloadSchemePdf, type SchemePdfSection } from "@/lib/client/schemePdf";
 
 interface ChunkTable {
   columns: string[];
@@ -145,6 +146,38 @@ export default function CurriculumPage() {
       setFormatErrors((err) => ({ ...err, [chunkId]: (e as Error).message }));
     } finally {
       setFormattingId(null);
+    }
+  }
+
+  const [downloadingSubject, setDownloadingSubject] = useState<string | null>(null);
+
+  // Bundles every class/term this subject covers (within the currently
+  // shown section) into one downloadable PDF — reuses whatever table each
+  // chunk already has cached and formats any that don't yet, rather than
+  // making the user open every section first.
+  async function downloadSubjectPdf(sectionName: string, subject: string, chunks: Chunk[]) {
+    const key = `${sectionName}::${subject}`;
+    setDownloadingSubject(key);
+    try {
+      const resolved = await Promise.all(
+        chunks.map(async (c) => {
+          const existing = tables[c.id] ?? c.tableJson;
+          if (existing) return { chunk: c, table: existing };
+          try {
+            const d = await api<{ table: ChunkTable }>(`scheme/${c.id}/formatTable`, { method: "POST", body: {} });
+            setTables((t) => ({ ...t, [c.id]: d.table }));
+            return { chunk: c, table: d.table as ChunkTable | null };
+          } catch {
+            return { chunk: c, table: null as ChunkTable | null };
+          }
+        })
+      );
+      const sections: SchemePdfSection[] = resolved.map((r) => ({ levelName: r.chunk.levelName, term: r.chunk.term, table: r.table, text: r.chunk.text }));
+      await downloadSchemePdf(subject, sectionName, sections);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setDownloadingSubject(null);
     }
   }
 
@@ -368,8 +401,19 @@ export default function CurriculumPage() {
                     </div>
                   </div>
                   <div style={{ display: "grid", gap: 14 }}>
-                    {g.subjects.map((sub) => (
-                      <Card key={sub.subject} title={sub.subject}>
+                    {g.subjects.map((sub) => {
+                      const allChunks = sub.levels.flatMap((l) => l.chunks);
+                      const dlKey = `${g.section}::${sub.subject}`;
+                      return (
+                      <Card
+                        key={sub.subject}
+                        title={sub.subject}
+                        actions={
+                          <Button size="sm" variant="outline" loading={downloadingSubject === dlKey} onClick={() => downloadSubjectPdf(g.section, sub.subject, allChunks)}>
+                            <Icon name="reports" size={14} /> Download PDF
+                          </Button>
+                        }
+                      >
                         <div style={{ display: "grid", gap: 12 }}>
                           {sub.levels.map((lvl) => (
                             <div key={lvl.level}>
@@ -428,7 +472,8 @@ export default function CurriculumPage() {
                           ))}
                         </div>
                       </Card>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               ))}
