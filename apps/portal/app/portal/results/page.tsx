@@ -38,6 +38,7 @@ interface ReportCard {
   classGroupId?: string | null;
   status: string;
   isPublished: boolean;
+  teacherSubmittedAt?: string | null;
   average: number | null;
   position: number | null;
   gpa?: number | null;
@@ -1015,7 +1016,11 @@ export default function ResultsPage() {
                         <td>{rc.term?.name}</td>
                         <td>{rc.average !== null ? Number(rc.average).toFixed(1) : "—"}</td>
                         <td>{rc.position ?? "—"}</td>
-                        <td><Badge tone={rc.isPublished ? "success" : "neutral"}>{rc.isPublished ? "Published" : "Draft"}</Badge></td>
+                        <td>
+                          <Badge tone={rc.isPublished ? "success" : rc.teacherSubmittedAt ? "info" : "neutral"}>
+                            {rc.isPublished ? "Published" : rc.teacherSubmittedAt ? "Ready for review" : "Draft"}
+                          </Badge>
+                        </td>
                         <td>
                           <div style={{ display: "flex", gap: 6 }}>
                             <Button size="sm" variant="outline" loading={downloadingId === rc.id} onClick={() => downloadPdf(rc)}>PDF</Button>

@@ -1408,6 +1408,12 @@ model ReportCard {
   isPublished        Boolean   @default(false)
   publishedAt        DateTime?
   publishedBy        String?
+  // Set when the class teacher marks their comments/behavioral grades as a
+  // finished draft, ready for the admin to review and publish. Informational
+  // only — the admin can still publish (or the teacher can still edit) at
+  // any time; it just lets both sides see whether a card is still a work in
+  // progress.
+  teacherSubmittedAt DateTime?
   total              Int?
   average            Float?
   position           Int?

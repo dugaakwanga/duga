@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { PageHeader, Card, Stat, Badge, Select, Alert, Spinner, EmptyState, Icon, Table, Button, Modal, Field, Textarea } from "@duga/ui";
+import { PageHeader, Card, Stat, Badge, Select, Alert, Spinner, EmptyState, Icon, Table, Button, Modal, Field, Textarea, Tabs } from "@duga/ui";
 import { api } from "@/lib/client/api";
 import { BarChart } from "@/components/charts";
 import { useSection } from "@/components/SectionContext";
@@ -33,6 +33,7 @@ interface StudentCard {
     remark: string | null;
     psychomotor: Record<string, string> | null;
     items: ReportCardItem[];
+    teacherSubmittedAt: string | null;
   } | null;
   attendance: { total: number; present: number; rate: number };
 }
@@ -70,12 +71,17 @@ export default function MyClassPage() {
   const [traitsDraft, setTraitsDraft] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
+  const [modalTab, setModalTab] = useState("performance");
+  const [showPreview, setShowPreview] = useState(false);
+  const [submitBusy, setSubmitBusy] = useState(false);
 
   async function openStudent(s: RosterStudent) {
     setStudentTarget(s);
     setStudentCard(null);
     setStudentError(null);
     setStudentLoading(true);
+    setModalTab("performance");
+    setShowPreview(false);
     try {
       const d = await api<StudentCard>("teacher/studentCard", { query: { studentId: s.id } });
       setStudentCard(d);
@@ -85,6 +91,20 @@ export default function MyClassPage() {
       setStudentError((e as Error).message);
     } finally {
       setStudentLoading(false);
+    }
+  }
+
+  async function submitToAdmin() {
+    if (!studentCard?.reportCard) return;
+    setSubmitBusy(true);
+    try {
+      await api(`results/${studentCard.reportCard.id}/submitToAdmin`, { method: "POST" });
+      const now = new Date().toISOString();
+      setStudentCard((c) => (c && c.reportCard ? { ...c, reportCard: { ...c.reportCard, teacherSubmittedAt: now } } : c));
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setSubmitBusy(false);
     }
   }
 
@@ -261,53 +281,126 @@ export default function MyClassPage() {
               </Alert>
             ) : (
               <>
-                {studentCard.reportCard.items.length > 0 && (
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 8 }}>Subject scores — {studentCard.activeTerm.name}</div>
-                    <Table headers={["Subject", "CA", "Exam", "Total", "Grade"]}>
-                      {studentCard.reportCard.items.map((i) => (
-                        <tr key={i.id}>
-                          <td>{i.subject.name}</td>
-                          <td>{i.ca ?? "—"}</td>
-                          <td>{i.exam ?? "—"}</td>
-                          <td>{i.total ?? "—"}</td>
-                          <td><Badge tone="neutral">{i.grade ?? "—"}</Badge></td>
-                        </tr>
-                      ))}
-                    </Table>
-                  </div>
-                )}
+                <Tabs
+                  tabs={[
+                    { id: "performance", label: "Performance" },
+                    { id: "report", label: "Report card" },
+                  ]}
+                  value={modalTab}
+                  onChange={setModalTab}
+                />
 
-                {Object.keys(traitsDraft).length > 0 && (
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 8 }}>Behavioral grades</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 10 }}>
-                      {Object.keys(traitsDraft).map((trait) => (
-                        <Field key={trait} label={trait}>
-                          <Select value={traitsDraft[trait] ?? ""} onChange={(e) => setTraitsDraft((t) => ({ ...t, [trait]: e.target.value }))}>
-                            <option value="">—</option>
-                            {["A", "B", "C", "D", "E"].map((g) => <option key={g} value={g}>{g}</option>)}
-                          </Select>
-                        </Field>
-                      ))}
+                {modalTab === "performance" ? (
+                  studentCard.reportCard.items.length > 0 ? (
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 8 }}>Subject scores — {studentCard.activeTerm.name}</div>
+                      <Table headers={["Subject", "CA", "Exam", "Total", "Grade"]}>
+                        {studentCard.reportCard.items.map((i) => (
+                          <tr key={i.id}>
+                            <td>{i.subject.name}</td>
+                            <td>{i.ca ?? "—"}</td>
+                            <td>{i.exam ?? "—"}</td>
+                            <td>{i.total ?? "—"}</td>
+                            <td><Badge tone="neutral">{i.grade ?? "—"}</Badge></td>
+                          </tr>
+                        ))}
+                      </Table>
+                    </div>
+                  ) : (
+                    <EmptyState title="No subject scores yet" hint="Scores appear here once subject teachers enter and submit them." />
+                  )
+                ) : (
+                  <div style={{ display: "grid", gap: 16 }}>
+                    {studentCard.reportCard.teacherSubmittedAt && (
+                      <Alert tone="info">
+                        Submitted to admin on {new Date(studentCard.reportCard.teacherSubmittedAt).toLocaleString()} — you can keep editing and re-submit any time.
+                      </Alert>
+                    )}
+
+                    {Object.keys(traitsDraft).length > 0 && (
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 8 }}>Behavioral grades</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 10 }}>
+                          {Object.keys(traitsDraft).map((trait) => (
+                            <Field key={trait} label={trait}>
+                              <Select value={traitsDraft[trait] ?? ""} onChange={(e) => setTraitsDraft((t) => ({ ...t, [trait]: e.target.value }))}>
+                                <option value="">—</option>
+                                {["A", "B", "C", "D", "E"].map((g) => <option key={g} value={g}>{g}</option>)}
+                              </Select>
+                            </Field>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 6 }}>
+                        <label style={{ fontSize: 12.5, fontWeight: 600 }}>Class teacher&apos;s comment</label>
+                        <Button type="button" variant="outline" size="sm" loading={aiBusy} onClick={draftWeaknessAwareRemark}>
+                          <Icon name="notes" size={14} /> Draft with AI
+                        </Button>
+                      </div>
+                      <Textarea rows={4} value={remarkDraft} onChange={(e) => setRemarkDraft(e.target.value)} placeholder="e.g. A hardworking pupil who participates well in class..." />
+                    </div>
+
+                    <div>
+                      <Button type="button" variant="outline" size="sm" onClick={() => setShowPreview((v) => !v)}>
+                        {showPreview ? "Hide" : "Preview"} final draft
+                      </Button>
+                    </div>
+
+                    {showPreview && (
+                      <div style={{ border: "1px dashed var(--duga-border)", borderRadius: 12, padding: 16, background: "var(--duga-surface-2, #f8f9fb)" }}>
+                        <div style={{ fontWeight: 800, fontSize: 15 }}>{studentCard.student.name}</div>
+                        <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginBottom: 12 }}>
+                          {studentCard.activeTerm.name} · Average{" "}
+                          {studentCard.reportCard.average !== null && studentCard.reportCard.average !== undefined ? `${Number(studentCard.reportCard.average).toFixed(1)}%` : "—"} · Position{" "}
+                          {studentCard.reportCard.position ?? "—"}
+                        </div>
+                        {studentCard.reportCard.items.length > 0 && (
+                          <div style={{ display: "grid", gap: 4, marginBottom: 12 }}>
+                            {studentCard.reportCard.items.map((i) => (
+                              <div key={i.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}>
+                                <span>{i.subject.name}</span>
+                                <span>{i.total ?? "—"} ({i.grade ?? "—"})</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {Object.keys(traitsDraft).length > 0 && (
+                          <div style={{ marginBottom: 12 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>Behavioral grades</div>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                              {Object.entries(traitsDraft).map(([trait, g]) => (
+                                <Badge key={trait} tone="neutral">{trait}: {g || "—"}</Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>Class teacher&apos;s comment</div>
+                          <div style={{ fontSize: 13, fontStyle: remarkDraft ? "normal" : "italic", color: remarkDraft ? "inherit" : "var(--duga-muted)" }}>
+                            {remarkDraft || "No comment yet"}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
+                      <Button variant="ghost" onClick={() => setStudentTarget(null)}>Close</Button>
+                      <Button variant="outline" loading={saving} onClick={saveStudentDetails}>Save</Button>
+                      <Button loading={submitBusy} onClick={submitToAdmin}>
+                        {studentCard.reportCard.teacherSubmittedAt ? "Re-submit to admin" : "Submit to admin"}
+                      </Button>
                     </div>
                   </div>
                 )}
 
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 6 }}>
-                    <label style={{ fontSize: 12.5, fontWeight: 600 }}>Class teacher&apos;s comment</label>
-                    <Button type="button" variant="outline" size="sm" loading={aiBusy} onClick={draftWeaknessAwareRemark}>
-                      <Icon name="notes" size={14} /> Draft with AI
-                    </Button>
+                {modalTab === "performance" && (
+                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <Button variant="ghost" onClick={() => setStudentTarget(null)}>Close</Button>
                   </div>
-                  <Textarea rows={4} value={remarkDraft} onChange={(e) => setRemarkDraft(e.target.value)} placeholder="e.g. A hardworking pupil who participates well in class..." />
-                </div>
-
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-                  <Button variant="ghost" onClick={() => setStudentTarget(null)}>Close</Button>
-                  <Button loading={saving} onClick={saveStudentDetails}>Save</Button>
-                </div>
+                )}
               </>
             )}
           </div>

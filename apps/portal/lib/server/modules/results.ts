@@ -270,6 +270,31 @@ export const resultsModule: Module = {
       return updated;
     },
 
+    // Class teacher flags their comments/behavioral grades as a finished
+    // draft. Purely informational (see the schema comment on
+    // teacherSubmittedAt) — it doesn't lock anything, it just gives the
+    // admin a signal on the report-card list that this one is ready to look
+    // at, and lets the teacher see their own submission status.
+    submitToAdmin: async (ctx) => {
+      const card = await prisma.reportCard.findFirst({ where: { id: ctx.id, schoolId: ctx.session.user.schoolId } });
+      if (!card) throw new Error("Report card not found");
+      const role = ctx.session.user.role;
+      if (role === "TEACHER") {
+        const teacherId = ctx.session.user.teacher?.id;
+        const classGroup = card.classGroupId && await prisma.classGroup.findFirst({ where: { id: card.classGroupId, formTeacherId: teacherId }, select: { id: true } });
+        if (!classGroup) {
+          const err = new Error("Only the class teacher can submit this report card") as Error & { status?: number };
+          err.status = 403;
+          throw err;
+        }
+      } else {
+        can(ctx, "results:publish");
+      }
+      const updated = await prisma.reportCard.update({ where: { id: card.id }, data: { teacherSubmittedAt: new Date() } });
+      await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "results.submittedToAdmin", entityType: "ReportCard", entityId: card.id });
+      return updated;
+    },
+
     // Bulk entry of scores for a class subject, following the school's
     // ResultConfig components.
     saveScores: async (ctx) => {
