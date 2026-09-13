@@ -126,6 +126,18 @@ export const schemeModule: Module = {
       const section = await resolveSection(ctx);
       const role = ctx.session.user.role;
 
+      // Matched by normalized comparison, not an exact DB equality, because
+      // SchemeOfWork.section is free-typed at upload time and easily drifts
+      // from the school's actual configured section names in casing (e.g.
+      // "PRIMARY" vs the school's own "Primary") — resolveSection() above
+      // always returns the school's canonical name, so an exact match here
+      // silently hid every document from teachers/students/parents (who
+      // always resolve to one concrete section) while admin/owner, who see
+      // everything when no section is picked, never noticed.
+      const allSchemes = await prisma.schemeOfWork.findMany({ where: { schoolId }, select: { id: true, title: true, fileUrl: true, section: true } });
+      const matchingSchemes = section ? allSchemes.filter((s) => normalize(s.section) === normalize(section)) : allSchemes;
+      const schemeIds = matchingSchemes.map((s) => s.id);
+
       let allowedLevels: string[] | null = null;
       let allowedSubjects: string[] | null = null;
       if (role === "TEACHER") {
@@ -152,12 +164,14 @@ export const schemeModule: Module = {
 
       const levelName = str(ctx.query.get("levelName"));
       const subjectName = str(ctx.query.get("subjectName"));
-      const allChunks = await prisma.schemeOfWorkChunk.findMany({
-        where: { scheme: { schoolId, ...(section ? { section } : {}) } },
-        select: { id: true, schemeId: true, levelName: true, subjectName: true, term: true, text: true, pageStart: true, pageEnd: true },
-        orderBy: [{ levelName: "asc" }, { subjectName: "asc" }, { term: "asc" }],
-        take: 1000,
-      });
+      const allChunks = schemeIds.length
+        ? await prisma.schemeOfWorkChunk.findMany({
+            where: { schemeId: { in: schemeIds } },
+            select: { id: true, schemeId: true, levelName: true, subjectName: true, term: true, text: true, pageStart: true, pageEnd: true },
+            orderBy: [{ levelName: "asc" }, { subjectName: "asc" }, { term: "asc" }],
+            take: 1000,
+          })
+        : [];
       const scoped = allChunks.filter((c) => {
         if (allowedLevels && (!c.levelName || !allowedLevels.includes(normalize(c.levelName)))) return false;
         if (allowedSubjects && !allowedSubjects.some((s) => normalize(c.subjectName).includes(s) || s.includes(normalize(c.subjectName)))) return false;
@@ -167,10 +181,8 @@ export const schemeModule: Module = {
 
       const levels = [...new Set(scoped.map((c) => c.levelName).filter((v): v is string => !!v))].sort();
       const subjects = [...new Set(scoped.map((c) => c.subjectName))].sort();
-      const schemeIds = [...new Set(scoped.map((c) => c.schemeId))];
-      const schemes = schemeIds.length
-        ? await prisma.schemeOfWork.findMany({ where: { id: { in: schemeIds } }, select: { id: true, title: true, fileUrl: true, section: true } })
-        : [];
+      const usedSchemeIds = new Set(scoped.map((c) => c.schemeId));
+      const schemes = matchingSchemes.filter((s) => usedSchemeIds.has(s.id));
 
       return { chunks, levels, subjects, schemes, canEdit: hasPermission(role as Role, "settings:manage") };
     },
@@ -192,6 +204,21 @@ export const schemeModule: Module = {
         data: { levelName: str(ctx.body.levelName) ?? null, subjectName, term: str(ctx.body.term) ?? null, text: text.slice(0, MAX_CHUNK_CHARS) },
       });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "scheme.chunkUpdated", entityType: "SchemeOfWorkChunk", entityId: chunk.id });
+      return updated;
+    },
+
+    // Re-tag an already-uploaded document's section without re-uploading and
+    // re-parsing the whole PDF — mainly to fix an upload made under a stale
+    // or mistyped section value (see the note in browse() above).
+    updateSection: async (ctx) => {
+      can(ctx, "settings:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const scheme = await prisma.schemeOfWork.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!scheme) throw new Error("Scheme of work not found");
+      const section = str(ctx.body.section);
+      if (!section) throw new Error("section required");
+      const updated = await prisma.schemeOfWork.update({ where: { id: scheme.id }, data: { section } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "scheme.sectionUpdated", entityType: "SchemeOfWork", entityId: scheme.id, meta: { section } });
       return updated;
     },
   },

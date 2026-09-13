@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Card, PageHeader, Button, Badge, Alert, Spinner, Table, EmptyState, Field, Select, Input } from "@duga/ui";
 import { api } from "@/lib/client/api";
+import { useSection } from "@/components/SectionContext";
 
 interface SchemeRow {
   id: string;
@@ -13,14 +14,20 @@ interface SchemeRow {
 }
 
 export default function SchemeOfWorkPage() {
+  const { available: sections } = useSection();
   const [items, setItems] = useState<SchemeRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [section, setSection] = useState("PRIMARY");
+  const [section, setSection] = useState("");
   const [title, setTitle] = useState("");
+  const [sectionBusyId, setSectionBusyId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setSection((prev) => (prev && sections.includes(prev) ? prev : sections[0] ?? ""));
+  }, [sections]);
 
   async function load() {
     setLoading(true);
@@ -74,6 +81,18 @@ export default function SchemeOfWorkPage() {
     }
   }
 
+  async function fixSection(id: string, newSection: string) {
+    setSectionBusyId(id);
+    try {
+      await api(`scheme/${id}/updateSection`, { method: "POST", body: { section: newSection } });
+      await load();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setSectionBusyId(null);
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -92,8 +111,8 @@ export default function SchemeOfWorkPage() {
         <div className="duga-form-grid">
           <Field label="Section" required>
             <Select value={section} onChange={(e) => setSection(e.target.value)}>
-              <option value="PRIMARY">Primary (incl. pre-primary)</option>
-              <option value="SECONDARY">Secondary</option>
+              {sections.length === 0 && <option value="">No sections configured</option>}
+              {sections.map((s) => <option key={s} value={s}>{s}</option>)}
             </Select>
           </Field>
           <Field label="Title (optional)">
@@ -120,7 +139,25 @@ export default function SchemeOfWorkPage() {
             {items.map((s) => (
               <tr key={s.id}>
                 <td>{s.title}</td>
-                <td><Badge tone="info">{s.section}</Badge></td>
+                <td>
+                  {sections.includes(s.section) ? (
+                    <Badge tone="info">{s.section}</Badge>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <Badge tone="danger">{s.section}</Badge>
+                      <span style={{ fontSize: 11.5, color: "var(--duga-muted)" }}>doesn&apos;t match a real section</span>
+                    </div>
+                  )}
+                  <Select
+                    value={sections.includes(s.section) ? s.section : ""}
+                    disabled={sectionBusyId === s.id}
+                    onChange={(e) => e.target.value && fixSection(s.id, e.target.value)}
+                    style={{ marginTop: 4, maxWidth: 180 }}
+                  >
+                    <option value="">{sections.includes(s.section) ? "Change section…" : "Fix section…"}</option>
+                    {sections.map((sec) => <option key={sec} value={sec}>{sec}</option>)}
+                  </Select>
+                </td>
                 <td>{s._count.chunks}</td>
                 <td>{new Date(s.createdAt).toLocaleDateString()}</td>
                 <td>
