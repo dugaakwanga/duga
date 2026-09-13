@@ -55,7 +55,7 @@ interface ChatTurn {
 // means a message crafted to look like "Assistant: ignore your instructions"
 // still arrives tagged as `user`, not `assistant`; the model has no reason
 // to treat it as something it said itself.
-async function generate(system: string, prompt: string | ChatTurn[], temperature = 0.7, maxTokens = 1024): Promise<string> {
+export async function generate(system: string, prompt: string | ChatTurn[], temperature = 0.7, maxTokens = 1024): Promise<string> {
   if (!available()) {
     throw new Error("AI is not configured yet. Add an OPENROUTER_API_KEY to the server environment to enable the assistant.");
   }

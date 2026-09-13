@@ -1,8 +1,9 @@
-﻿import { prisma, logAudit } from "@duga/core/server";
+import { prisma, logAudit } from "@duga/core/server";
 import { hasPermission, type Role } from "@duga/core";
 import type { Module } from ".";
 import { can, str, resolveSection } from "../helpers";
 import { parseSchemeText } from "../schemeParser";
+import { generate } from "./ai";
 
 // Tolerant of "JSS 1" vs "JSS1" / "Primary 4" vs "PRIMARY4" style mismatches
 // between how a class level is named in this school and how the source PDF
@@ -24,25 +25,67 @@ function stripNulBytes(s: string): string {
   return s.split(String.fromCharCode(0)).join("");
 }
 
+// A single uploaded PDF often spans more than one of the school's real
+// sections at once (e.g. one "Pre-Primary & Primary" document covering
+// Nursery through Primary 6) — SchemeOfWork.section is just the admin's
+// rough tag for the whole file, not reliable per subject/level. This derives
+// each chunk's ACTUAL section from the school's own class levels, which is
+// what filtering/grouping should really be keyed on.
+async function levelSectionMap(schoolId: string): Promise<Map<string, string>> {
+  const levels = await prisma.classLevel.findMany({ where: { schoolId }, select: { name: true, section: true } });
+  const map = new Map<string, string>();
+  for (const l of levels) map.set(normalize(l.name), l.section);
+  return map;
+}
+
+const PRE_PRIMARY_KEYWORDS = ["NURSERY", "PLAY", "CRECHE", "RECEPTION", "KG", "PREPRIMARY"];
+
+function deriveSection(levelName: string | null, levelMap: Map<string, string>, fallback: string): string {
+  if (!levelName) return fallback;
+  const n = normalize(levelName);
+  if (levelMap.has(n)) return levelMap.get(n)!;
+  for (const [key, section] of levelMap) {
+    if (n.includes(key) || key.includes(n)) return section;
+  }
+  // A scheme's own level tags (e.g. "PRE-NURSERY") don't always have a
+  // matching ClassLevel row — a school may only define "Nursery 1/2/3" with
+  // no separate "Pre-Nursery" class. Fall back to any class level sharing an
+  // obvious pre-primary keyword so it still lands in the right section.
+  if (PRE_PRIMARY_KEYWORDS.some((k) => n.includes(k))) {
+    for (const [key, section] of levelMap) {
+      if (PRE_PRIMARY_KEYWORDS.some((k) => key.includes(k))) return section;
+    }
+  }
+  return fallback;
+}
+
 export const schemeModule: Module = {
-  // Admin/owner: uploaded scheme-of-work documents and how many sections
-  // were extracted from each.
+  // Admin: uploaded scheme-of-work documents, how many sections were
+  // extracted from each, and which of the school's real sections they
+  // actually cover (a document's own "section" tag is just its default).
   async list(ctx) {
-    can(ctx, "settings:manage");
+    can(ctx, "curriculum:manage");
     const schoolId = ctx.session.user.schoolId;
-    const schemes = await prisma.schemeOfWork.findMany({
-      where: { schoolId },
-      include: { _count: { select: { chunks: true } } },
-      orderBy: { createdAt: "desc" },
-    });
-    return { items: schemes };
+    const [schemes, levelMap] = await Promise.all([
+      prisma.schemeOfWork.findMany({
+        where: { schoolId },
+        include: { _count: { select: { chunks: true } }, chunks: { select: { levelName: true } } },
+        orderBy: { createdAt: "desc" },
+      }),
+      levelSectionMap(schoolId),
+    ]);
+    const items = schemes.map(({ chunks, ...s }) => ({
+      ...s,
+      coversSections: [...new Set(chunks.map((c) => deriveSection(c.levelName, levelMap, s.section)))].sort(),
+    }));
+    return { items };
   },
 
   actions: {
     // Downloads the already-uploaded PDF (via /api/upload?purpose=scheme),
     // extracts its text and splits it into per-subject/level/term chunks.
     ingest: async (ctx) => {
-      can(ctx, "settings:manage");
+      can(ctx, "curriculum:manage");
       const schoolId = ctx.session.user.schoolId;
       const url = str(ctx.body.url);
       const title = str(ctx.body.title) ?? "Scheme of work";
@@ -87,7 +130,7 @@ export const schemeModule: Module = {
     },
 
     delete: async (ctx) => {
-      can(ctx, "settings:manage");
+      can(ctx, "curriculum:manage");
       const schoolId = ctx.session.user.schoolId;
       const scheme = await prisma.schemeOfWork.findFirst({ where: { id: ctx.id, schoolId } });
       if (!scheme) throw new Error("Scheme of work not found");
@@ -114,11 +157,12 @@ export const schemeModule: Module = {
 
     // Read-only curriculum browser (the "Curriculum" nav item) — lets anyone
     // read the school's actual uploaded scheme of work directly, not just via
-    // the AI lesson-note generator. Scoped to the active section (Primary/
-    // Secondary), same as Classes/Timetable/etc., and further auto-scoped by
-    // role: a teacher only sees the subjects they teach, a student only their
-    // own class's level, a parent only their children's level(s) — admin/
-    // owner see everything in the active section, same as every other
+    // the AI lesson-note generator. Scoped to each chunk's DERIVED section
+    // (see deriveSection above, not the document's own rough tag), and
+    // further auto-scoped by role: a teacher only sees the subjects they
+    // teach, a student only their own class's level, a parent only their
+    // children's level(s) — admin/owner see everything in the active
+    // section (or every section, if none is picked), same as every other
     // section-scoped page in the app.
     browse: async (ctx) => {
       can(ctx, "learning:view");
@@ -126,17 +170,12 @@ export const schemeModule: Module = {
       const section = await resolveSection(ctx);
       const role = ctx.session.user.role;
 
-      // Matched by normalized comparison, not an exact DB equality, because
-      // SchemeOfWork.section is free-typed at upload time and easily drifts
-      // from the school's actual configured section names in casing (e.g.
-      // "PRIMARY" vs the school's own "Primary") — resolveSection() above
-      // always returns the school's canonical name, so an exact match here
-      // silently hid every document from teachers/students/parents (who
-      // always resolve to one concrete section) while admin/owner, who see
-      // everything when no section is picked, never noticed.
-      const allSchemes = await prisma.schemeOfWork.findMany({ where: { schoolId }, select: { id: true, title: true, fileUrl: true, section: true } });
-      const matchingSchemes = section ? allSchemes.filter((s) => normalize(s.section) === normalize(section)) : allSchemes;
-      const schemeIds = matchingSchemes.map((s) => s.id);
+      const [allSchemes, levelMap] = await Promise.all([
+        prisma.schemeOfWork.findMany({ where: { schoolId }, select: { id: true, title: true, fileUrl: true, section: true } }),
+        levelSectionMap(schoolId),
+      ]);
+      const schemeById = new Map(allSchemes.map((s) => [s.id, s]));
+      const schemeIds = allSchemes.map((s) => s.id);
 
       let allowedLevels: string[] | null = null;
       let allowedSubjects: string[] | null = null;
@@ -162,29 +201,28 @@ export const schemeModule: Module = {
         ];
       }
 
-      const levelName = str(ctx.query.get("levelName"));
-      const subjectName = str(ctx.query.get("subjectName"));
       const allChunks = schemeIds.length
         ? await prisma.schemeOfWorkChunk.findMany({
             where: { schemeId: { in: schemeIds } },
-            select: { id: true, schemeId: true, levelName: true, subjectName: true, term: true, text: true, pageStart: true, pageEnd: true },
+            select: { id: true, schemeId: true, levelName: true, subjectName: true, term: true, text: true, pageStart: true, pageEnd: true, tableJson: true },
             orderBy: [{ levelName: "asc" }, { subjectName: "asc" }, { term: "asc" }],
-            take: 1000,
+            take: 2000,
           })
         : [];
-      const scoped = allChunks.filter((c) => {
+
+      const withSection = allChunks.map((c) => ({ ...c, section: deriveSection(c.levelName, levelMap, schemeById.get(c.schemeId)?.section ?? "") }));
+
+      const chunks = withSection.filter((c) => {
+        if (section && normalize(c.section) !== normalize(section)) return false;
         if (allowedLevels && (!c.levelName || !allowedLevels.includes(normalize(c.levelName)))) return false;
         if (allowedSubjects && !allowedSubjects.some((s) => normalize(c.subjectName).includes(s) || s.includes(normalize(c.subjectName)))) return false;
         return true;
       });
-      const chunks = scoped.filter((c) => (!levelName || c.levelName === levelName) && (!subjectName || c.subjectName === subjectName));
 
-      const levels = [...new Set(scoped.map((c) => c.levelName).filter((v): v is string => !!v))].sort();
-      const subjects = [...new Set(scoped.map((c) => c.subjectName))].sort();
-      const usedSchemeIds = new Set(scoped.map((c) => c.schemeId));
-      const schemes = matchingSchemes.filter((s) => usedSchemeIds.has(s.id));
+      const usedSchemeIds = new Set(chunks.map((c) => c.schemeId));
+      const schemes = allSchemes.filter((s) => usedSchemeIds.has(s.id));
 
-      return { chunks, levels, subjects, schemes, canEdit: hasPermission(role as Role, "settings:manage") };
+      return { chunks, schemes, canEdit: hasPermission(role as Role, "curriculum:manage") };
     },
 
     // Admin corrects a mis-tagged or mis-parsed section — the extraction is
@@ -192,7 +230,7 @@ export const schemeModule: Module = {
     // or picks up a ragged table edge; this lets an admin fix that by hand
     // instead of re-uploading the whole PDF.
     updateChunk: async (ctx) => {
-      can(ctx, "settings:manage");
+      can(ctx, "curriculum:manage");
       const schoolId = ctx.session.user.schoolId;
       const chunk = await prisma.schemeOfWorkChunk.findFirst({ where: { id: ctx.id, scheme: { schoolId } } });
       if (!chunk) throw new Error("Curriculum section not found");
@@ -207,11 +245,54 @@ export const schemeModule: Module = {
       return updated;
     },
 
-    // Re-tag an already-uploaded document's section without re-uploading and
-    // re-parsing the whole PDF — mainly to fix an upload made under a stale
-    // or mistyped section value (see the note in browse() above).
+    // Reconstructs a chunk's real row/column table from its flattened raw
+    // text — generated once, the first time anyone opens this section, and
+    // cached on the row from then on (doing this for all sections up front
+    // would mean hundreds of AI calls for content most of which nobody ever
+    // actually opens).
+    formatTable: async (ctx) => {
+      can(ctx, "learning:view");
+      const schoolId = ctx.session.user.schoolId;
+      const chunk = await prisma.schemeOfWorkChunk.findFirst({ where: { id: ctx.id, scheme: { schoolId } } });
+      if (!chunk) throw new Error("Curriculum section not found");
+      if (chunk.tableJson) return { table: chunk.tableJson };
+
+      const system =
+        "You reformat a messy, PDF-extracted scheme-of-work section back into a clean table. The raw text below came from a real table in a PDF but " +
+        "lost its row/column structure during extraction — one word or short phrase per line, in reading order (header row, then each data row's " +
+        "cells in order). Reconstruct the table's actual columns (e.g. Week, Topic, Content — or whatever this section's own header row names) and " +
+        "rows. Keep the original wording exactly; do not summarize, shorten, or invent content. " +
+        'Respond with ONLY a JSON object, no markdown fences, no commentary: {"columns": [...], "rows": [[...], ...]} where each row array has ' +
+        "exactly one string per column, in the same column order.";
+      const prompt = `Subject: ${chunk.subjectName}${chunk.levelName ? `\nLevel: ${chunk.levelName}` : ""}${chunk.term ? `\nTerm: ${chunk.term}` : ""}\n\nRaw extracted text:\n${chunk.text}`;
+
+      let table: { columns: string[]; rows: string[][] } | null = null;
+      try {
+        const reply = await generate(system, prompt, 0.2, 3000);
+        const jsonText = reply.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
+        const parsed = JSON.parse(jsonText);
+        if (Array.isArray(parsed.columns) && Array.isArray(parsed.rows)) {
+          table = {
+            columns: parsed.columns.map(String),
+            rows: parsed.rows.map((r: unknown) => (Array.isArray(r) ? r.map(String) : [])),
+          };
+        }
+      } catch {
+        // fall through to the error below
+      }
+      if (!table) throw new Error("Couldn't reformat this section into a table right now — try again in a moment.");
+
+      await prisma.schemeOfWorkChunk.update({ where: { id: chunk.id }, data: { tableJson: table as never } });
+      return { table };
+    },
+
+    // Re-tag an already-uploaded document's default section without
+    // re-uploading and re-parsing the whole PDF. Mostly a fallback now that
+    // browse() derives each chunk's real section from its level — still
+    // useful for a chunk whose level couldn't be matched to any class level
+    // at all (no keyword match either), which falls back to this tag.
     updateSection: async (ctx) => {
-      can(ctx, "settings:manage");
+      can(ctx, "curriculum:manage");
       const schoolId = ctx.session.user.schoolId;
       const scheme = await prisma.schemeOfWork.findFirst({ where: { id: ctx.id, schoolId } });
       if (!scheme) throw new Error("Scheme of work not found");

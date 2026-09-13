@@ -26,19 +26,26 @@ html, body {
 }
 
 .portal-shell {
-  display: grid;
-  grid-template-columns: 258px 1fr;
   min-height: 100vh;
 }
 
-/* ---------- Sidebar ---------- */
+/* ---------- Sidebar ----------
+   Was `position: sticky` inside a CSS Grid track — sticky's containing-
+   block calculation inside a grid item is inconsistent across engines, and
+   in practice it wasn't sticking at all: scrolling the main content moved
+   the sidebar with it instead of pinning it, leaving it blank/off-screen.
+   `position: fixed` (already how the mobile slide-in drawer below works)
+   sidesteps the grid entirely and reliably stays put; `.portal-main` gets
+   matching margin-left so it doesn't sit underneath it. */
 .portal-sidebar {
   background: linear-gradient(180deg, var(--duga-primary-dark), var(--duga-primary-ink));
   color: rgba(255, 255, 255, 0.78);
   display: flex;
   flex-direction: column;
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  width: 258px;
   height: 100vh;
   overflow-y: auto;
   z-index: 30;
@@ -111,7 +118,7 @@ html, body {
 }
 
 /* ---------- Main column ---------- */
-.portal-main { display: flex; flex-direction: column; min-width: 0; }
+.portal-main { display: flex; flex-direction: column; min-width: 0; margin-left: 258px; }
 
 .portal-topbar {
   background: rgba(255, 255, 255, 0.86);
@@ -862,10 +869,9 @@ html, body {
 }
 
 @media (max-width: 900px) {
-  .portal-shell { grid-template-columns: 1fr; }
+  .portal-main { margin-left: 0; }
   .portal-sidebar {
-    position: fixed;
-    left: 0; top: 0; bottom: 0;
+    left: 0; top: 0; bottom: 0; height: auto;
     z-index: 300;
     transform: translateX(-100%);
     transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
@@ -1199,7 +1205,7 @@ body {
   .duga-ai__fab,
   .duga-ai-scrim { display: none !important; }
   .portal-shell { display: block !important; }
-  .portal-main { display: block !important; }
+  .portal-main { display: block !important; margin-left: 0 !important; }
   .portal-content { max-width: none !important; padding: 0 !important; }
   body { background: #fff !important; }
   .duga-card,

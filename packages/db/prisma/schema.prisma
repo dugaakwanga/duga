@@ -1278,6 +1278,13 @@ model SchemeOfWorkChunk {
   text        String
   pageStart   Int?
   pageEnd     Int?
+  // AI-reformatted { columns: string[], rows: string[][] } table matching
+  // the PDF's real row/column layout — `text` above is flattened to one
+  // phrase per line by extraction and lost that structure. Generated once,
+  // on demand (the first time anyone opens this section), and cached here
+  // rather than for all sections up front — most of a large document is
+  // never actually opened by anyone.
+  tableJson   Json?
 
   scheme SchemeOfWork @relation(fields: [schemeId], references: [id], onDelete: Cascade)
 

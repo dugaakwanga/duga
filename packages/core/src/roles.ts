@@ -65,6 +65,10 @@ export type Permission =
   | "payroll:manage"
   // Settings / subscription
   | "settings:manage"
+  // Scheme of work / curriculum — split out from settings:manage so admin
+  // can manage it without the broader access the rest of School Settings
+  // implies (subscription, feature toggles, etc.).
+  | "curriculum:manage"
   // Applications (admissions inbox)
   | "applications:view"
   | "applications:manage"
@@ -141,6 +145,7 @@ export const PERMISSIONS: Permission[] = [
   "payroll:view",
   "payroll:manage",
   "settings:manage",
+  "curriculum:manage",
   "applications:view",
   "applications:manage",
   "gallery:manage",
@@ -201,6 +206,7 @@ const rolePermissions: Record<Role, Permission[]> = {
     "hostel:manage",
     "timetable:view",
     "timetable:manage",
+    "curriculum:manage",
     "transport:view",
     "transport:manage",
     "applications:view",
