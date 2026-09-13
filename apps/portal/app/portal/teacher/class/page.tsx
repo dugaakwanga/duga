@@ -257,7 +257,7 @@ export default function MyClassPage() {
               <Alert tone="info">No active term is set — ask an admin to activate one in Settings.</Alert>
             ) : !studentCard.reportCard ? (
               <Alert tone="info">
-                No report card yet for {studentCard.activeTerm.name} — an admin needs to collate this class's report cards first, from Results.
+                No report card yet for {studentCard.activeTerm.name} — an admin needs to collate this class&apos;s report cards first, from Results.
               </Alert>
             ) : (
               <>
@@ -296,7 +296,7 @@ export default function MyClassPage() {
 
                 <div>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 6 }}>
-                    <label style={{ fontSize: 12.5, fontWeight: 600 }}>Class teacher's comment</label>
+                    <label style={{ fontSize: 12.5, fontWeight: 600 }}>Class teacher&apos;s comment</label>
                     <Button type="button" variant="outline" size="sm" loading={aiBusy} onClick={draftWeaknessAwareRemark}>
                       <Icon name="notes" size={14} /> Draft with AI
                     </Button>

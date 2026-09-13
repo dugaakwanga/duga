@@ -83,8 +83,8 @@ export default function SchemeOfWorkPage() {
 
       <Card title="Upload a scheme of work" style={{ marginBottom: 20 }}>
         <div style={{ fontSize: 13.5, color: "var(--duga-ink-2)", marginBottom: 14 }}>
-          Upload a PDF (e.g. a NERDC-aligned scheme of work). It's parsed into per-subject, per-class, per-term sections — when a teacher asks the
-          AI assistant to draft a lesson note, it looks up the matching section here first, so the note follows this document's actual topics
+          Upload a PDF (e.g. a NERDC-aligned scheme of work). It&apos;s parsed into per-subject, per-class, per-term sections — when a teacher asks the
+          AI assistant to draft a lesson note, it looks up the matching section here first, so the note follows this document&apos;s actual topics
           instead of something generic.
         </div>
         {error && <Alert tone="danger">{error}</Alert>}
