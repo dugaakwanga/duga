@@ -54,9 +54,19 @@ const STAFF_NAV: NavSection[] = [
       { href: "/portal/curriculum", label: "Curriculum", icon: "notes", perm: "learning:view" },
       { href: "/portal/attendance", label: "Attendance", icon: "attendance", perm: "attendance:view", feature: "attendance" },
       { href: "/portal/results", label: "Results", icon: "results", perm: "results:view", feature: "results" },
-      { href: "/portal/paper-exams", label: "Paper Exams", icon: "assignment", perm: "results:view", feature: "results" },
       { href: "/portal/elearn", label: "E-Learning & Rewards", icon: "notes", perm: "elearn:view", feature: "elearn" },
       { href: "/portal/games", label: "Educational Games", icon: "quiz", perm: "games:play", feature: "games" },
+    ],
+  },
+  // CBT and Paper Exams used to live in different sections (one under "My
+  // Teaching", one under "Academics") even though they're both just "the
+  // exam side" of the app — grouped together here, per subject, same as a
+  // teacher actually thinks about them.
+  {
+    title: "Exams",
+    items: [
+      { href: "/portal/paper-exams", label: "Paper Exams", icon: "assignment", perm: "results:view", feature: "results" },
+      { href: "/portal/teacher/cbt", label: "CBT Exams", icon: "quiz", perm: "learning:manage", feature: "learning", subfeature: "learning:cbt", roles: ["TEACHER"] },
     ],
   },
   {
@@ -69,7 +79,6 @@ const STAFF_NAV: NavSection[] = [
       { href: "/portal/teacher/class", label: "My Class", icon: "students", perm: "classes:view", feature: "learning", roles: ["TEACHER"], classTeacherOnly: true },
       { href: "/portal/teacher/notes", label: "Lesson Notes", icon: "notes", perm: "learning:manage", feature: "learning", subfeature: "learning:notes", roles: ["TEACHER"] },
       { href: "/portal/teacher/assignments", label: "Assignments", icon: "assignment", perm: "learning:manage", feature: "learning", subfeature: "learning:assignments", roles: ["TEACHER"] },
-      { href: "/portal/teacher/cbt", label: "CBT Exams", icon: "quiz", perm: "learning:manage", feature: "learning", subfeature: "learning:cbt", roles: ["TEACHER"] },
       { href: "/portal/teacher/attendance", label: "Take Attendance", icon: "attendance", perm: "attendance:take", feature: "attendance", roles: ["TEACHER"] },
     ],
   },
@@ -143,10 +152,10 @@ const STUDENT_NAV: NavSection[] = [
     title: "My Learning",
     items: [
       { href: "/portal/learning?kind=tests", label: "My CBT Exams", icon: "quiz", perm: "tests:take", feature: "learning", subfeature: "learning:cbt" },
+      { href: "/portal/paper-exams", label: "Paper Exams", icon: "assignment", perm: "results:view", feature: "results" },
       { href: "/portal/learning?kind=assignments", label: "My Assignments", icon: "assignment", perm: "assignments:submit", feature: "learning", subfeature: "learning:assignments" },
       { href: "/portal/learning?kind=notes", label: "Lesson Notes", icon: "notes", perm: "learning:view", feature: "learning", subfeature: "learning:notes" },
       { href: "/portal/curriculum", label: "Curriculum", icon: "notes", perm: "learning:view" },
-      { href: "/portal/paper-exams", label: "Paper Exams", icon: "assignment", perm: "results:view", feature: "results" },
       { href: "/portal/elearn", label: "E-Learning & Rewards", icon: "notes", perm: "elearn:view", feature: "elearn" },
       { href: "/portal/games", label: "Educational Games", icon: "quiz", perm: "games:play", feature: "games" },
     ],
