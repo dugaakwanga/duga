@@ -89,14 +89,23 @@ export async function generate(system: string, prompt: string | ChatTurn[], temp
   return text;
 }
 
-// Pulls the model's self-placed "[ILLUSTRATION: ...]" cue (see draftLesson)
-// out of the drafted text, leaving a [[ILLUSTRATION_HERE]] token in its
-// exact place so the caller can splice in the generated image at the spot
-// the model actually chose, instead of always tacking one on at the end.
-function extractIllustration(text: string): { content: string; illustration: string | null } {
-  const m = text.match(/^\s*\[ILLUSTRATION:\s*(.+?)\]\s*$/im);
-  if (!m) return { content: text.trim(), illustration: null };
-  return { content: text.replace(m[0], "[[ILLUSTRATION_HERE]]").trim(), illustration: m[1]!.trim() };
+// Pulls the model's self-placed "[ILLUSTRATION: ...]" cues (see draftLesson)
+// out of the drafted text — the model can mark more than one point in a
+// longer note where a diagram genuinely helps, not just a single image
+// tacked on at the end. Notes render as plain text (no inline positioning
+// yet), so each cue line is simply removed from the visible content; the
+// caller generates one image per returned description and adds each to the
+// note's image list.
+function extractIllustrations(text: string): { content: string; illustrations: string[] } {
+  const matches = [...text.matchAll(/^\s*\[ILLUSTRATION:\s*(.+?)\]\s*$/gim)];
+  if (matches.length === 0) return { content: text.trim(), illustrations: [] };
+  let content = text;
+  const illustrations: string[] = [];
+  for (const m of matches) {
+    illustrations.push(m[1]!.trim());
+    content = content.replace(m[0], "");
+  }
+  return { content: content.replace(/\n{3,}/g, "\n\n").trim(), illustrations };
 }
 
 // Same shape as generate(), but for a prompt that includes one or more
@@ -314,23 +323,26 @@ export const aiModule: Module = {
 
       const matches = await findSchemeChunks(ctx.session.user.schoolId, { levelName: level, subjectName: subject, topicHint: topic });
 
-      // Ask the model to place its own illustration cue right where a
-      // diagram would actually help (immediately after Key points, before
-      // the class moves into an activity) — rather than the teacher having
-      // to separately think of an image prompt after the fact. The
-      // [ILLUSTRATION: ...] line is stripped from the visible note and
-      // turned into an inline image by the caller once it's generated.
+      // Ask the model to mark its own illustration points wherever a
+      // diagram genuinely helps — not just one image tacked on at the end.
+      // A short note might only need one (or none); a longer, more visual
+      // topic can justify two or three at the specific points they matter.
+      // Each [ILLUSTRATION: ...] line is stripped from the visible note;
+      // the caller generates one image per description and adds it to the
+      // note's image list.
       const illustrationInstruction =
-        " After the Key points section, on its own line, write exactly '[ILLUSTRATION: <description>]' where <description> is one specific, simple diagram or scene " +
-        "(e.g. 'a labeled diagram of the water cycle showing evaporation, condensation and precipitation') that would help students understand THIS topic — not a generic classroom photo. " +
-        "Skip this line entirely if the topic has no natural visual (e.g. a grammar rule).";
+        " Wherever a diagram or scene would genuinely help students understand a SPECIFIC point in the note (not a generic classroom photo), insert a " +
+        "line by itself right after that point: '[ILLUSTRATION: <description>]', where <description> is one specific, simple diagram or scene for " +
+        "exactly that point (e.g. 'a labeled diagram of the water cycle showing evaporation, condensation and precipitation'). Use up to 3 such lines " +
+        "at genuinely different, meaningful points across the note — most notes need 1 or 2; use 0 if the topic has no natural visual at all (e.g. a grammar rule). " +
+        "Never describe the same picture twice.";
 
       if (matches.length === 0) {
         const system = "You write structured lesson notes with: Objectives, Key points (bulleted), Teaching activity, and Quick assessment." + illustrationInstruction;
         const prompt = `Subject: ${subject}\nTopic: ${topic ?? "(choose an appropriate topic for this subject and level)"}${level ? `\nLevel/Class: ${level}` : ""}${week ? `\nWeek: ${week}` : ""}`;
-        const reply = await generate(system, prompt, 0.7, 1200);
-        const { content, illustration } = extractIllustration(reply);
-        return { reply: content, grounded: false, illustration };
+        const reply = await generate(system, prompt, 0.7, 1600);
+        const { content, illustrations } = extractIllustrations(reply);
+        return { reply: content, grounded: false, illustrations };
       }
 
       const excerpt = matches.map((m) => `--- ${m.subjectName}${m.levelName ? ` (${m.levelName})` : ""}${m.term ? `, ${m.term} TERM` : ""} ---\n${m.text}`).join("\n\n");
@@ -340,9 +352,9 @@ export const aiModule: Module = {
         "(the excerpt is a raw extract from a PDF, so formatting may be messy — read past that). " +
         "Output: Objectives, Key points (bulleted), Teaching activity, and Quick assessment." + illustrationInstruction;
       const prompt = `Scheme of work excerpt:\n${excerpt}\n\n---\nDraft a lesson note for Subject: ${subject}${level ? `, Level/Class: ${level}` : ""}${week ? `, Week ${week}` : ""}${topic ? `, Topic: ${topic}` : " — pick the most relevant week/topic from the excerpt above"}.`;
-      const reply = await generate(system, prompt, 0.6, 1400);
-      const { content, illustration } = extractIllustration(reply);
-      return { reply: content, grounded: true, illustration, sections: matches.map((m) => ({ subjectName: m.subjectName, levelName: m.levelName, term: m.term })) };
+      const reply = await generate(system, prompt, 0.6, 1800);
+      const { content, illustrations } = extractIllustrations(reply);
+      return { reply: content, grounded: true, illustrations, sections: matches.map((m) => ({ subjectName: m.subjectName, levelName: m.levelName, term: m.term })) };
     },
 
     // Owner/admin: build the whole class timetable with a single smart,

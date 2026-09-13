@@ -48,6 +48,31 @@ export default function TeacherNotesPage() {
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Topic picker: real weeks/topics from the scheme of work for whichever
+  // class subject is selected, so a teacher chooses a topic the school
+  // actually assigned instead of typing one freehand — "Custom topic" stays
+  // available for subjects with nothing uploaded, or off-scheme notes.
+  const [schemeTopics, setSchemeTopics] = useState<Array<{ week: string | null; topic: string; term: string | null }>>([]);
+  const [topicsLoading, setTopicsLoading] = useState(false);
+  const [customTopic, setCustomTopic] = useState(false);
+
+  useEffect(() => {
+    const cs = options.find((o) => o.id === form.classSubjectId);
+    setCustomTopic(false);
+    if (!cs) {
+      setSchemeTopics([]);
+      return;
+    }
+    setTopicsLoading(true);
+    api<{ topics: Array<{ week: string | null; topic: string; term: string | null }> }>("scheme/topics", {
+      query: { subjectName: cs.subject.name, levelName: cs.classGroup.level.name },
+    })
+      .then((d) => setSchemeTopics(d.topics))
+      .catch(() => setSchemeTopics([]))
+      .finally(() => setTopicsLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.classSubjectId]);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -116,7 +141,7 @@ export default function TeacherNotesPage() {
     setGenerating(true);
     setGroundedHint(null);
     try {
-      const res = await api<{ reply: string; grounded: boolean; illustration?: string | null }>("ai/draftLesson", {
+      const res = await api<{ reply: string; grounded: boolean; illustrations?: string[] }>("ai/draftLesson", {
         method: "POST",
         body: {
           subject: cs.subject.name,
@@ -125,34 +150,38 @@ export default function TeacherNotesPage() {
           week: form.week || undefined,
         },
       });
-      // Lesson-note content is displayed as plain text (no markdown
-      // rendering) both here and on the student-facing Learning page, so an
-      // inline "![...](...)" reference would just show as literal syntax.
-      // The images list is what actually renders as pictures in both
-      // places — the model's [[ILLUSTRATION_HERE]] token just marks that a
-      // picture belongs with this note at all, so it's stripped from the
-      // text and the generated image is added to that list instead.
-      const content = res.reply.replace(/\n?\[\[ILLUSTRATION_HERE\]\]\n?/, "\n").trim();
-      let illustrated = false;
-      if (res.illustration) {
-        setGeneratingImage(true);
-        try {
-          const prompt = `simple educational diagram: ${res.illustration}, for a ${cs.classGroup.level.name} ${cs.subject.name} class, labeled, clean line art, no watermark, no text`;
-          const url = await loadIllustration(prompt);
-          setImages((prev) => [...prev, url]);
-          illustrated = true;
-        } catch {
-          // The AI still identified a good illustration idea — the note
-          // text itself is unaffected either way, so just skip the image.
-        } finally {
-          setGeneratingImage(false);
-        }
-      }
-      setForm((f) => ({ ...f, content }));
+      setForm((f) => ({ ...f, content: res.reply }));
       const base = res.grounded
         ? "Drafted from your uploaded scheme of work."
         : "No matching scheme of work section found — this is a generic draft. Upload one in Settings → Scheme of Work for a curriculum-grounded draft.";
-      setGroundedHint(illustrated ? `${base} Added a matching illustration to the images below.` : base);
+      setGroundedHint(base);
+
+      // The AI can mark more than one point in the note where a diagram
+      // genuinely helps — generate one image per description and add each
+      // to the gallery below as it lands, rather than waiting for all of
+      // them (a slow one shouldn't hold up the others).
+      const illustrations = res.illustrations ?? [];
+      if (illustrations.length > 0) {
+        setGeneratingImage(true);
+        let addedCount = 0;
+        await Promise.all(
+          illustrations.map(async (desc) => {
+            try {
+              const prompt = `simple educational diagram: ${desc}, for a ${cs.classGroup.level.name} ${cs.subject.name} class, labeled, clean line art, no watermark, no text`;
+              const url = await loadIllustration(prompt);
+              setImages((prev) => [...prev, url]);
+              addedCount += 1;
+            } catch {
+              // The AI still identified a good illustration idea — the note
+              // text itself is unaffected either way, so just skip this one.
+            }
+          }),
+        );
+        setGeneratingImage(false);
+        if (addedCount > 0) {
+          setGroundedHint(`${base} Added ${addedCount} matching illustration${addedCount === 1 ? "" : "s"} to the images below.`);
+        }
+      }
     } catch (e) {
       alert((e as Error).message);
     } finally {
@@ -304,8 +333,44 @@ export default function TeacherNotesPage() {
               ))}
             </Select>
           </div>
-          <label style={{ fontSize: 12.5, fontWeight: 600, display: "block" }} htmlFor="topic">Topic</label>
-          <Input id="topic" value={form.topic ?? ""} onChange={(e) => setForm({ ...form, topic: e.target.value })} placeholder="e.g. Fractions and Decimals" />
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+            <label style={{ fontSize: 12.5, fontWeight: 600 }} htmlFor="topic">Topic</label>
+            {topicsLoading && <span style={{ fontSize: 11.5, color: "var(--duga-muted)" }}>Loading topics from the scheme of work…</span>}
+          </div>
+          {schemeTopics.length > 0 && !customTopic ? (
+            <Select
+              id="topic"
+              value={form.topic ?? ""}
+              onChange={(e) => {
+                if (e.target.value === "__custom__") {
+                  setCustomTopic(true);
+                  setForm({ ...form, topic: "" });
+                  return;
+                }
+                const picked = schemeTopics.find((t) => t.topic === e.target.value);
+                setForm({ ...form, topic: e.target.value, week: picked?.week ?? form.week ?? "" });
+              }}
+            >
+              <option value="">Select a topic from the scheme of work…</option>
+              {schemeTopics.map((t, i) => (
+                <option key={i} value={t.topic}>
+                  {t.week ? `Week ${t.week} — ` : ""}
+                  {t.topic}
+                  {t.term ? ` (${t.term} Term)` : ""}
+                </option>
+              ))}
+              <option value="__custom__">✎ Type a custom topic…</option>
+            </Select>
+          ) : (
+            <>
+              <Input id="topic" value={form.topic ?? ""} onChange={(e) => setForm({ ...form, topic: e.target.value })} placeholder="e.g. Fractions and Decimals" />
+              {schemeTopics.length > 0 && (
+                <Button type="button" variant="ghost" size="sm" onClick={() => setCustomTopic(false)} style={{ justifySelf: "start" }}>
+                  ← Pick from scheme of work instead
+                </Button>
+              )}
+            </>
+          )}
           <label style={{ fontSize: 12.5, fontWeight: 600, display: "block" }} htmlFor="week">Week</label>
           <Input id="week" type="number" min={1} max={13} value={form.week ?? ""} onChange={(e) => setForm({ ...form, week: e.target.value })} placeholder="1" />
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>

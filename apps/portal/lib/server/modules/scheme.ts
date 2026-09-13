@@ -59,6 +59,52 @@ function deriveSection(levelName: string | null, levelMap: Map<string, string>, 
   return fallback;
 }
 
+type SchemeTable = { columns: string[]; rows: string[][] };
+
+// Shared by the formatTable action (teacher opens a section) and the topics
+// action (lesson-note "pick a topic from the scheme" list) — both need the
+// same reconstructed table, cached the same way.
+async function formatChunkTable(chunk: { id: string; subjectName: string; levelName: string | null; term: string | null; text: string; tableJson: unknown }): Promise<SchemeTable> {
+  if (chunk.tableJson) return chunk.tableJson as SchemeTable;
+
+  const system =
+    "You reformat a messy, PDF-extracted scheme-of-work section back into a clean table. The raw text below came from a real table in a PDF but " +
+    "lost its row/column structure during extraction — one word or short phrase per line, in reading order (header row, then each data row's " +
+    "cells in order). Reconstruct the table's actual columns (e.g. Week, Topic, Content — or whatever this section's own header row names) and " +
+    "rows. Keep the original wording exactly; do not summarize, shorten, or invent content. " +
+    'Respond with ONLY a JSON object, no markdown fences, no commentary: {"columns": [...], "rows": [[...], ...]} where each row array has ' +
+    "exactly one string per column, in the same column order.";
+  const prompt = `Subject: ${chunk.subjectName}${chunk.levelName ? `\nLevel: ${chunk.levelName}` : ""}${chunk.term ? `\nTerm: ${chunk.term}` : ""}\n\nRaw extracted text:\n${chunk.text}`;
+
+  let table: SchemeTable | null = null;
+  try {
+    // The free model reasons at length before answering — 3000 tokens
+    // wasn't enough room for both the chain-of-thought AND the actual
+    // JSON, so it got cut off mid-reasoning and never produced an answer
+    // at all (confirmed live: finish_reason "length" with the whole
+    // budget spent on reasoning prose). 8000 gives it enough room to
+    // finish reasoning and still write the full table.
+    const reply = await generate(system, prompt, 0.2, 8000);
+    let jsonText = reply.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
+    const start = jsonText.indexOf("{");
+    const end = jsonText.lastIndexOf("}");
+    if (start > 0 && end > start) jsonText = jsonText.slice(start, end + 1);
+    const parsed = JSON.parse(jsonText);
+    if (Array.isArray(parsed.columns) && Array.isArray(parsed.rows)) {
+      table = {
+        columns: parsed.columns.map(String),
+        rows: parsed.rows.map((r: unknown) => (Array.isArray(r) ? r.map(String) : [])),
+      };
+    }
+  } catch {
+    // fall through to the error below
+  }
+  if (!table) throw new Error("Couldn't reformat this section into a table right now — try again in a moment.");
+
+  await prisma.schemeOfWorkChunk.update({ where: { id: chunk.id }, data: { tableJson: table as never } });
+  return table;
+}
+
 export const schemeModule: Module = {
   // Admin: uploaded scheme-of-work documents, how many sections were
   // extracted from each, and which of the school's real sections they
@@ -255,44 +301,49 @@ export const schemeModule: Module = {
       const schoolId = ctx.session.user.schoolId;
       const chunk = await prisma.schemeOfWorkChunk.findFirst({ where: { id: ctx.id, scheme: { schoolId } } });
       if (!chunk) throw new Error("Curriculum section not found");
-      if (chunk.tableJson) return { table: chunk.tableJson };
-
-      const system =
-        "You reformat a messy, PDF-extracted scheme-of-work section back into a clean table. The raw text below came from a real table in a PDF but " +
-        "lost its row/column structure during extraction — one word or short phrase per line, in reading order (header row, then each data row's " +
-        "cells in order). Reconstruct the table's actual columns (e.g. Week, Topic, Content — or whatever this section's own header row names) and " +
-        "rows. Keep the original wording exactly; do not summarize, shorten, or invent content. " +
-        'Respond with ONLY a JSON object, no markdown fences, no commentary: {"columns": [...], "rows": [[...], ...]} where each row array has ' +
-        "exactly one string per column, in the same column order.";
-      const prompt = `Subject: ${chunk.subjectName}${chunk.levelName ? `\nLevel: ${chunk.levelName}` : ""}${chunk.term ? `\nTerm: ${chunk.term}` : ""}\n\nRaw extracted text:\n${chunk.text}`;
-
-      let table: { columns: string[]; rows: string[][] } | null = null;
-      try {
-        // The free model reasons at length before answering — 3000 tokens
-        // wasn't enough room for both the chain-of-thought AND the actual
-        // JSON, so it got cut off mid-reasoning and never produced an
-        // answer at all (confirmed live: finish_reason "length" with the
-        // whole budget spent on reasoning prose). 8000 gives it enough room
-        // to finish reasoning and still write the full table.
-        const reply = await generate(system, prompt, 0.2, 8000);
-        let jsonText = reply.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
-        const start = jsonText.indexOf("{");
-        const end = jsonText.lastIndexOf("}");
-        if (start > 0 && end > start) jsonText = jsonText.slice(start, end + 1);
-        const parsed = JSON.parse(jsonText);
-        if (Array.isArray(parsed.columns) && Array.isArray(parsed.rows)) {
-          table = {
-            columns: parsed.columns.map(String),
-            rows: parsed.rows.map((r: unknown) => (Array.isArray(r) ? r.map(String) : [])),
-          };
-        }
-      } catch {
-        // fall through to the error below
-      }
-      if (!table) throw new Error("Couldn't reformat this section into a table right now — try again in a moment.");
-
-      await prisma.schemeOfWorkChunk.update({ where: { id: chunk.id }, data: { tableJson: table as never } });
+      const table = await formatChunkTable(chunk);
       return { table };
+    },
+
+    // Powers the lesson-note "Topic" picker — instead of a teacher typing a
+    // topic freehand, list the actual weeks/topics the scheme of work has
+    // for this subject/level, taken from the Week/Topic columns of each
+    // matching term's reconstructed table (formatted on demand, same as
+    // formatTable, and cached the same way).
+    topics: async (ctx) => {
+      can(ctx, "learning:view");
+      const schoolId = ctx.session.user.schoolId;
+      const subjectName = str(ctx.query.get("subjectName"));
+      const levelName = str(ctx.query.get("levelName"));
+      if (!subjectName || !levelName) throw new Error("subjectName and levelName required");
+      const level = normalize(levelName);
+      const subject = normalize(subjectName);
+      const candidates = await prisma.schemeOfWorkChunk.findMany({
+        where: { scheme: { schoolId } },
+        select: { id: true, schemeId: true, levelName: true, subjectName: true, term: true, text: true, tableJson: true },
+      });
+      const matches = candidates.filter((c) => {
+        const levelOk = c.levelName && normalize(c.levelName) === level;
+        const subjectOk = normalize(c.subjectName).includes(subject) || subject.includes(normalize(c.subjectName));
+        return levelOk && subjectOk;
+      });
+      if (matches.length === 0) return { topics: [], grounded: false };
+
+      const topics: Array<{ week: string | null; topic: string; term: string | null }> = [];
+      for (const chunk of matches.slice(0, 3)) {
+        try {
+          const table = await formatChunkTable(chunk);
+          const topicColIdx = table.columns.findIndex((c) => /topic/i.test(c));
+          const weekColIdx = table.columns.findIndex((c) => /week/i.test(c));
+          for (const row of table.rows) {
+            const topic = row[topicColIdx >= 0 ? topicColIdx : 1];
+            if (topic) topics.push({ week: weekColIdx >= 0 ? (row[weekColIdx] ?? null) : null, topic, term: chunk.term });
+          }
+        } catch {
+          // skip a chunk the AI couldn't reformat — the rest still work
+        }
+      }
+      return { topics, grounded: true };
     },
 
     // Re-tag an already-uploaded document's default section without
