@@ -329,7 +329,6 @@ export const paperExamModule: Module = {
       if (ctx.session.user.role === "ADMIN") throw new Error("Admins can't approve or reject paper exam scores directly — that's the class teacher's call.");
       const schoolId = ctx.session.user.schoolId;
       const decision = str(ctx.body.decision); // "APPROVE" | "REJECT"
-      const finalScore = num(ctx.body.score);
       if (decision !== "APPROVE" && decision !== "REJECT") throw new Error("decision must be APPROVE or REJECT");
 
       const submission = await prisma.paperExamSubmission.findFirst({
@@ -347,8 +346,28 @@ export const paperExamModule: Module = {
         return updated;
       }
 
-      const score = finalScore ?? submission.aiScore;
-      if (score === undefined || score === null) throw new Error("A score is required to approve");
+      // A teacher can override the AI's score per question before approving
+      // (not just the overall total) — the approved breakdown replaces the
+      // AI's own scores (feedback text kept as-is) and the approved total is
+      // the sum of those, not whatever the AI originally suggested.
+      const breakdownInput = Array.isArray(ctx.body.breakdown) ? (ctx.body.breakdown as Array<{ questionId?: unknown; score?: unknown }>) : null;
+      const existingBreakdown = Array.isArray(submission.aiBreakdown) ? (submission.aiBreakdown as unknown as QuestionBreakdown[]) : null;
+
+      let score: number | null;
+      let newBreakdown: QuestionBreakdown[] | undefined;
+      if (breakdownInput && existingBreakdown && existingBreakdown.length > 0) {
+        const overrides = new Map(breakdownInput.map((b) => [String(b.questionId), num(b.score)]));
+        newBreakdown = existingBreakdown.map((b) => {
+          const override = overrides.get(b.questionId);
+          const s = override !== undefined && override !== null ? Math.max(0, Math.min(b.maxScore, override)) : b.score;
+          return { ...b, score: s };
+        });
+        score = newBreakdown.reduce((a, b) => a + b.score, 0);
+      } else {
+        score = num(ctx.body.score) ?? submission.aiScore ?? null;
+      }
+      if (score === null) throw new Error("A score is required to approve");
+      score = Math.max(0, Math.min(submission.maxScore, score));
       if (!submission.termId) throw new Error("This submission has no term set — cannot write a score");
 
       const lock = await prisma.assessmentLock.findUnique({ where: { classSubjectId_termId_component: { classSubjectId: submission.classSubjectId, termId: submission.termId, component: submission.component } } });
@@ -367,7 +386,13 @@ export const paperExamModule: Module = {
 
       const updated = await prisma.paperExamSubmission.update({
         where: { id: submission.id },
-        data: { status: "APPROVED", teacherScore: score, reviewedByUserId: ctx.session.user.id, reviewedAt: new Date() },
+        data: {
+          status: "APPROVED",
+          teacherScore: score,
+          reviewedByUserId: ctx.session.user.id,
+          reviewedAt: new Date(),
+          ...(newBreakdown ? { aiBreakdown: newBreakdown as never } : {}),
+        },
       });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "paperExam.approved", entityType: "PaperExamSubmission", entityId: submission.id, meta: { score, component: submission.component } });
       return updated;

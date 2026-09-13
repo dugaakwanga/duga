@@ -83,6 +83,10 @@ export default function PaperExamsPage() {
   const [uploading, setUploading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [scoreDraft, setScoreDraft] = useState<Record<string, string>>({});
+  // Per-submission, per-question score overrides — keyed so a teacher can
+  // adjust the AI's suggestion question-by-question before approving,
+  // instead of only being able to override the overall total.
+  const [breakdownDraft, setBreakdownDraft] = useState<Record<string, Record<string, string>>>({});
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [examModal, setExamModal] = useState(false);
@@ -171,12 +175,27 @@ export default function PaperExamsPage() {
     }
   }
 
-  async function review(id: string, decision: "APPROVE" | "REJECT") {
-    setBusyId(id);
+  function questionScore(s: Submission, questionId: string, fallback: number): string {
+    return breakdownDraft[s.id]?.[questionId] ?? String(fallback);
+  }
+  function setQuestionScore(submissionId: string, questionId: string, value: string) {
+    setBreakdownDraft((d) => ({ ...d, [submissionId]: { ...(d[submissionId] ?? {}), [questionId]: value } }));
+  }
+
+  async function review(s: Submission, decision: "APPROVE" | "REJECT") {
+    setBusyId(s.id);
     setError(null);
     try {
-      const scoreStr = scoreDraft[id];
-      await api(`paperExam/${id}/review`, { method: "POST", body: { decision, score: scoreStr ? Number(scoreStr) : undefined } });
+      const body: Record<string, unknown> = { decision };
+      if (decision === "APPROVE") {
+        if (s.aiBreakdown && s.aiBreakdown.length > 0) {
+          body.breakdown = s.aiBreakdown.map((b) => ({ questionId: b.questionId, score: Number(questionScore(s, b.questionId, b.score)) }));
+        } else {
+          const scoreStr = scoreDraft[s.id];
+          if (scoreStr) body.score = Number(scoreStr);
+        }
+      }
+      await api(`paperExam/${s.id}/review`, { method: "POST", body });
       await load();
     } catch (e) {
       alert((e as Error).message);
@@ -343,17 +362,37 @@ export default function PaperExamsPage() {
               {s.aiBreakdown && s.aiBreakdown.length > 0 ? (
                 <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
                   <Alert tone="info">
-                    <strong>AI suggested {s.aiScore}/{s.maxScore} overall.</strong> Per-question breakdown below.
+                    <strong>AI suggested {s.aiScore}/{s.maxScore} overall.</strong>{" "}
+                    {s.status === "AI_GRADED" ? "Adjust any question below before approving." : "Per-question breakdown below."}
                   </Alert>
                   {s.aiBreakdown.map((b, i) => (
                     <div key={b.questionId || i} style={{ border: "1px solid var(--duga-border)", borderRadius: 8, padding: "8px 10px" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontWeight: 600, fontSize: 13 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, fontWeight: 600, fontSize: 13, flexWrap: "wrap" }}>
                         <span>Q{i + 1}. {b.question}</span>
-                        <span style={{ flexShrink: 0 }}>{b.score}/{b.maxScore}</span>
+                        {s.status === "AI_GRADED" ? (
+                          <span style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                            <Input
+                              type="number"
+                              min={0}
+                              max={b.maxScore}
+                              style={{ width: 70 }}
+                              value={questionScore(s, b.questionId, b.score)}
+                              onChange={(e) => setQuestionScore(s.id, b.questionId, e.target.value)}
+                            />
+                            <span style={{ fontWeight: 400 }}>/ {b.maxScore}</span>
+                          </span>
+                        ) : (
+                          <span style={{ flexShrink: 0 }}>{b.score}/{b.maxScore}</span>
+                        )}
                       </div>
                       <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginTop: 2 }}>{b.feedback}</div>
                     </div>
                   ))}
+                  {s.status === "AI_GRADED" && (
+                    <div style={{ fontSize: 13.5, fontWeight: 700 }}>
+                      Total: {s.aiBreakdown.reduce((a, b) => a + (Number(questionScore(s, b.questionId, b.score)) || 0), 0)}/{s.maxScore}
+                    </div>
+                  )}
                 </div>
               ) : s.aiFeedback ? (
                 <div style={{ marginTop: 10 }}>
@@ -376,11 +415,13 @@ export default function PaperExamsPage() {
 
               {isStaff && role !== "ADMIN" && s.status === "AI_GRADED" && (
                 <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", marginTop: 12 }}>
-                  <Field label="Final score">
-                    <Input type="number" min={0} max={s.maxScore} style={{ width: 100 }} value={scoreDraft[s.id] ?? String(s.aiScore ?? "")} onChange={(e) => setScoreDraft((d) => ({ ...d, [s.id]: e.target.value }))} />
-                  </Field>
-                  <Button size="sm" variant="accent" loading={busyId === s.id} onClick={() => review(s.id, "APPROVE")}>Approve</Button>
-                  <Button size="sm" variant="ghost" loading={busyId === s.id} onClick={() => review(s.id, "REJECT")}>Reject</Button>
+                  {!(s.aiBreakdown && s.aiBreakdown.length > 0) && (
+                    <Field label="Final score">
+                      <Input type="number" min={0} max={s.maxScore} style={{ width: 100 }} value={scoreDraft[s.id] ?? String(s.aiScore ?? "")} onChange={(e) => setScoreDraft((d) => ({ ...d, [s.id]: e.target.value }))} />
+                    </Field>
+                  )}
+                  <Button size="sm" variant="accent" loading={busyId === s.id} onClick={() => review(s, "APPROVE")}>Approve</Button>
+                  <Button size="sm" variant="ghost" loading={busyId === s.id} onClick={() => review(s, "REJECT")}>Reject</Button>
                 </div>
               )}
             </Card>
