@@ -145,6 +145,7 @@ const STUDENT_NAV: NavSection[] = [
       { href: "/portal/learning?kind=tests", label: "My CBT Exams", icon: "quiz", perm: "tests:take", feature: "learning", subfeature: "learning:cbt" },
       { href: "/portal/learning?kind=assignments", label: "My Assignments", icon: "assignment", perm: "assignments:submit", feature: "learning", subfeature: "learning:assignments" },
       { href: "/portal/learning?kind=notes", label: "Lesson Notes", icon: "notes", perm: "learning:view", feature: "learning", subfeature: "learning:notes" },
+      { href: "/portal/curriculum", label: "Curriculum", icon: "notes", perm: "learning:view" },
       { href: "/portal/paper-exams", label: "Paper Exams", icon: "assignment", perm: "results:view", feature: "results" },
       { href: "/portal/elearn", label: "E-Learning & Rewards", icon: "notes", perm: "elearn:view", feature: "elearn" },
       { href: "/portal/games", label: "Educational Games", icon: "quiz", perm: "games:play", feature: "games" },
@@ -197,6 +198,7 @@ const PARENT_NAV: NavSection[] = [
     title: "School Life",
     items: [
       { href: "/portal/learning", label: "Assignments & Exams", icon: "quiz", perm: "learning:view", feature: "learning" },
+      { href: "/portal/curriculum", label: "Curriculum", icon: "notes", perm: "learning:view" },
       { href: "/portal/pta", label: "PTA", icon: "announcements", perm: "pta:view", feature: "pta" },
       { href: "/portal/hostel", label: "Hostel", icon: "hostel", perm: "hostel:view", feature: "hostel", boardingOnly: true },
       { href: "/portal/transport", label: "Transport", icon: "bus", perm: "transport:view", feature: "transport" },

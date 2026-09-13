@@ -1,7 +1,15 @@
 ﻿import { prisma, logAudit } from "@duga/core/server";
+import { hasPermission, type Role } from "@duga/core";
 import type { Module } from ".";
 import { can, str, resolveSection } from "../helpers";
 import { parseSchemeText } from "../schemeParser";
+
+// Tolerant of "JSS 1" vs "JSS1" / "Primary 4" vs "PRIMARY4" style mismatches
+// between how a class level is named in this school and how the source PDF
+// wrote it — same normalization findSchemeChunks (below) already relies on.
+function normalize(s: string): string {
+  return s.toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
 
 // Chunk text is fed straight into an AI prompt alongside the model's other
 // instructions — cap it well under the model's context window so one
@@ -57,7 +65,7 @@ export const schemeModule: Module = {
       // doesn't repeat the level name in its own header line.
       let lastLevel: string | null = null;
       const scheme = await prisma.schemeOfWork.create({
-        data: { schoolId, section, title, uploadedByUserId: ctx.session.user.id },
+        data: { schoolId, section, title, fileUrl: url, uploadedByUserId: ctx.session.user.id },
       });
       await prisma.schemeOfWorkChunk.createMany({
         data: rawChunks.map((c) => {
@@ -104,34 +112,87 @@ export const schemeModule: Module = {
       return { levels, subjects, hasAny: rows.length > 0 };
     },
 
-    // Read-only curriculum browser (the "Curriculum" nav item) — lets a
-    // teacher read the school's actual uploaded scheme of work directly,
-    // not just via the AI lesson-note generator. Scoped to the active
-    // section (Primary/Secondary), same as Classes/Timetable/etc.
+    // Read-only curriculum browser (the "Curriculum" nav item) — lets anyone
+    // read the school's actual uploaded scheme of work directly, not just via
+    // the AI lesson-note generator. Scoped to the active section (Primary/
+    // Secondary), same as Classes/Timetable/etc., and further auto-scoped by
+    // role: a teacher only sees the subjects they teach, a student only their
+    // own class's level, a parent only their children's level(s) — admin/
+    // owner see everything in the active section, same as every other
+    // section-scoped page in the app.
     browse: async (ctx) => {
       can(ctx, "learning:view");
       const schoolId = ctx.session.user.schoolId;
       const section = await resolveSection(ctx);
+      const role = ctx.session.user.role;
+
+      let allowedLevels: string[] | null = null;
+      let allowedSubjects: string[] | null = null;
+      if (role === "TEACHER") {
+        const cs = await prisma.classSubject.findMany({
+          where: { schoolId, teacherId: ctx.session.user.teacher?.id ?? "none" },
+          select: { subject: { select: { name: true } } },
+        });
+        allowedSubjects = [...new Set(cs.map((c) => normalize(c.subject.name)))];
+      } else if (role === "STUDENT") {
+        const student = await prisma.student.findFirst({
+          where: { id: ctx.session.user.student?.id ?? "none" },
+          select: { classGroup: { select: { level: { select: { name: true } } } } },
+        });
+        allowedLevels = student?.classGroup?.level ? [normalize(student.classGroup.level.name)] : [];
+      } else if (role === "PARENT") {
+        const links = await prisma.studentParent.findMany({
+          where: { parent: { userId: ctx.session.user.id } },
+          select: { student: { select: { classGroup: { select: { level: { select: { name: true } } } } } } },
+        });
+        allowedLevels = [
+          ...new Set(links.map((l) => l.student.classGroup?.level.name).filter((v): v is string => !!v).map(normalize)),
+        ];
+      }
+
       const levelName = str(ctx.query.get("levelName"));
       const subjectName = str(ctx.query.get("subjectName"));
-      const chunks = await prisma.schemeOfWorkChunk.findMany({
-        where: {
-          scheme: { schoolId, ...(section ? { section } : {}) },
-          ...(levelName ? { levelName } : {}),
-          ...(subjectName ? { subjectName } : {}),
-        },
-        select: { id: true, levelName: true, subjectName: true, term: true, text: true, pageStart: true, pageEnd: true },
-        orderBy: [{ levelName: "asc" }, { subjectName: "asc" }, { term: "asc" }],
-        take: 300,
-      });
-      const rows = await prisma.schemeOfWorkChunk.findMany({
+      const allChunks = await prisma.schemeOfWorkChunk.findMany({
         where: { scheme: { schoolId, ...(section ? { section } : {}) } },
-        select: { levelName: true, subjectName: true },
-        distinct: ["levelName", "subjectName"],
+        select: { id: true, schemeId: true, levelName: true, subjectName: true, term: true, text: true, pageStart: true, pageEnd: true },
+        orderBy: [{ levelName: "asc" }, { subjectName: "asc" }, { term: "asc" }],
+        take: 1000,
       });
-      const levels = [...new Set(rows.map((r) => r.levelName).filter((v): v is string => !!v))].sort();
-      const subjects = [...new Set(rows.map((r) => r.subjectName))].sort();
-      return { chunks, levels, subjects };
+      const scoped = allChunks.filter((c) => {
+        if (allowedLevels && (!c.levelName || !allowedLevels.includes(normalize(c.levelName)))) return false;
+        if (allowedSubjects && !allowedSubjects.some((s) => normalize(c.subjectName).includes(s) || s.includes(normalize(c.subjectName)))) return false;
+        return true;
+      });
+      const chunks = scoped.filter((c) => (!levelName || c.levelName === levelName) && (!subjectName || c.subjectName === subjectName));
+
+      const levels = [...new Set(scoped.map((c) => c.levelName).filter((v): v is string => !!v))].sort();
+      const subjects = [...new Set(scoped.map((c) => c.subjectName))].sort();
+      const schemeIds = [...new Set(scoped.map((c) => c.schemeId))];
+      const schemes = schemeIds.length
+        ? await prisma.schemeOfWork.findMany({ where: { id: { in: schemeIds } }, select: { id: true, title: true, fileUrl: true, section: true } })
+        : [];
+
+      return { chunks, levels, subjects, schemes, canEdit: hasPermission(role as Role, "settings:manage") };
+    },
+
+    // Admin corrects a mis-tagged or mis-parsed section — the extraction is
+    // best-effort (see schemeParser.ts) and sometimes mislabels a level/term
+    // or picks up a ragged table edge; this lets an admin fix that by hand
+    // instead of re-uploading the whole PDF.
+    updateChunk: async (ctx) => {
+      can(ctx, "settings:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const chunk = await prisma.schemeOfWorkChunk.findFirst({ where: { id: ctx.id, scheme: { schoolId } } });
+      if (!chunk) throw new Error("Curriculum section not found");
+      const subjectName = str(ctx.body.subjectName);
+      const text = str(ctx.body.text);
+      if (!subjectName || !text) throw new Error("Subject and content are required");
+      const updated = await prisma.schemeOfWorkChunk.update({
+        where: { id: chunk.id },
+        data: { levelName: str(ctx.body.levelName) ?? null, subjectName, term: str(ctx.body.term) ?? null, text: text.slice(0, MAX_CHUNK_CHARS) },
+      });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "scheme.chunkUpdated", entityType: "SchemeOfWorkChunk", entityId: chunk.id });
+      return updated;
     },
   },
 };
@@ -142,7 +203,6 @@ export const schemeModule: Module = {
 // wrote it, and of a topic/week hint the teacher typed matching something in
 // the chunk's own body text (not just its header tags).
 export async function findSchemeChunks(schoolId: string, opts: { levelName?: string; subjectName?: string; topicHint?: string }): Promise<Array<{ text: string; levelName: string | null; subjectName: string; term: string | null }>> {
-  const normalize = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
   const level = opts.levelName ? normalize(opts.levelName) : null;
   const subject = opts.subjectName ? normalize(opts.subjectName) : null;
 

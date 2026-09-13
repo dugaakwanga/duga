@@ -575,6 +575,7 @@ model Term {
   calendarEvents       CalendarEvent[]
   assessmentLocks      AssessmentLock[]
   paperExamSubmissions PaperExamSubmission[]
+  paperExams           PaperExam[]
 
   @@unique([schoolId, sessionId, termNumber])
   @@index([sessionId])
@@ -716,6 +717,7 @@ model ClassSubject {
   subjectScores    SubjectScore[]
   assessmentLocks  AssessmentLock[]
   paperExamSubmissions PaperExamSubmission[]
+  paperExams           PaperExam[]
 
   @@unique([classGroupId, subjectId])
   @@index([schoolId])
@@ -1248,6 +1250,10 @@ model SchemeOfWork {
   schoolId         String
   section          String
   title            String
+  // The originally-uploaded PDF, kept so the Curriculum page can show it
+  // exactly as uploaded — the parsed chunks below lose the PDF's table/
+  // column layout, so they're a search/AI-grounding aid, not a replacement.
+  fileUrl          String?
   uploadedByUserId String?
   createdAt        DateTime @default(now())
 
@@ -1316,10 +1322,57 @@ enum PaperExamStatus {
   REJECTED
 }
 
+// One structured paper exam a teacher builds ahead of time — questions plus
+// a marking scheme per question — so every student's photographed script for
+// this exam is graded against the same rubric instead of a single freeform
+// answer-key box re-typed (or skipped) per submission.
+model PaperExam {
+  id              String     @id @default(cuid())
+  schoolId        String
+  classSubjectId  String
+  termId          String?
+  title           String
+  instructions    String?
+  // Must match a component name configured in this school's ResultConfig
+  // (e.g. "Exam", "Test") — same convention as the old freeform flow, so a
+  // graded/approved submission still lands in the right SubjectScore column.
+  component       String
+  status          TestStatus @default(DRAFT)
+  createdByUserId String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  classSubject ClassSubject          @relation(fields: [classSubjectId], references: [id], onDelete: Cascade)
+  term         Term?                 @relation(fields: [termId], references: [id])
+  questions    PaperExamQuestion[]
+  submissions  PaperExamSubmission[]
+
+  @@index([classSubjectId])
+  @@index([schoolId])
+}
+
+model PaperExamQuestion {
+  id          String @id @default(cuid())
+  paperExamId String
+  order       Int    @default(0)
+  question    String
+  maxScore    Int
+  // The teacher's model answer / marking notes for this one question — what
+  // the AI grades the student's handwriting against, so it can check for the
+  // specific understanding this question is testing rather than guessing.
+  markingNotes String
+
+  paperExam PaperExam @relation(fields: [paperExamId], references: [id], onDelete: Cascade)
+
+  @@index([paperExamId])
+}
+
 // A photographed/scanned handwritten answer script for one student's paper
-// exam, AI-graded against an optional teacher-supplied answer key/rubric,
-// and always vetted by a teacher before the score counts — the AI only ever
-// *suggests* a score here; APPROVED is what actually reaches SubjectScore.
+// exam, AI-graded against either a structured PaperExam's per-question
+// rubric (paperExamId set) or, for the older freeform flow, an optional
+// teacher-supplied answer key — and always vetted by a teacher before the
+// score counts, since the AI only ever *suggests* one; APPROVED is what
+// actually reaches SubjectScore.
 model PaperExamSubmission {
   id                   String              @id @default(cuid())
   schoolId             String
@@ -1332,6 +1385,12 @@ model PaperExamSubmission {
   maxScore             Int
   aiScore              Int?
   aiFeedback           String?
+  // Per-question breakdown when graded against a structured PaperExam:
+  // [{ questionId, question, maxScore, score, feedback }]. Null for the
+  // older freeform-answerKey flow, which only ever produced one overall
+  // score/feedback pair.
+  aiBreakdown          Json?
+  paperExamId          String?
   status               PaperExamStatus     @default(PENDING)
   teacherScore         Int?
   reviewedByUserId     String?
@@ -1342,10 +1401,12 @@ model PaperExamSubmission {
   student      Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
   classSubject ClassSubject @relation(fields: [classSubjectId], references: [id], onDelete: Cascade)
   term         Term?        @relation(fields: [termId], references: [id])
+  paperExam    PaperExam?   @relation(fields: [paperExamId], references: [id], onDelete: SetNull)
 
   @@index([schoolId])
   @@index([studentId])
   @@index([classSubjectId])
+  @@index([paperExamId])
 }
 
 model CaScore {
