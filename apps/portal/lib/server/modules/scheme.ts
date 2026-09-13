@@ -1,6 +1,6 @@
 ﻿import { prisma, logAudit } from "@duga/core/server";
 import type { Module } from ".";
-import { can, str } from "../helpers";
+import { can, str, resolveSection } from "../helpers";
 import { parseSchemeText } from "../schemeParser";
 
 // Chunk text is fed straight into an AI prompt alongside the model's other
@@ -102,6 +102,36 @@ export const schemeModule: Module = {
       const levels = [...new Set(rows.map((r) => r.levelName).filter((v): v is string => !!v))].sort();
       const subjects = [...new Set(rows.map((r) => r.subjectName))].sort();
       return { levels, subjects, hasAny: rows.length > 0 };
+    },
+
+    // Read-only curriculum browser (the "Curriculum" nav item) — lets a
+    // teacher read the school's actual uploaded scheme of work directly,
+    // not just via the AI lesson-note generator. Scoped to the active
+    // section (Primary/Secondary), same as Classes/Timetable/etc.
+    browse: async (ctx) => {
+      can(ctx, "learning:view");
+      const schoolId = ctx.session.user.schoolId;
+      const section = await resolveSection(ctx);
+      const levelName = str(ctx.query.get("levelName"));
+      const subjectName = str(ctx.query.get("subjectName"));
+      const chunks = await prisma.schemeOfWorkChunk.findMany({
+        where: {
+          scheme: { schoolId, ...(section ? { section } : {}) },
+          ...(levelName ? { levelName } : {}),
+          ...(subjectName ? { subjectName } : {}),
+        },
+        select: { id: true, levelName: true, subjectName: true, term: true, text: true, pageStart: true, pageEnd: true },
+        orderBy: [{ levelName: "asc" }, { subjectName: "asc" }, { term: "asc" }],
+        take: 300,
+      });
+      const rows = await prisma.schemeOfWorkChunk.findMany({
+        where: { scheme: { schoolId, ...(section ? { section } : {}) } },
+        select: { levelName: true, subjectName: true },
+        distinct: ["levelName", "subjectName"],
+      });
+      const levels = [...new Set(rows.map((r) => r.levelName).filter((v): v is string => !!v))].sort();
+      const subjects = [...new Set(rows.map((r) => r.subjectName))].sort();
+      return { chunks, levels, subjects };
     },
   },
 };
