@@ -104,7 +104,17 @@ export const learningModule: Module = {
     const where = { classSubjectId: { in: ids }, schoolId: ctx.session.user.schoolId };
 
     if (kind === "notes") {
-      const notes = await prisma.lessonNote.findMany({ where, include: includeBase, orderBy: { createdAt: "desc" }, take: 100 });
+      // A student/parent only ever sees a published note — the teacher
+      // (or admin/owner) sees drafts too, so they can review/illustrate one
+      // before publishing it.
+      const consumers = await viewerStudents(ctx);
+      const isConsumer = consumers.length > 0 || ctx.session.user.role === "PARENT";
+      const notes = await prisma.lessonNote.findMany({
+        where: { ...where, ...(isConsumer ? { isPublished: true } : {}) },
+        include: includeBase,
+        orderBy: { createdAt: "desc" },
+        take: 100,
+      });
       return { kind, items: notes };
     }
     if (kind === "assignments") {
@@ -161,7 +171,7 @@ export const learningModule: Module = {
     const consumer = consumers.length > 0 || ctx.session.user.role === "PARENT";
     if (kind === "notes") {
       const note = await prisma.lessonNote.findFirst({ where: { id: ctx.id, schoolId, classSubjectId: { in: ids } }, include: includeBase });
-      if (!note) throw new Error("Lesson note not found");
+      if (!note || (consumer && !note.isPublished)) throw new Error("Lesson note not found");
       return note;
     }
     if (kind === "assignments") {
@@ -220,6 +230,11 @@ export const learningModule: Module = {
           content: str(ctx.body.content) ?? "",
           week: num(ctx.body.week),
           attachments: ctx.body.attachments ? ctx.body.attachments : undefined,
+          // Explicit opt-in only — omitting this keeps the column's own
+          // default (true), so any caller that doesn't know about drafts
+          // (an older client, a script) still gets today's always-visible
+          // behavior. The teacher-facing editor always sends this.
+          isPublished: typeof ctx.body.isPublished === "boolean" ? ctx.body.isPublished : undefined,
         },
       });
       return note;
@@ -323,7 +338,7 @@ export const learningModule: Module = {
     if (kind === "notes") {
       const item = await prisma.lessonNote.findFirst({ where: { id: ctx.id, schoolId, ...teacherFilter } });
       if (!item) throw new Error("Note not found");
-      return prisma.lessonNote.update({ where: { id: ctx.id }, data: pick(ctx.body, ["topic", "content", "week"]) });
+      return prisma.lessonNote.update({ where: { id: ctx.id }, data: pick(ctx.body, ["topic", "content", "week", "attachments", "isPublished"]) });
     }
     if (kind === "assignments") {
       const item = await prisma.assignment.findFirst({ where: { id: ctx.id, schoolId, ...teacherFilter } });

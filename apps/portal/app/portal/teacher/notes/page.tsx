@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PageHeader, Card, Badge, Button, Input, Textarea, Select, Modal, Alert, Spinner, EmptyState, Icon } from "@duga/ui";
 import { api } from "@/lib/client/api";
 import { groupClassSubjectsBySubject } from "@/lib/client/classSubjectOptions";
@@ -13,10 +13,12 @@ interface ClassSubjectOption {
 
 interface Note {
   id: string;
+  classSubjectId: string;
   topic: string;
   content: string;
   week: number | null;
   attachments: string[] | null;
+  isPublished: boolean;
   createdAt: string;
   classSubject: { subject: { name: string }; classGroup: { level: { name: string }; name: string } | null };
 }
@@ -28,17 +30,23 @@ function illustrationUrl(prompt: string): string {
   return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=768&height=512&nologo=true`;
 }
 
+const emptyForm = (): Record<string, string> => ({});
+
 export default function TeacherNotesPage() {
   const [options, setOptions] = useState<ClassSubjectOption[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<Record<string, string>>({});
+  const [editId, setEditId] = useState<string | null>(null);
+  const [form, setForm] = useState<Record<string, string>>(emptyForm());
   const [generating, setGenerating] = useState(false);
   const [groundedHint, setGroundedHint] = useState<string | null>(null);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [imageLoading, setImageLoading] = useState(false);
+  const [images, setImages] = useState<string[]>([]);
+  const [generatingImage, setGeneratingImage] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -59,6 +67,35 @@ export default function TeacherNotesPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  function resetModal() {
+    setOpen(false);
+    setEditId(null);
+    setForm(emptyForm());
+    setGroundedHint(null);
+    setImages([]);
+  }
+
+  function openNew() {
+    setEditId(null);
+    setForm(emptyForm());
+    setGroundedHint(null);
+    setImages([]);
+    setOpen(true);
+  }
+
+  function openEdit(n: Note) {
+    setEditId(n.id);
+    setForm({
+      classSubjectId: n.classSubjectId,
+      topic: n.topic,
+      content: n.content,
+      week: n.week ? String(n.week) : "",
+    });
+    setGroundedHint(null);
+    setImages(n.attachments ?? []);
+    setOpen(true);
+  }
 
   async function generateFromScheme() {
     const cs = options.find((o) => o.id === form.classSubjectId);
@@ -91,23 +128,80 @@ export default function TeacherNotesPage() {
   function generateIllustration() {
     const cs = options.find((o) => o.id === form.classSubjectId);
     if (!form.topic) return alert("Enter a topic first");
+    setGeneratingImage(true);
     const prompt = `simple educational diagram of ${form.topic} for a ${cs?.classGroup.level.name ?? "school"} ${cs?.subject.name ?? ""} class, labeled, clean line art, no watermark, no text`;
-    setImageLoading(true);
-    setImageUrl(illustrationUrl(prompt));
+    const url = illustrationUrl(prompt);
+    const probe = new Image();
+    probe.onload = () => { setImages((prev) => [...prev, url]); setGeneratingImage(false); };
+    probe.onerror = () => { setGeneratingImage(false); alert("Couldn't generate an illustration right now — the free image service may be busy. Try again."); };
+    probe.src = url;
   }
 
-  async function create() {
+  async function uploadImage(file: File | undefined) {
+    if (!file) return;
+    setUploadingImage(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/upload?purpose=gallery", { method: "POST", body: fd });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Upload failed");
+      setImages((prev) => [...prev, json.data.url]);
+      if (fileRef.current) fileRef.current.value = "";
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setUploadingImage(false);
+    }
+  }
+
+  function removeImage(url: string) {
+    setImages((prev) => prev.filter((u) => u !== url));
+  }
+
+  async function saveDraft() {
     if (!form.classSubjectId) return alert("Choose a class subject");
     if (!form.topic) return alert("Enter a topic");
+    setSaving(true);
     try {
-      await api("learning", {
-        method: "POST",
-        body: { kind: "note", classSubjectId: form.classSubjectId, topic: form.topic, content: form.content ?? "", week: form.week ? Number(form.week) : undefined, attachments: imageUrl ? [imageUrl] : undefined },
-      });
-      setOpen(false);
-      setForm({});
-      setGroundedHint(null);
-      setImageUrl(null);
+      const body = { classSubjectId: form.classSubjectId, topic: form.topic, content: form.content ?? "", week: form.week ? Number(form.week) : undefined, attachments: images };
+      if (editId) {
+        await api(`learning/${editId}?kind=notes`, { method: "PATCH", body });
+      } else {
+        await api("learning", { method: "POST", body: { ...body, kind: "note", isPublished: false } });
+      }
+      resetModal();
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function publish(n: Note) {
+    if (!confirm(`Publish "${n.topic}"? Students in this class will be able to see it.`)) return;
+    try {
+      await api(`learning/${n.id}?kind=notes`, { method: "PATCH", body: { isPublished: true } });
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
+  async function unpublish(n: Note) {
+    try {
+      await api(`learning/${n.id}?kind=notes`, { method: "PATCH", body: { isPublished: false } });
+      load();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
+  async function deleteNote(n: Note) {
+    if (!confirm(`Delete "${n.topic}"? This cannot be undone.`)) return;
+    try {
+      await api(`learning/${n.id}/deleteNote`, { method: "POST", body: {} });
       load();
     } catch (e) {
       alert((e as Error).message);
@@ -118,8 +212,8 @@ export default function TeacherNotesPage() {
     <div>
       <PageHeader
         title="Lesson Notes"
-        subtitle="Write and share lesson notes for the classes you teach."
-        actions={<Button onClick={() => setOpen(true)}><Icon name="plus" size={16} /> New note</Button>}
+        subtitle="Write and share lesson notes for the classes you teach. New notes save as a draft — review, illustrate, then publish."
+        actions={<Button onClick={openNew}><Icon name="plus" size={16} /> New note</Button>}
       />
       {error && <Alert tone="danger">{error}</Alert>}
       {loading ? (
@@ -134,23 +228,37 @@ export default function TeacherNotesPage() {
                 <Badge tone="info">{n.classSubject.subject.name}</Badge>
                 {n.classSubject.classGroup && <Badge tone="neutral">{n.classSubject.classGroup.level.name} {n.classSubject.classGroup.name}</Badge>}
                 {n.week ? <Badge tone="accent">Week {n.week}</Badge> : null}
+                <Badge tone={n.isPublished ? "success" : "neutral"}>{n.isPublished ? "Published" : "Draft"}</Badge>
               </div>
-              {n.attachments?.[0] && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={n.attachments[0]} alt={n.topic} style={{ width: "100%", maxHeight: 160, objectFit: "cover", borderRadius: 8, marginBottom: 8 }} />
+              {n.attachments && n.attachments.length > 0 && (
+                <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 8 }}>
+                  {n.attachments.map((url, i) => (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img key={i} src={url} alt={n.topic} style={{ width: 90, height: 70, objectFit: "cover", borderRadius: 6, flexShrink: 0 }} />
+                  ))}
+                </div>
               )}
               <p style={{ fontSize: 13.5, color: "var(--duga-ink-2)", margin: "0 0 8px" }}>{n.content.slice(0, 200)}</p>
-              <div style={{ fontSize: 12.5, color: "var(--duga-muted)" }}>Added {new Date(n.createdAt).toLocaleDateString()}</div>
+              <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginBottom: 10 }}>Added {new Date(n.createdAt).toLocaleDateString()}</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <Button size="sm" variant="outline" onClick={() => openEdit(n)}>Edit</Button>
+                {n.isPublished ? (
+                  <Button size="sm" variant="ghost" onClick={() => unpublish(n)}>Unpublish</Button>
+                ) : (
+                  <Button size="sm" variant="accent" onClick={() => publish(n)}>Publish</Button>
+                )}
+                <Button size="sm" variant="ghost" onClick={() => deleteNote(n)}>Delete</Button>
+              </div>
             </Card>
           ))}
         </div>
       )}
 
-      <Modal open={open} onClose={() => { setOpen(false); setGroundedHint(null); setImageUrl(null); }} title="New lesson note" wide>
+      <Modal open={open} onClose={resetModal} title={editId ? "Edit lesson note" : "New lesson note"} wide>
         <div style={{ display: "grid", gap: 14 }}>
           <div>
             <label style={{ fontSize: 12.5, fontWeight: 600, display: "block", marginBottom: 6 }}>Class subject</label>
-            <Select value={form.classSubjectId ?? ""} onChange={(e) => setForm({ ...form, classSubjectId: e.target.value })}>
+            <Select value={form.classSubjectId ?? ""} onChange={(e) => setForm({ ...form, classSubjectId: e.target.value })} disabled={!!editId}>
               <option value="">Select a class subject…</option>
               {groupClassSubjectsBySubject(options).map((g) => (
                 <optgroup key={g.subject} label={g.subject}>
@@ -172,34 +280,42 @@ export default function TeacherNotesPage() {
             </Button>
           </div>
           {groundedHint && <Alert tone={groundedHint.startsWith("Drafted") ? "success" : "info"}>{groundedHint}</Alert>}
-          <Textarea id="content" rows={7} value={form.content ?? ""} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="Write the lesson note (objectives, activities, summary)…, or generate one above" />
+          <Textarea id="content" rows={7} value={form.content ?? ""} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="Write the lesson note (objectives, activities, summary)…, or generate one above. You can always come back and edit this before publishing." />
 
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-            <label style={{ fontSize: 12.5, fontWeight: 600 }}>Illustration</label>
-            <Button type="button" variant="outline" size="sm" onClick={generateIllustration}>
-              <Icon name="notes" size={14} /> {imageUrl ? "Regenerate illustration" : "Generate illustration"}
-            </Button>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+            <label style={{ fontSize: 12.5, fontWeight: 600 }}>Images</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Button type="button" variant="outline" size="sm" loading={generatingImage} onClick={generateIllustration}>
+                <Icon name="notes" size={14} /> Generate illustration
+              </Button>
+              <Button type="button" variant="outline" size="sm" loading={uploadingImage} onClick={() => fileRef.current?.click()}>
+                <Icon name="plus" size={14} /> Upload image
+              </Button>
+              <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => uploadImage(e.target.files?.[0])} />
+            </div>
           </div>
-          {imageUrl && (
-            <div style={{ position: "relative" }}>
-              {imageLoading && <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginBottom: 6 }}>Generating…</div>}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={imageUrl}
-                alt={form.topic ?? "Illustration"}
-                style={{ width: "100%", maxWidth: 420, borderRadius: 10, border: "1px solid var(--duga-border)", display: imageLoading ? "none" : "block" }}
-                onLoad={() => setImageLoading(false)}
-                onError={() => { setImageLoading(false); alert("Couldn't generate an illustration right now — the free image service may be busy. Try again."); setImageUrl(null); }}
-              />
-              {!imageLoading && (
-                <Button type="button" variant="ghost" size="sm" style={{ marginTop: 6 }} onClick={() => setImageUrl(null)}>Remove illustration</Button>
-              )}
+          {images.length > 0 && (
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {images.map((url, i) => (
+                <div key={i} style={{ position: "relative" }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={url} alt="" style={{ width: 140, height: 100, objectFit: "cover", borderRadius: 8, border: "1px solid var(--duga-border)" }} />
+                  <button
+                    type="button"
+                    onClick={() => removeImage(url)}
+                    aria-label="Remove image"
+                    style={{ position: "absolute", top: -8, right: -8, width: 22, height: 22, borderRadius: "50%", border: "none", background: "var(--duga-danger, #c0392b)", color: "#fff", cursor: "pointer", fontSize: 13, lineHeight: 1 }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
             </div>
           )}
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
-          <Button variant="ghost" onClick={() => { setOpen(false); setGroundedHint(null); setImageUrl(null); }}>Cancel</Button>
-          <Button onClick={create}>Save note</Button>
+          <Button variant="ghost" onClick={resetModal}>Cancel</Button>
+          <Button loading={saving} onClick={saveDraft}>{editId ? "Save changes" : "Save as draft"}</Button>
         </div>
       </Modal>
     </div>

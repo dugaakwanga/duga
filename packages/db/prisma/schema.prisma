@@ -736,6 +736,12 @@ model LessonNote {
   topic          String
   content        String
   attachments    Json?
+  // Defaults true so every note that already existed before this field was
+  // added (and any future caller that doesn't set it explicitly) keeps
+  // today's always-visible-to-students behavior. The teacher-facing note
+  // editor sets this false on a fresh note so a draft can be reviewed and
+  // illustrated before an explicit "Publish" makes it visible to students.
+  isPublished    Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
