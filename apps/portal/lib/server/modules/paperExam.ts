@@ -45,21 +45,39 @@ export const paperExamModule: Module = {
   },
 
   actions: {
-    // Student uploads photo(s) of their completed paper exam. Images are
-    // uploaded to storage client-side first (POST /api/upload?purpose=paper-exam),
-    // this just records the submission.
+    // Students in a class subject's class — powers the student picker in the
+    // upload form (the teacher, not the student, submits — see submit below).
+    roster: async (ctx) => {
+      can(ctx, "results:enter");
+      const role = ctx.session.user.role;
+      const schoolId = ctx.session.user.schoolId;
+      const classSubjectId = str(ctx.query.get("classSubjectId"));
+      if (!classSubjectId) throw new Error("classSubjectId required");
+      const classSubject = await prisma.classSubject.findFirst({
+        where: { id: classSubjectId, schoolId, ...(role === "TEACHER" ? { teacherId: ctx.session.user.teacher?.id } : {}) },
+        select: { classGroupId: true },
+      });
+      if (!classSubject) throw new Error(role === "TEACHER" ? "You can only view your own subjects" : "Class subject not found");
+      const students = await prisma.student.findMany({
+        where: { schoolId, currentClassGroupId: classSubject.classGroupId, status: "ACTIVE" },
+        include: { user: { select: { firstName: true, lastName: true } } },
+        orderBy: { admissionNumber: "asc" },
+      });
+      return { items: students.map((s) => ({ id: s.id, name: `${s.user.firstName} ${s.user.lastName}`, admissionNumber: s.admissionNumber })) };
+    },
+
+    // The subject teacher (or admin/owner) collects the physical scripts and
+    // uploads a photo per student — not the student themselves, per the
+    // school's actual workflow (a student handing in loose photos of their
+    // own paper invites mix-ups/fraud that the teacher collecting and
+    // scanning them all at once avoids).
     submit: async (ctx) => {
-      // Broader than results:enter (which STUDENT never has) — a student
-      // submitting their own script is uploading evidence, not entering a
-      // score; TEACHER/ADMIN/OWNER may also submit on a student's behalf
-      // (e.g. an invigilator scanning a stack of scripts).
-      if (!["STUDENT", "TEACHER", "ADMIN", "OWNER"].includes(ctx.session.user.role)) {
-        throw new Error("Only a student or a member of staff can submit a paper exam script");
+      const role = ctx.session.user.role;
+      if (!["TEACHER", "ADMIN", "OWNER"].includes(role)) {
+        throw new Error("Only the subject teacher (or an admin) can submit a paper exam script");
       }
       const schoolId = ctx.session.user.schoolId;
       const classSubjectId = str(ctx.body.classSubjectId);
-      // Defaults to the school's current active term — a student submitting
-      // an exam script has no reason to pick a term themselves.
       const termId = str(ctx.body.termId) ?? (await prisma.term.findFirst({ where: { schoolId, status: "ACTIVE" }, select: { id: true } }))?.id;
       const component = str(ctx.body.component);
       const maxScore = num(ctx.body.maxScore);
@@ -67,14 +85,15 @@ export const paperExamModule: Module = {
       if (!classSubjectId || !component || maxScore === undefined) throw new Error("classSubjectId, component and maxScore required");
       if (imageUrls.length === 0) throw new Error("Upload at least one photo of the answer script");
 
-      let studentId: string;
-      if (ctx.session.user.role === "STUDENT") {
-        studentId = ctx.session.user.student!.id;
-      } else {
-        studentId = str(ctx.body.studentId) ?? "";
-        if (!studentId) throw new Error("studentId required when submitting on a student's behalf");
-      }
-      const roster = await prisma.student.findFirst({ where: { id: studentId, schoolId, currentClassGroupId: (await prisma.classSubject.findUnique({ where: { id: classSubjectId }, select: { classGroupId: true } }))?.classGroupId } });
+      const classSubject = await prisma.classSubject.findFirst({
+        where: { id: classSubjectId, schoolId, ...(role === "TEACHER" ? { teacherId: ctx.session.user.teacher?.id } : {}) },
+        select: { classGroupId: true },
+      });
+      if (!classSubject) throw new Error(role === "TEACHER" ? "You can only submit scripts for your own subjects" : "Class subject not found");
+
+      const studentId = str(ctx.body.studentId) ?? "";
+      if (!studentId) throw new Error("studentId required");
+      const roster = await prisma.student.findFirst({ where: { id: studentId, schoolId, currentClassGroupId: classSubject.classGroupId } });
       if (!roster) throw new Error("Student is not in this class subject's class");
 
       const submission = await prisma.paperExamSubmission.create({

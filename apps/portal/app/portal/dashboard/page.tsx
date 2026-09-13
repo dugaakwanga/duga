@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Card, Stat, Badge, Table, PageHeader, Icon, EmptyState, Alert, Spinner } from "@duga/ui";
 import { api } from "@/lib/client/api";
 import { useSection } from "@/components/SectionContext";
+import { groupClassSubjectsBySubject } from "@/lib/client/classSubjectOptions";
 
 interface InvoiceLike {
   id: string;
@@ -144,14 +145,18 @@ export default function DashboardPage() {
         <div className="portal-dashboard-grid">
           <Card title="My classes & subjects">
             {data.classSubjects?.length ? (
-              <Table headers={["Subject", "Class"]}>
-                {data.classSubjects.map((cs) => (
-                  <tr key={cs.id}>
-                    <td>{cs.subject.name}</td>
-                    <td>{cs.classGroup ? `${cs.classGroup.level.name} ${cs.classGroup.name}` : "—"}</td>
-                  </tr>
+              <div style={{ display: "grid", gap: 12 }}>
+                {groupClassSubjectsBySubject(data.classSubjects).map((g) => (
+                  <div key={g.subject} style={{ paddingBottom: 10, borderBottom: "1px solid var(--duga-border)" }}>
+                    <strong>{g.subject}</strong>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                      {g.items.map((cs) => (
+                        <Badge key={cs.id} tone="info">{cs.classGroup ? `${cs.classGroup.level.name} ${cs.classGroup.name}` : "—"}</Badge>
+                      ))}
+                    </div>
+                  </div>
                 ))}
-              </Table>
+              </div>
             ) : (
               <EmptyState title="No classes assigned" />
             )}

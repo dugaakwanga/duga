@@ -153,19 +153,22 @@ export default function SiteHeader() {
         </div>
 
         <div className={`mkt-mobile-menu${open ? " open" : ""}`}>
+          {/* Portal/Apply used to sit after all ten nav links, so reaching
+              them meant scrolling through the whole list first. Leading with
+              them means they're visible the instant the menu opens. */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 4 }}>
+            <Link className="duga-btn duga-btn--outline duga-btn--block" href={portalUrl} target="_blank" rel="noopener noreferrer" onClick={() => setOpen(false)}>
+              Portal Login
+            </Link>
+            <Link className="duga-btn duga-btn--primary duga-btn--block" href="/apply" onClick={() => setOpen(false)}>
+              Apply Now
+            </Link>
+          </div>
           {navLinks.map((n) => (
             <Link key={n.href} href={n.href} onClick={() => setOpen(false)}>
               {n.label}
             </Link>
           ))}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10, marginTop: 10 }}>
-            <Link className="duga-btn duga-btn--primary duga-btn--block" href="/apply" onClick={() => setOpen(false)}>
-              Apply Now
-            </Link>
-            <Link className="duga-btn duga-btn--outline duga-btn--block" href={portalUrl} target="_blank" rel="noopener noreferrer" onClick={() => setOpen(false)}>
-              Portal Login
-            </Link>
-          </div>
         </div>
       </header>
     </>

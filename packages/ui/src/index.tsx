@@ -289,7 +289,12 @@ const paths: Record<IconName, ReactNode> = {
   audit: <path d="M5 3h14v18H5zM9 7h6M9 11h6M9 15h4M8 19h8" />,
   applications: <path d="M6 3h12v18H6zM9 3h6M10 17h4M9 8h6M9 12h6" />,
   notifications: <path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6Zm6 12a2.5 2.5 0 0 1-2.4-2h4.8a2.5 2.5 0 0 1-2.4 2Z" />,
-  logout: <path d="M9 4h5v16H9M14 9l3 3-3 3M6 12h11" />,
+  // The standard "log out" pictogram (an open door frame with an arrow
+  // exiting through the gap) used by most mainstream apps — chosen over the
+  // previous shape (a closed door + a separate arrow) specifically for
+  // recognizability, not just color, per user feedback that the old icon
+  // wasn't read as "sign out" at a glance.
+  logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-5-5-5 M21 12H9" />,
   back: <path d="M15 5l-7 7 7 7M8 12h12" />,
   plus: <path d="M12 5v14M5 12h14" />,
   more: <path d="M5 12h.01M12 12h.01M19 12h.01" />,

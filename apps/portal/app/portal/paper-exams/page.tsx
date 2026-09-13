@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PageHeader, Card, Badge, Button, Modal, Field, Input, Select, Alert, Spinner, EmptyState } from "@duga/ui";
 import { api } from "@/lib/client/api";
+import { groupClassSubjectsBySubject } from "@/lib/client/classSubjectOptions";
 
 interface Submission {
   id: string;
@@ -22,7 +23,13 @@ interface Submission {
 interface ClassSubjectOption {
   id: string;
   subject: { name: string };
-  classGroup?: { level: { name: string }; name: string } | null;
+  classGroup: { level: { name: string }; name: string };
+}
+
+interface RosterStudent {
+  id: string;
+  name: string;
+  admissionNumber: string | null;
 }
 
 function statusTone(s: Submission["status"]): "neutral" | "info" | "success" | "danger" {
@@ -33,15 +40,20 @@ export default function PaperExamsPage() {
   const [role, setRole] = useState("");
   const [items, setItems] = useState<Submission[]>([]);
   const [options, setOptions] = useState<ClassSubjectOption[]>([]);
+  const [roster, setRoster] = useState<RosterStudent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<{ classSubjectId: string; component: string; maxScore: string }>({ classSubjectId: "", component: "Exam", maxScore: "" });
+  const [form, setForm] = useState<{ classSubjectId: string; studentId: string; component: string; maxScore: string }>({ classSubjectId: "", studentId: "", component: "Exam", maxScore: "" });
+  const [rosterLoading, setRosterLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [scoreDraft, setScoreDraft] = useState<Record<string, string>>({});
   const [answerKeyDraft, setAnswerKeyDraft] = useState<Record<string, string>>({});
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const isStaff = role === "TEACHER" || role === "ADMIN" || role === "OWNER";
+  const canSubmit = role === "TEACHER" || role === "ADMIN" || role === "OWNER";
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -49,9 +61,9 @@ export default function PaperExamsPage() {
       const d = await api<{ role: string; items: Submission[] }>("paperExam");
       setRole(d.role);
       setItems(d.items);
-      if (d.role === "STUDENT") {
-        const dash = await api<{ classSubjects?: ClassSubjectOption[] }>("dashboard");
-        setOptions(dash.classSubjects ?? []);
+      if (d.role === "TEACHER" || d.role === "ADMIN" || d.role === "OWNER") {
+        const opts = await api<ClassSubjectOption[]>("teacher");
+        setOptions(opts);
       }
     } catch (e) {
       setError((e as Error).message);
@@ -64,8 +76,17 @@ export default function PaperExamsPage() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    if (!form.classSubjectId) { setRoster([]); return; }
+    setRosterLoading(true);
+    api<{ items: RosterStudent[] }>("paperExam/roster", { query: { classSubjectId: form.classSubjectId } })
+      .then((d) => setRoster(d.items))
+      .catch((e) => setError((e as Error).message))
+      .finally(() => setRosterLoading(false));
+  }, [form.classSubjectId]);
+
   async function submit() {
-    if (!form.classSubjectId || !form.component || !form.maxScore) return alert("Fill in every field");
+    if (!form.classSubjectId || !form.studentId || !form.component || !form.maxScore) return alert("Fill in every field");
     const files = fileRef.current?.files;
     if (!files || files.length === 0) return alert("Choose at least one photo of the answer script");
     setUploading(true);
@@ -80,9 +101,9 @@ export default function PaperExamsPage() {
         if (!res.ok || !json.ok) throw new Error(json.error || "Upload failed");
         imageUrls.push(json.data.url);
       }
-      await api("paperExam/submit", { method: "POST", body: { classSubjectId: form.classSubjectId, component: form.component, maxScore: Number(form.maxScore), imageUrls } });
+      await api("paperExam/submit", { method: "POST", body: { classSubjectId: form.classSubjectId, studentId: form.studentId, component: form.component, maxScore: Number(form.maxScore), imageUrls } });
       setOpen(false);
-      setForm({ classSubjectId: "", component: "Exam", maxScore: "" });
+      setForm({ classSubjectId: "", studentId: "", component: "Exam", maxScore: "" });
       if (fileRef.current) fileRef.current.value = "";
       await load();
     } catch (e) {
@@ -119,20 +140,18 @@ export default function PaperExamsPage() {
     }
   }
 
-  const isStaff = role === "TEACHER" || role === "ADMIN" || role === "OWNER";
-
   return (
     <div>
       <PageHeader
         title="Paper Exams"
-        subtitle={role === "STUDENT" ? "Upload a photo of your completed answer script." : "AI-assisted grading of photographed answer scripts — every score is only ever a suggestion until you approve it."}
-        actions={role === "STUDENT" ? <Button onClick={() => setOpen(true)}>Upload script</Button> : undefined}
+        subtitle={canSubmit ? "Upload a photo of a student's completed answer script for AI-assisted grading — every score is only ever a suggestion until you approve it." : "Your photographed paper exam scripts and their scores."}
+        actions={canSubmit ? <Button onClick={() => setOpen(true)}>Upload script</Button> : undefined}
       />
       {error && <Alert tone="danger">{error}</Alert>}
       {loading ? (
         <Spinner size={28} />
       ) : items.length === 0 ? (
-        <EmptyState title="Nothing here yet" hint={role === "STUDENT" ? "Upload a photo of your answer script to get started." : "Submissions will appear here once students upload their scripts."} />
+        <EmptyState title="Nothing here yet" hint={canSubmit ? "Upload a photo of a student's script to get started." : "Nothing has been uploaded for you yet."} />
       ) : (
         <div style={{ display: "grid", gap: 14 }}>
           {items.map((s) => (
@@ -195,12 +214,24 @@ export default function PaperExamsPage() {
         </div>
       )}
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Upload paper exam script">
+      <Modal open={open} onClose={() => setOpen(false)} title="Upload a student's paper exam script">
         <Field label="Subject" required>
-          <Select value={form.classSubjectId} onChange={(e) => setForm({ ...form, classSubjectId: e.target.value })}>
+          <Select value={form.classSubjectId} onChange={(e) => setForm({ ...form, classSubjectId: e.target.value, studentId: "" })}>
             <option value="">Select a subject…</option>
-            {options.map((o) => (
-              <option key={o.id} value={o.id}>{o.subject.name}</option>
+            {groupClassSubjectsBySubject(options).map((g) => (
+              <optgroup key={g.subject} label={g.subject}>
+                {g.items.map((o) => (
+                  <option key={o.id} value={o.id}>{o.classGroup.level.name} {o.classGroup.name}</option>
+                ))}
+              </optgroup>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Student" required>
+          <Select value={form.studentId} onChange={(e) => setForm({ ...form, studentId: e.target.value })} disabled={!form.classSubjectId || rosterLoading}>
+            <option value="">{rosterLoading ? "Loading…" : "Select a student…"}</option>
+            {roster.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}{s.admissionNumber ? ` (${s.admissionNumber})` : ""}</option>
             ))}
           </Select>
         </Field>
@@ -210,7 +241,7 @@ export default function PaperExamsPage() {
         <Field label="Maximum score" required>
           <Input type="number" min={1} value={form.maxScore} onChange={(e) => setForm({ ...form, maxScore: e.target.value })} />
         </Field>
-        <Field label="Photo(s) of your answer script" required hint="You can select multiple pages at once.">
+        <Field label="Photo(s) of the answer script" required hint="You can select multiple pages at once.">
           <input ref={fileRef} type="file" accept="image/*" multiple capture="environment" />
         </Field>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>

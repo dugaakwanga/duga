@@ -188,13 +188,16 @@ export const aiModule: Module = {
           return { reply: `I couldn't build the timetable: ${(e as Error).message}` };
         }
       }
-      // "Generate/draw/create a picture/diagram/image of X" — routed to
+      // Mentioning an image/picture/diagram/etc. at all — routed to
       // Pollinations.ai (free, no key needed; see teacher/notes/page.tsx for
       // the same endpoint used by the lesson-note illustration button)
       // instead of the text model, which cannot produce an image at all.
-      const wantsImage =
-        /\b(image|picture|photo|diagram|illustration|drawing|poster|graphic)\b/i.test(prompt) &&
-        /\b(generate|create|make|draw|design|show me)\b/i.test(prompt);
+      // Deliberately NOT also requiring a verb like "generate" — a typo
+      // there ("genrata an image of a dog") used to fall straight through
+      // to the text model, which correctly (but unhelpfully) explained it
+      // can't make images. Nobody says "image" to a school portal assistant
+      // without wanting one, so the noun alone is a safe enough signal.
+      const wantsImage = /\b(image|picture|pic|photo|diagram|illustration|drawing|poster|graphic)\b/i.test(prompt);
       if (wantsImage) {
         const subjectMatch = prompt.match(/(?:of|showing|about|depicting)\s+(.+)$/i);
         const subject = (subjectMatch?.[1] ?? prompt).replace(/[.?!]+$/, "").trim();

@@ -18,28 +18,35 @@ export function BarChart({
   format?: (v: number) => string;
 }) {
   const max = Math.max(1, ...points.map((p) => p.value));
+  // Bars used to be flex:1 (equal share of the container width), which on a
+  // narrow phone screen squeezed each column down to a few pixels — too
+  // narrow for even one letter of a subject name, so the label wrapped
+  // character-by-character. Giving each column a fixed width and letting the
+  // row scroll horizontally instead keeps every bar and label readable.
   return (
-    <div style={{ display: "flex", alignItems: "flex-end", gap: 10, height: 180, padding: "0 4px" }}>
-      {points.map((p) => (
-        <div key={p.label} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, height: "100%" }}>
-          <div style={{ flex: 1, width: "100%", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-            <div
-              style={{
-                width: "70%",
-                maxWidth: 40,
-                height: `${Math.max(2, (p.value / max) * 100)}%`,
-                background: color,
-                borderRadius: 6,
-                position: "relative",
-                minHeight: 4,
-              }}
-              title={format(p.value)}
-            />
+    <div style={{ overflowX: "auto", overflowY: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 10, height: 180, padding: "0 4px", minWidth: points.length * 62 }}>
+        {points.map((p) => (
+          <div key={p.label} style={{ flex: "0 0 56px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, height: "100%" }}>
+            <div style={{ flex: 1, width: "100%", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+              <div
+                style={{
+                  width: "70%",
+                  maxWidth: 40,
+                  height: `${Math.max(2, (p.value / max) * 100)}%`,
+                  background: color,
+                  borderRadius: 6,
+                  position: "relative",
+                  minHeight: 4,
+                }}
+                title={format(p.value)}
+              />
+            </div>
+            <div style={{ fontSize: 11, color: "var(--duga-muted)", textAlign: "center", lineHeight: 1.2, wordBreak: "break-word", width: "100%" }}>{p.label}</div>
+            <div style={{ fontSize: 11.5, fontWeight: 700 }}>{format(p.value)}</div>
           </div>
-          <div style={{ fontSize: 11, color: "var(--duga-muted)", textAlign: "center", lineHeight: 1.2, overflowWrap: "anywhere" }}>{p.label}</div>
-          <div style={{ fontSize: 11.5, fontWeight: 700 }}>{format(p.value)}</div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
