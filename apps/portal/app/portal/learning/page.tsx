@@ -21,6 +21,7 @@ interface Item {
   status?: string;
   maxScore?: number;
   isPublished?: boolean;
+  attachments?: string[] | null;
   joinLink?: string;
   classSubject: { subject: { name: string }; classGroup?: { level: { name: string }; name: string } | null; teacher?: { user: { firstName: string; lastName: string } } | null } | null;
   _count?: { questions?: number; attempts?: number; submissions?: number };
@@ -231,6 +232,14 @@ export default function LearningPage() {
                   <Badge tone="neutral">{item.classSubject.classGroup.level.name} {item.classSubject.classGroup.name}</Badge>
                 )}
               </div>
+              {kind === "notes" && item.attachments && item.attachments.length > 0 && (
+                <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 8 }}>
+                  {item.attachments.map((url, i) => (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img key={i} src={url} alt="" style={{ width: 100, height: 76, objectFit: "cover", borderRadius: 6, flexShrink: 0 }} />
+                  ))}
+                </div>
+              )}
               <p style={{ fontSize: 13.5, color: "var(--duga-ink-2)", margin: "0 0 8px" }}>
                 {(item.content ?? item.instructions ?? item.description ?? "").slice(0, 160)}
               </p>
@@ -244,6 +253,11 @@ export default function LearningPage() {
                   </>
                 )}
                 {kind === "notes" && item.week ? <>Week {item.week}</> : null}
+                {kind === "notes" && canManage && (
+                  <>
+                    {" "}<Badge tone={item.isPublished ? "success" : "neutral"}>{item.isPublished ? "Published" : "Draft"}</Badge>
+                  </>
+                )}
               </div>
               {kind === "live" && item.status === "LIVE" && (
                 <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
