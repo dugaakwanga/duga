@@ -48,12 +48,15 @@ function fmtDate(d: string) {
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
-// School-wide "mark or retroactively correct attendance" panel for
-// owner/admin — same roster/save flow as the teacher's take-attendance page,
-// but the class picker covers every class in the school, not just the
-// admin's own form classes, and the date can be any past date to override
-// a record a class teacher already took.
-function AdminMarkPanel({ onSaved }: { onSaved: () => void }) {
+// Mark or correct attendance, right on the same page the records are
+// viewed — two scopes share this:
+// - "admin": every class in the school, any date (including the past, to
+//   retroactively override whatever a class teacher already took).
+// - "teacher": only the teacher's own form class, TODAY only — a class
+//   teacher can fix a mismarked student the same day, but retroactively
+//   rewriting an earlier day's record is an admin-only override, same as
+//   everywhere else attendance correction is scoped in this app.
+function MarkPanel({ scope, onSaved }: { scope: "admin" | "teacher"; onSaved: () => void }) {
   const [classes, setClasses] = useState<ClassOption[]>([]);
   const [classGroupId, setClassGroupId] = useState("");
   const [date, setDate] = useState(todayIso());
@@ -66,8 +69,9 @@ function AdminMarkPanel({ onSaved }: { onSaved: () => void }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api<{ items: ClassOption[] }>("classes").then((d) => setClasses(d.items)).catch(() => undefined);
-  }, []);
+    const req = scope === "admin" ? api<{ items: ClassOption[] }>("classes") : api<ClassOption[]>("teacher/formClasses", { method: "POST" }).then((items) => ({ items }));
+    req.then((d) => setClasses(d.items)).catch(() => undefined);
+  }, [scope]);
 
   async function loadRoster() {
     if (!classGroupId) return alert("Select a class first");
@@ -125,10 +129,10 @@ function AdminMarkPanel({ onSaved }: { onSaved: () => void }) {
     }
   }
 
-  const isPast = date < todayIso();
+  const isPast = scope === "admin" && date < todayIso();
 
   return (
-    <Card title="Mark or correct attendance" pad={false} style={{ marginBottom: 20 }}>
+    <Card title={scope === "admin" ? "Mark or correct attendance" : "Mark or edit today's attendance"} pad={false} style={{ marginBottom: 20 }}>
       <div className="duga-card__pad">
         <div className="duga-attend-controls">
           <Select value={classGroupId} onChange={(e) => setClassGroupId(e.target.value)}>
@@ -137,9 +141,18 @@ function AdminMarkPanel({ onSaved }: { onSaved: () => void }) {
               <option key={c.id} value={c.id}>{c.level.name} {c.name} ({c._count.students} students)</option>
             ))}
           </Select>
-          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          {scope === "admin" ? (
+            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", fontSize: 13, color: "var(--duga-muted)", fontWeight: 600 }}>Today, {date}</div>
+          )}
           <Button onClick={loadRoster} loading={loading}>Load roster</Button>
         </div>
+        {scope === "teacher" && (
+          <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginTop: 6 }}>
+            You can mark or change today&apos;s attendance any time. To correct an earlier date, ask an admin.
+          </div>
+        )}
 
         {isPast && classGroupId && (
           <Alert tone="warning">
@@ -184,7 +197,7 @@ function AdminMarkPanel({ onSaved }: { onSaved: () => void }) {
               </table>
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 14 }}>
-              <Button variant="outline" onClick={clearDay} loading={clearing}>Clear this day</Button>
+              <Button variant="outline" onClick={clearDay} loading={clearing}>{scope === "admin" ? "Clear this day" : "Clear today"}</Button>
               <Button onClick={save} loading={saving}>{isPast ? "Save override" : "Save attendance"}</Button>
             </div>
           </>
@@ -222,8 +235,7 @@ export default function AttendancePage() {
     } finally {
       setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [date, classGroupId]);
 
   useEffect(() => {
     load();
@@ -246,13 +258,16 @@ export default function AttendancePage() {
       ? "Your attendance over the last 30 days."
       : isAdmin
         ? "View attendance school-wide or by class, mark it directly, or correct a past record."
-        : "Daily attendance records for students.";
+        : role === "TEACHER"
+          ? "Daily attendance records — mark or fix today's attendance for your class below."
+          : "Daily attendance records for students.";
 
   return (
     <div>
       <PageHeader title={title} subtitle={subtitle} />
 
-      {isAdmin && <AdminMarkPanel onSaved={load} />}
+      {isAdmin && <MarkPanel scope="admin" onSaved={load} />}
+      {role === "TEACHER" && <MarkPanel scope="teacher" onSaved={load} />}
 
       {isStaffFilter && (
         <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
