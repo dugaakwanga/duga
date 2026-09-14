@@ -220,11 +220,11 @@ export default function LibraryPage() {
     <div>
       <PageHeader
         title="Library"
-        subtitle="Book catalog, borrowing records and digital books."
+        subtitle="Book catalog, assigned books and digital books."
         actions={
           canIssueBooks ? (
             <div style={{ display: "flex", gap: 8 }}>
-              <Button variant="outline" onClick={() => openModal("loan")}><Icon name="plus" size={16} /> Issue book</Button>
+              <Button variant="outline" onClick={() => openModal("loan")}><Icon name="plus" size={16} /> Assign book</Button>
               {canSubmitBooks && (
                 <Button onClick={() => openModal("book")}>
                   <Icon name="plus" size={16} /> {canManageCatalogue ? "Add book" : "Submit book"}
@@ -335,13 +335,20 @@ export default function LibraryPage() {
         );
       })}
 
-      <Card title="Borrowing records">
+      <Card title="Assigned books">
         {(data.loans ?? []).length === 0 ? (
-          <EmptyState title="No loans yet" hint="Issue a book to a student to start tracking loans." />
+          <EmptyState title="No books assigned yet" hint="Assign a book to a student to start tracking it." />
         ) : (
           (["OVERDUE", "BORROWED", "RETURNED", "LOST"] as const).flatMap((status) => {
             const rows = (data.loans ?? []).filter((l) => l.status === status);
             if (!rows.length) return [];
+            // Status is still stored/queried internally as BORROWED/RETURNED
+            // (unchanged, to avoid touching every server-side check against
+            // those exact strings) — only how it's labeled to the user
+            // changes, from a borrow/return framing to an assign one, since
+            // that's what actually happens here (a book is given/assigned to
+            // a student by staff, not self-service checked out).
+            const label = status === "BORROWED" ? "ASSIGNED" : status === "RETURNED" ? "UNASSIGNED" : status;
             return [
               <details key={status} open={status === "OVERDUE" || status === "BORROWED"} style={{ marginBottom: 10 }}>
                 <summary
@@ -357,13 +364,13 @@ export default function LibraryPage() {
                     gap: 10,
                   }}
                 >
-                  <Badge tone={tone(status)}>{status}</Badge>
+                  <Badge tone={tone(status)}>{label}</Badge>
                   <span style={{ fontWeight: 400, fontSize: 12.5, color: "var(--duga-muted)" }}>
-                    {rows.length} loan{rows.length === 1 ? "" : "s"}
+                    {rows.length} book{rows.length === 1 ? "" : "s"}
                   </span>
                 </summary>
                 <div style={{ marginTop: 8 }}>
-                  <Table headers={["Book", "Student", "Borrowed", "Due", canIssueBooks ? "" : null].filter(Boolean) as React.ReactNode[]}>
+                  <Table headers={["Book", "Student", "Assigned", "Due", canIssueBooks ? "" : null].filter(Boolean) as React.ReactNode[]}>
                     {rows.map((l) => (
                       <tr key={l.id}>
                         <td>{l.book.title}</td>
@@ -375,7 +382,7 @@ export default function LibraryPage() {
                             <div style={{ display: "flex", gap: 6 }}>
                               {l.status !== "RETURNED" && l.status !== "LOST" && (
                                 <>
-                                  <Button variant="outline" size="sm" onClick={() => run(l.id, "returnBook")}>Return</Button>
+                                  <Button variant="outline" size="sm" onClick={() => run(l.id, "returnBook")}>Unassign</Button>
                                   <Button variant="ghost" size="sm" onClick={() => run(l.id, "markLost")}>Lost</Button>
                                 </>
                               )}
@@ -393,7 +400,7 @@ export default function LibraryPage() {
         )}
       </Card>
 
-      <Modal open={open} onClose={() => setOpen(false)} title={editing ? "Edit book" : kind === "book" ? (canManageCatalogue ? "Add book" : "Submit book for review") : "Issue book"}>
+      <Modal open={open} onClose={() => setOpen(false)} title={editing ? "Edit book" : kind === "book" ? (canManageCatalogue ? "Add book" : "Submit book for review") : "Assign book"}>
         {kind === "book" ? (
           <>
             {!canManageCatalogue && !editing && (
@@ -512,7 +519,7 @@ export default function LibraryPage() {
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
           <Button onClick={submit} loading={saving}>
-            {editing ? "Save changes" : kind === "book" ? (canManageCatalogue ? "Add book" : "Submit for review") : "Issue book"}
+            {editing ? "Save changes" : kind === "book" ? (canManageCatalogue ? "Add book" : "Submit for review") : "Assign book"}
           </Button>
         </div>
       </Modal>

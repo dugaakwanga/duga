@@ -297,8 +297,8 @@ export const libraryModule: Module = {
         schoolId,
         userId: student.userId,
         type: "library",
-        title: "Book issued",
-        body: `You borrowed "${book.title}". Please return it by ${due ? due.toLocaleDateString() : "the due date"}.`,
+        title: "Book assigned",
+        body: `"${book.title}" was assigned to you. Please return it by ${due ? due.toLocaleDateString() : "the due date"}.`,
         link: "/portal/library",
       });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "library.loanCreated", entityType: "BookLoan", entityId: loan.id, meta: { bookId, studentId } });
