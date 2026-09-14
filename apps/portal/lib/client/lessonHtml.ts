@@ -21,7 +21,7 @@ function textToHtml(text: string): string {
   let html = "";
   let inList = false;
   for (const raw of lines) {
-    const clean = raw.trim();
+    let clean = raw.trim();
     if (!clean) {
       if (inList) {
         html += "</ul>";
@@ -29,7 +29,18 @@ function textToHtml(text: string): string {
       }
       continue;
     }
-    const heading = clean.match(/^\*{0,2}([A-Za-z][A-Za-z /]{2,40}):\*{0,2}$/);
+    // Defensive against real markdown syntax a provider adds despite being
+    // asked not to (seen from Gemini: "### Label:" headings, "---"
+    // dividers, and fenced code blocks) — without this, those symbols
+    // would otherwise render as literal "####"/"---" text on screen.
+    if (/^```/.test(clean)) continue;
+    if (/^[-=*_]{3,}$/.test(clean)) continue;
+    clean = clean.replace(/^#{1,6}\s+/, "");
+    if (!clean) continue;
+    // Allows an apostrophe so a label like "What you'll learn:" (straight
+    // or curly quote) is recognized as a heading instead of silently
+    // falling through to a plain paragraph.
+    const heading = clean.match(/^\*{0,2}([A-Za-z][A-Za-z /'’]{2,40}):\*{0,2}$/);
     if (heading) {
       if (inList) {
         html += "</ul>";

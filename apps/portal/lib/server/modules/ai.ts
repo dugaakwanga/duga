@@ -31,6 +31,46 @@ function available(): boolean {
   return API_KEY.length > 0;
 }
 
+// Google's Gemini API — genuinely better text quality than the free
+// OpenRouter model, confirmed live. Pinned to a specific version rather
+// than Google's own "gemini-flash-latest" alias: the alias returned
+// intermittent 503s/connection resets in testing while this pinned model
+// answered reliably every time. Override via GEMINI_TEXT_MODEL if this one
+// is ever retired. Used as the primary text provider when configured;
+// falls back to OpenRouter (above) on any failure — missing key, quota
+// exhausted, outage — so the assistant degrades instead of breaking.
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || "";
+const GEMINI_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-3.5-flash";
+
+function geminiAvailable(): boolean {
+  return GOOGLE_API_KEY.length > 0;
+}
+
+async function generateGemini(system: string, prompt: string | ChatTurn[], temperature: number, maxTokens: number): Promise<string> {
+  const turns: ChatTurn[] = typeof prompt === "string" ? [{ role: "user", content: prompt }] : prompt;
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent?key=${GOOGLE_API_KEY}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: system }] },
+      // Gemini uses "model" rather than "assistant" for the AI's own prior turns.
+      contents: turns.map((t) => ({ role: t.role === "assistant" ? "model" : "user", parts: [{ text: t.content }] })),
+      generationConfig: { temperature, maxOutputTokens: maxTokens },
+    }),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    const err = new Error(`Gemini error (${res.status})` + (detail ? `: ${detail.slice(0, 200)}` : "")) as Error & { status?: number };
+    err.status = 502;
+    throw err;
+  }
+  const data = await res.json();
+  const parts = data?.candidates?.[0]?.content?.parts ?? [];
+  const text = parts.map((p: { text?: string }) => p.text ?? "").join("").trim();
+  if (!text) throw new Error("Gemini returned an empty reply.");
+  return text;
+}
+
 // Together AI's free-tier FLUX.1 [schnell] — genuinely good image quality,
 // unlike Pollinations.ai's degraded serving of the same underlying model
 // family (confirmed by generating and comparing both directly: the same
@@ -101,8 +141,18 @@ interface ChatTurn {
 // still arrives tagged as `user`, not `assistant`; the model has no reason
 // to treat it as something it said itself.
 export async function generate(system: string, prompt: string | ChatTurn[], temperature = 0.7, maxTokens = 1024, extra?: Record<string, unknown>): Promise<string> {
+  if (geminiAvailable()) {
+    try {
+      return await generateGemini(system, prompt, temperature, maxTokens);
+    } catch (e) {
+      // Gemini failed (bad key, quota, outage) — fall through to OpenRouter
+      // below if it's configured, otherwise this was the only provider we
+      // had, so the failure is real.
+      if (!available()) throw e;
+    }
+  }
   if (!available()) {
-    throw new Error("AI is not configured yet. Add an OPENROUTER_API_KEY to the server environment to enable the assistant.");
+    throw new Error("AI is not configured yet. Add a GOOGLE_API_KEY or OPENROUTER_API_KEY to the server environment to enable the assistant.");
   }
   const turns: ChatTurn[] = typeof prompt === "string" ? [{ role: "user", content: prompt }] : prompt;
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -411,9 +461,11 @@ export const aiModule: Module = {
       // shape rather than fighting the model's own natural tendency to
       // reach for **bold** anyway (asking it not to was unreliable).
       const formatInstruction =
-        " Formatting: write each section's label on its own line ending with a colon (e.g. 'Objectives:'), a blank line, then the section's " +
-        "content, then a blank line before the next section. Use '- ' at the start of a line for a bullet point, and **word** to bold a term " +
-        "worth emphasizing. Do NOT use ### headings or --- dividers.";
+        " Formatting: write ONLY the section labels given above as headings, each on its own line ending with a colon (e.g. 'Objectives:'), a " +
+        "blank line, then the section's content, then a blank line before the next section. Do not add any other headings or sub-headings inside " +
+        "a section — write that content as normal paragraphs and bullets instead. Use '- ' at the start of a line for a bullet point, and " +
+        "**word** to bold a term worth emphasizing. Never use '#' characters or markdown heading syntax, '---'/'===' dividers, tables, or code " +
+        "blocks/backticks/ASCII diagrams — plain paragraphs with the '- ' bullets and **bold** described above are the ONLY formatting allowed.";
 
       // A short outline isn't usable as the actual material a student
       // reads to learn from — force real depth per section.
@@ -437,8 +489,20 @@ export const aiModule: Module = {
 
       const sectionLabels = "What you'll learn:, Explanation:, Try it yourself:, and Quick check:";
 
+      // Without this, the model tends to just restate the topic name across
+      // sections rather than teaching toward a specific, checkable outcome —
+      // "well-written" filler instead of content actually designed around
+      // what the student should walk away able to do.
+      const objectiveInstruction =
+        " Before writing, decide the ONE specific, concrete objective this lesson should achieve for the student — something they should be able to DO " +
+        "or explain by the end, based on the exact topic/subtopic given (not a vague restatement of the subject name). Every section must visibly serve " +
+        "that objective: 'What you'll learn:' states it in plain terms, 'Explanation:' actually teaches toward it rather than listing loosely related " +
+        "facts, 'Try it yourself:' is a task that requires using it, and 'Quick check:' tests whether the student actually met it. Do not pad with " +
+        "generic or tangential content that doesn't serve that specific objective — depth means teaching the objective thoroughly, not adding " +
+        "unrelated background.";
+
       if (matches.length === 0) {
-        const system = `You write lesson notes for students, structured as: ${sectionLabels}` + audienceInstruction + lengthInstruction + illustrationInstruction + formatInstruction;
+        const system = `You write lesson notes for students, structured as: ${sectionLabels}` + audienceInstruction + objectiveInstruction + lengthInstruction + illustrationInstruction + formatInstruction;
         const prompt = `Subject: ${subject}\nTopic: ${topic ?? "(choose an appropriate topic for this subject and level)"}${level ? `\nLevel/Class: ${level}` : ""}${week ? `\nWeek: ${week}` : ""}`;
         const reply = await generate(system, prompt, 0.7, 3500);
         const { content, illustrations } = extractIllustrations(reply);
@@ -452,7 +516,7 @@ export const aiModule: Module = {
         "Use ONLY topics/subtopics that actually appear in the excerpt — if a specific week or topic was requested, find it in the excerpt " +
         "(the excerpt is a raw extract from a PDF, so formatting may be messy — read past that). Expand each subtopic named in the excerpt into " +
         "real, taught content — the excerpt itself is just a syllabus line, not the lesson. " +
-        `Structure: ${sectionLabels}` + audienceInstruction + lengthInstruction + illustrationInstruction + formatInstruction;
+        `Structure: ${sectionLabels}` + audienceInstruction + objectiveInstruction + lengthInstruction + illustrationInstruction + formatInstruction;
       const prompt = `Scheme of work excerpt (syllabus — do not show this to the student, teach FROM it):\n${excerpt}\n\n---\nWrite a student-facing lesson note for Subject: ${subject}${level ? `, Level/Class: ${level}` : ""}${week ? `, Week ${week}` : ""}${topic ? `, Topic: ${topic}` : " — pick the most relevant week/topic from the excerpt above"}.`;
       const reply = await generate(system, prompt, 0.6, 3500);
       const { content, illustrations } = extractIllustrations(reply);
