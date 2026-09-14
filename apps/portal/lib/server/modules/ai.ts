@@ -348,15 +348,30 @@ export const aiModule: Module = {
         "content, then a blank line before the next section. Use '- ' at the start of a line for a bullet point, and **word** to bold a term " +
         "worth emphasizing. Do NOT use ### headings or --- dividers.";
 
-      // A short outline isn't usable as the actual material a teacher
-      // stands in front of a class with — force real depth per section.
+      // A short outline isn't usable as the actual material a student
+      // reads to learn from — force real depth per section.
       const lengthInstruction =
-        " Write a THOROUGH, complete lesson note a teacher could teach directly from, not a one-line outline. Each key point needs 2-4 full " +
-        "sentences of real explanation in plain language a child can follow, not just a phrase. The teaching activity must describe concrete " +
-        "steps the teacher actually does in class, in order. The quick assessment needs at least 4 real questions. Aim for genuine depth over brevity.";
+        " Write a THOROUGH, complete note, not a one-line outline. The explanation needs 2-4 full sentences per point of real teaching in plain " +
+        "language a child can follow, not just a phrase — actually teach the topic, don't just list its subtopics. The practice section needs " +
+        "concrete steps the student can actually try. The quick check needs at least 4 real questions. Aim for genuine depth over brevity.";
+
+      // This note is what the STUDENT reads on their own screen as their
+      // study material — it is NOT a lesson plan for the teacher to carry
+      // into class. Earlier prompts asked for "Objectives / Teaching
+      // activity" (teacher-facing planning language, e.g. "Begin the
+      // lesson by greeting the pupils...") which makes no sense read back
+      // by the student it's actually shown to. Write directly to the
+      // student instead.
+      const audienceInstruction =
+        " Write this DIRECTLY TO THE STUDENT, as their own study material — not as a lesson plan for the teacher to follow. Speak to the student " +
+        "as \"you\": explain the topic itself in full (this is the actual content they learn from, not a summary of what a teacher will say), give " +
+        "them something to try themselves, and questions for them to check their own understanding. Never write teacher-directed instructions " +
+        "like \"ask pupils to...\" or \"begin the lesson by...\".";
+
+      const sectionLabels = "What you'll learn:, Explanation:, Try it yourself:, and Quick check:";
 
       if (matches.length === 0) {
-        const system = "You write structured lesson notes with: Objectives, Key points (bulleted), Teaching activity, and Quick assessment." + lengthInstruction + illustrationInstruction + formatInstruction;
+        const system = `You write lesson notes for students, structured as: ${sectionLabels}` + audienceInstruction + lengthInstruction + illustrationInstruction + formatInstruction;
         const prompt = `Subject: ${subject}\nTopic: ${topic ?? "(choose an appropriate topic for this subject and level)"}${level ? `\nLevel/Class: ${level}` : ""}${week ? `\nWeek: ${week}` : ""}`;
         const reply = await generate(system, prompt, 0.7, 3500);
         const { content, illustrations } = extractIllustrations(reply);
@@ -365,12 +380,13 @@ export const aiModule: Module = {
 
       const excerpt = matches.map((m) => `--- ${m.subjectName}${m.levelName ? ` (${m.levelName})` : ""}${m.term ? `, ${m.term} TERM` : ""} ---\n${m.text}`).join("\n\n");
       const system =
-        "You write structured lesson notes for a Nigerian school teacher, strictly grounded in the official scheme-of-work excerpt provided. " +
+        "You write lesson notes for a Nigerian school student, strictly grounded in the official scheme-of-work excerpt provided (that's the " +
+        "syllabus your teacher follows, not what you show the student — it tells you WHAT to teach). " +
         "Use ONLY topics/subtopics that actually appear in the excerpt — if a specific week or topic was requested, find it in the excerpt " +
         "(the excerpt is a raw extract from a PDF, so formatting may be messy — read past that). Expand each subtopic named in the excerpt into " +
         "real, taught content — the excerpt itself is just a syllabus line, not the lesson. " +
-        "Output: Objectives, Key points (bulleted), Teaching activity, and Quick assessment." + lengthInstruction + illustrationInstruction + formatInstruction;
-      const prompt = `Scheme of work excerpt:\n${excerpt}\n\n---\nDraft a lesson note for Subject: ${subject}${level ? `, Level/Class: ${level}` : ""}${week ? `, Week ${week}` : ""}${topic ? `, Topic: ${topic}` : " — pick the most relevant week/topic from the excerpt above"}.`;
+        `Structure: ${sectionLabels}` + audienceInstruction + lengthInstruction + illustrationInstruction + formatInstruction;
+      const prompt = `Scheme of work excerpt (syllabus — do not show this to the student, teach FROM it):\n${excerpt}\n\n---\nWrite a student-facing lesson note for Subject: ${subject}${level ? `, Level/Class: ${level}` : ""}${week ? `, Week ${week}` : ""}${topic ? `, Topic: ${topic}` : " — pick the most relevant week/topic from the excerpt above"}.`;
       const reply = await generate(system, prompt, 0.6, 3500);
       const { content, illustrations } = extractIllustrations(reply);
       return { reply: content, grounded: true, illustrations, sections: matches.map((m) => ({ subjectName: m.subjectName, levelName: m.levelName, term: m.term })) };

@@ -43,10 +43,12 @@ export default function LessonEditor({
   const quillRef = useRef<ReactQuillType | null>(null);
   const savedRangeRef = useRef<{ index: number; length: number } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const docRef = useRef<HTMLInputElement>(null);
   const [imageModalOpen, setImageModalOpen] = useState(false);
   const [imageDesc, setImageDesc] = useState("");
   const [generating, setGenerating] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadingDoc, setUploadingDoc] = useState(false);
 
   function captureCursor() {
     const editor = quillRef.current?.getEditor();
@@ -95,7 +97,7 @@ export default function LessonEditor({
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const res = await fetch("/api/upload?purpose=gallery", { method: "POST", body: fd });
+      const res = await fetch("/api/upload?purpose=lesson-note", { method: "POST", body: fd });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Upload failed");
       insertImageAtCursor(json.data.url);
@@ -104,6 +106,34 @@ export default function LessonEditor({
       alert((e as Error).message);
     } finally {
       setUploading(false);
+    }
+  }
+
+  function insertLinkAtCursor(text: string, url: string) {
+    const editor = quillRef.current?.getEditor();
+    if (!editor) return;
+    const range = savedRangeRef.current ?? { index: editor.getLength(), length: 0 };
+    editor.insertText(range.index, text, { link: url }, "user");
+    editor.insertText(range.index + text.length, "\n", "user");
+    editor.setSelection(range.index + text.length + 1, 0, "user");
+  }
+
+  async function uploadDocAtCursor(file: File | undefined) {
+    if (!file) return;
+    captureCursor();
+    setUploadingDoc(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/upload?purpose=lesson-doc", { method: "POST", body: fd });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Upload failed");
+      insertLinkAtCursor(`📄 ${file.name}`, json.data.url);
+      if (docRef.current) docRef.current.value = "";
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setUploadingDoc(false);
     }
   }
 
@@ -116,7 +146,11 @@ export default function LessonEditor({
         <Button type="button" variant="outline" size="sm" loading={uploading} onClick={() => { captureCursor(); fileRef.current?.click(); }}>
           📎 Upload image here
         </Button>
+        <Button type="button" variant="outline" size="sm" loading={uploadingDoc} onClick={() => { captureCursor(); docRef.current?.click(); }}>
+          📄 Attach a PDF/Word note
+        </Button>
         <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => uploadAtCursor(e.target.files?.[0])} />
+        <input ref={docRef} type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style={{ display: "none" }} onChange={(e) => uploadDocAtCursor(e.target.files?.[0])} />
       </div>
       <div className="lesson-editor" style={{ background: "#fff", borderRadius: 10, border: "1px solid var(--duga-border)" }}>
         <ReactQuill

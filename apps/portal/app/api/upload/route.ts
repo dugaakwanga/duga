@@ -13,6 +13,15 @@ const LIBRARY_TYPES: Record<string, string> = {
   "application/vnd.amazon.ebook": "mobi",
 };
 
+// A teacher attaching an already-written lesson document (rather than
+// typing one in the editor, or having the AI draft one) — PDF or Word,
+// not the ebook formats library uploads accept.
+const LESSON_DOC_TYPES: Record<string, string> = {
+  "application/pdf": "pdf",
+  "application/msword": "doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+};
+
 const IMAGE_TYPES: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/png": "png",
@@ -23,6 +32,9 @@ const IMAGE_TYPES: Record<string, string> = {
 function ext(mime: string, purpose: string): string {
   if (purpose === "library" || purpose === "scheme") {
     return LIBRARY_TYPES[mime] ?? "pdf";
+  }
+  if (purpose === "lesson-doc") {
+    return LESSON_DOC_TYPES[mime] ?? "pdf";
   }
   return IMAGE_TYPES[mime] ?? "jpg";
 }
@@ -58,6 +70,13 @@ export async function POST(request: NextRequest) {
       // Any signed-in student (uploading their own script) or staff member
       // (submitting on a student's behalf) may upload — paperExam.ts's own
       // actions gate who can grade/approve what happens with it next.
+    } else if (purpose === "lesson-note" || purpose === "lesson-doc") {
+      // A teacher inserting an image into their lesson content, or
+      // attaching an already-written PDF/Word document as the note itself
+      // — was wrongly gated behind gallery:manage (website-gallery,
+      // admin/owner only), so every teacher upload in the lesson-note
+      // editor failed with a permission error.
+      assertPermission(session.user.role, "learning:manage");
     } else {
       assertPermission(session.user.role, "gallery:manage");
     }
@@ -67,11 +86,13 @@ export async function POST(request: NextRequest) {
     if (!(file instanceof File)) {
       return NextResponse.json({ ok: false, error: "No file uploaded" }, { status: 400 });
     }
-    const isDocument = purpose === "library" || purpose === "scheme";
+    const isLibraryDoc = purpose === "library" || purpose === "scheme";
+    const isLessonDoc = purpose === "lesson-doc";
+    const isDocument = isLibraryDoc || isLessonDoc;
     const mime = file.type || (isDocument ? "application/pdf" : "image/jpeg");
-    const allowed = isDocument ? LIBRARY_TYPES : IMAGE_TYPES;
+    const allowed = isLibraryDoc ? LIBRARY_TYPES : isLessonDoc ? LESSON_DOC_TYPES : IMAGE_TYPES;
     if (!allowed[mime]) {
-      const hint = isDocument ? "Only PDF, EPUB and MOBI files are allowed" : "Only JPG, PNG, WebP and GIF images are allowed";
+      const hint = isLibraryDoc ? "Only PDF, EPUB and MOBI files are allowed" : isLessonDoc ? "Only PDF and Word (.doc/.docx) files are allowed" : "Only JPG, PNG, WebP and GIF images are allowed";
       return NextResponse.json({ ok: false, error: hint }, { status: 400 });
     }
     // Clock photos are a client-compressed snapshot meant to stay tiny (a few
@@ -85,7 +106,7 @@ export async function POST(request: NextRequest) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const name = `${crypto.randomUUID()}.${ext(mime, purpose)}`;
-    const folder = purpose === "library" ? "library" : purpose === "scheme" ? "scheme" : purpose === "paper-exam" ? "paper-exams" : purpose === "avatar" ? "avatars" : purpose === "student-photo" ? "students" : purpose === "school-logo" ? "school" : purpose === "clock-photo" ? "clock" : "gallery";
+    const folder = purpose === "library" ? "library" : purpose === "scheme" ? "scheme" : purpose === "lesson-doc" ? "lesson-docs" : purpose === "paper-exam" ? "paper-exams" : purpose === "avatar" ? "avatars" : purpose === "student-photo" ? "students" : purpose === "school-logo" ? "school" : purpose === "clock-photo" ? "clock" : "gallery";
     const { url: fileUrl, key, bucket } = await uploadPublicFile({
       folder,
       name,

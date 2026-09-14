@@ -1237,3 +1237,9 @@ body {
 .lesson-content-html li { margin-bottom: 5px; }
 .lesson-content-html img { max-width: 100%; border-radius: 12px; margin: 10px 0; display: block; }
 .lesson-content-html strong { font-weight: 700; }
+.lesson-content-html a, .lesson-editor .ql-editor a {
+  display: inline-flex; align-items: center; gap: 4px; padding: 8px 12px; margin: 6px 0;
+  background: var(--duga-primary-soft, #eef2ff); color: var(--duga-primary); border-radius: 8px;
+  font-weight: 700; text-decoration: none;
+}
+.lesson-content-html a:hover, .lesson-editor .ql-editor a:hover { text-decoration: underline; }

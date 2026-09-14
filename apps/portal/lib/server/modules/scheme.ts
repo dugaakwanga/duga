@@ -339,13 +339,17 @@ export const schemeModule: Module = {
       // Scope to the school's current active term — this used to mix every
       // term's chunks together (up to 3, in whatever order the query
       // returned), so a teacher working in First Term would see Second and
-      // Third Term topics in the same list. Only fall back to every term's
-      // chunks when there's no active term, or scoping would leave nothing
-      // (an untagged/mis-parsed chunk shouldn't just vanish).
+      // Third Term topics in the same list. Falling back to "every term's
+      // chunks" whenever the exact-term match came up empty was itself the
+      // bug — that fallback fires just as readily when a chunk IS tagged
+      // with a different term as when nothing is tagged at all, so mixed
+      // terms kept leaking through. Only ever fall back to chunks with NO
+      // term tag (a parsing gap, not a wrong answer) — never to a chunk
+      // explicitly tagged for a different term.
       const termWord = await activeTermWord(schoolId);
       if (termWord) {
         const forActiveTerm = matches.filter((c) => c.term === termWord);
-        if (forActiveTerm.length > 0) matches = forActiveTerm;
+        matches = forActiveTerm.length > 0 ? forActiveTerm : matches.filter((c) => !c.term);
       }
       if (matches.length === 0) return { topics: [], grounded: false };
 
@@ -363,7 +367,17 @@ export const schemeModule: Module = {
           // skip a chunk the AI couldn't reformat — the rest still work
         }
       }
-      return { topics, grounded: true };
+      // Two overlapping uploads (e.g. a re-upload nobody deleted the old
+      // one for) can each contribute a chunk for the same week/topic —
+      // dedupe so the picker doesn't show the same line twice.
+      const seen = new Set<string>();
+      const deduped = topics.filter((t) => {
+        const key = `${t.week ?? ""}::${t.topic.trim().toLowerCase()}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      return { topics: deduped, grounded: true };
     },
 
     // Re-tag an already-uploaded document's default section without
@@ -414,10 +428,12 @@ export async function findSchemeChunks(schoolId: string, opts: { levelName?: str
   // label that repeats every term verbatim (e.g. "REVISION" or "MIDTERM
   // EXAMINATION") could match a topicHint against the WRONG term's chunk,
   // grounding a First Term note in Second/Third Term curriculum text.
+  // Only ever fall back to an untagged chunk, never to one explicitly
+  // tagged for a different term (see the same fix in the topics action).
   const termWord = await activeTermWord(schoolId);
   if (termWord) {
     const forTerm = matches.filter((c) => c.term === termWord);
-    if (forTerm.length > 0) matches = forTerm;
+    matches = forTerm.length > 0 ? forTerm : matches.filter((c) => !c.term);
   }
   if (opts.topicHint) {
     const hint = opts.topicHint.toLowerCase();
