@@ -1,4 +1,4 @@
-// Builds a printable, single-page A4 report card PDF on the client, laid out
+﻿// Builds a printable, single-page A4 report card PDF on the client, laid out
 // to match the school's real paper sheet (header/motto/section, town/state,
 // class/term/session, name/age/adm no, attendance, a subjects grid with one
 // column per CA/EXAM component from ResultConfig, a behavioral-assessment
@@ -56,7 +56,7 @@ export interface ReportCardPdfItem {
 }
 
 export interface ReportCardPdfData {
-  student: { firstName: string; lastName: string; admissionNumber?: string };
+  student: { firstName: string; lastName: string; admissionNumber?: string; photoUrl?: string | null };
   className?: string | null;
   term: { name: string; startDate?: string | null; endDate?: string | null } | null;
   sessionName?: string | null;
@@ -67,6 +67,8 @@ export interface ReportCardPdfData {
   items: ReportCardPdfItem[] | null;
   // Behavioral assessment: fixed trait name -> single-letter grade (A-E).
   psychomotor: Record<string, string> | null;
+  // Psychomotor & Affective Domain: same shape, separate grid.
+  coCurricular?: Record<string, string> | null;
   attendanceRemark: string | null;
   studentAge?: number | null;
   schoolDaysOpened?: number | null;
@@ -139,6 +141,77 @@ function fmtMoney(v: number | null | undefined): string {
   return `₦${Math.round(v).toLocaleString()}`;
 }
 
+// Manual dash simulation — jsPDF v4's own dashed-line API varies enough
+// across versions that relying on it risks a silent no-op or a thrown
+// error in a document real report cards depend on; drawing short segments
+// by hand works the same everywhere.
+function dashedHLine(doc: JsPDFType, x1: number, x2: number, y: number) {
+  const dash = 1.4;
+  const gap = 1;
+  for (let cx = x1; cx < x2; cx += dash + gap) {
+    doc.line(cx, y, Math.min(cx + dash, x2), y);
+  }
+}
+
+// One bar per subject showing its Total score (0-100), color-banded the
+// same as the grading key (green/yellow/red), with a dashed pass-mark line
+// at 50 — the "strengths & weaknesses at a glance" chart from the printed
+// sheet. Subject labels stay horizontal and are shrunk/truncated to fit
+// their own bar's width (fitSingleLine), rather than risking jsPDF's text
+// rotation producing illegible output in a document nobody proofreads
+// before it's handed to a parent.
+function drawPerformanceChart(doc: JsPDFType, items: ReportCardPdfItem[], x: number, y: number, width: number, height: number) {
+  const padL = 9;
+  const padB = 14;
+  const padT = 4;
+  const padR = 2;
+  const chartW = width - padL - padR;
+  const chartH = height - padT - padB;
+  const n = Math.max(items.length, 1);
+  const barGap = 1.5;
+  const barW = Math.max(2, chartW / n - barGap);
+
+  doc.setDrawColor(INK);
+  doc.setLineWidth(0.2);
+  doc.line(x + padL, y + padT, x + padL, y + padT + chartH);
+  doc.line(x + padL, y + padT + chartH, x + width - padR, y + padT + chartH);
+
+  doc.setFontSize(5.5);
+  doc.setTextColor(MUTED);
+  for (let v = 0; v <= 100; v += 20) {
+    const gy = y + padT + chartH - (v / 100) * chartH;
+    doc.setDrawColor("#dddddd");
+    doc.setLineWidth(0.1);
+    doc.line(x + padL, gy, x + width - padR, gy);
+    doc.text(String(v), x + padL - 1.5, gy + 1, { align: "right" });
+  }
+  const passY = y + padT + chartH - 0.5 * chartH;
+  doc.setDrawColor(INK);
+  doc.setLineWidth(0.3);
+  dashedHLine(doc, x + padL, x + width - padR, passY);
+
+  items.forEach((item, i) => {
+    const val = Math.max(0, Math.min(100, item.total ?? 0));
+    const barH = (val / 100) * chartH;
+    const bx = x + padL + i * (barW + barGap) + barGap / 2;
+    const by = y + padT + chartH - barH;
+    const fill = val >= 70 ? "#cfe9d6" : val >= 50 ? "#fbedb8" : val > 0 ? "#f6cfcb" : "#ffffff";
+    doc.setFillColor(fill);
+    doc.setDrawColor(INK);
+    doc.setLineWidth(0.15);
+    doc.rect(bx, by, barW, Math.max(barH, 0.3), val > 0 ? "FD" : "D");
+    if (val > 0) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(5.2);
+      doc.setTextColor(INK);
+      doc.text(String(Math.round(val)), bx + barW / 2, by - 1, { align: "center" });
+    }
+    const label = fitSingleLine(doc, item.subject.name, barW + barGap - 0.5, 5.4, 3.6);
+    doc.setTextColor(INK);
+    doc.text(label, bx + barW / 2, y + padT + chartH + 4, { align: "center" });
+  });
+}
+
 // Sample data for the report-card builder's live preview — lets an admin
 // see exactly how a real card will look while adjusting toggles, before any
 // real report card exists yet.
@@ -174,6 +247,7 @@ export const SAMPLE_REPORT_CARD: ReportCardPdfData = {
     { subject: { name: "Basic Science" }, ca: 25, exam: 40, total: 65, grade: "Good", remark: "Good", position: 6, classAverage: 58.9, componentScores: { "Assignment 1": 7, "Assignment 2": 6, "Test 1": 14, "Test 2": 18, Exam: 40 } },
   ],
   psychomotor: { Neatness: "A", Punctuality: "B", Honesty: "A", "Self Control": "B", Obedience: "A", Politeness: "A", "Relationship with Others": "B" },
+  coCurricular: { Handwriting: "A", "Sports/Games": "B", "Verbal Fluency": "A", Leadership: "B", "Musical Skill": "C" },
   attendanceRemark: null,
   studentAge: 12,
   schoolDaysOpened: 60,
@@ -227,23 +301,41 @@ async function buildReportCardDoc(
       /* skip a logo image jsPDF can't decode */
     }
   }
+  // Student passport photo, mirrored on the right of the header — the
+  // printed sheet has one alongside the school logo.
+  const photoDataUrl = await toDataUrl(card.student.photoUrl ?? null);
+  if (photoDataUrl) {
+    try {
+      doc.addImage(photoDataUrl, imageFormat(photoDataUrl), W - M - 24, y - 2, 20, 24, undefined, "FAST");
+    } catch {
+      /* skip a photo jsPDF can't decode */
+    }
+  } else {
+    doc.setDrawColor(BORDER);
+    doc.setLineWidth(0.2);
+    doc.rect(W - M - 24, y - 2, 20, 24);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(6);
+    doc.setTextColor(MUTED);
+    doc.text("PASSPORT", W - M - 14, y + 9, { align: "center" });
+  }
   doc.setTextColor(INK);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(19);
-  doc.text(school.name.toUpperCase(), W / 2 + 8, y + 4, { align: "center" });
+  doc.text(school.name.toUpperCase(), W / 2, y + 4, { align: "center" });
   y += 6;
   if (config.motto) {
     doc.setFont("helvetica", "italic");
     doc.setFontSize(10.5);
     doc.setTextColor(MUTED);
-    doc.text(config.motto, W / 2 + 8, y, { align: "center" });
+    doc.text(config.motto, W / 2, y, { align: "center" });
     y += 5;
   }
   if (config.sectionLabel) {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(13);
     doc.setTextColor(INK);
-    doc.text(config.sectionLabel.toUpperCase(), W / 2 + 8, y + 2, { align: "center" });
+    doc.text(config.sectionLabel.toUpperCase(), W / 2, y + 2, { align: "center" });
     y += 7;
   }
   y = Math.max(y, M + 22);
@@ -418,19 +510,36 @@ async function buildReportCardDoc(
     doc.text(String(Math.round(studentTotalSum)), M + 4 + 15, y + 7.5, { align: "center" });
     doc.text(String(avgVal), M + 34 + 15, y + 7.5, { align: "center" });
     y += 14;
+
+    // Performance chart — one bar per subject's Total score, so a strength
+    // or a weak spot shows at a glance instead of only as numbers in a row.
+    if (card.items.length > 0) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(PRIMARY);
+      doc.text("Performance Chart — Strengths & Weaknesses", M + 4, y + 3);
+      y += 6;
+      const chartH = 34;
+      drawPerformanceChart(doc, card.items, M + 4, y, contentW - 8, chartH);
+      y += chartH + 3;
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(6.5);
+      doc.setTextColor(MUTED);
+      doc.text("Each bar is the subject's Total Score out of 100. The dashed line marks the pass mark (50).", M + 4, y);
+      y += 6;
+    }
   }
 
-  // Behavioral assessment grid (A-E per trait) and grading key, side by side.
+  // Domain grids (Psychomotor & Affective, Behavioral Assessment) and
+  // grading key, side by side.
   const gridTop = y;
-  let leftBottom = gridTop;
-  let rightBottom = gridTop;
-  if (config.showPsychomotor && card.psychomotor && Object.keys(card.psychomotor).length) {
-    const traits = Object.entries(card.psychomotor);
-    const leftW = contentW * 0.56;
-    const gradeLetters = ["A", "B", "C", "D", "E"];
+  const leftW = contentW * 0.56;
+  const gradeLetters = ["A", "B", "C", "D", "E"];
+
+  function drawTraitGrid(title: string, traits: Array<[string, string]>, top: number): number {
     const traitColW = leftW * 0.5;
     const letterColW = (leftW - traitColW) / gradeLetters.length;
-    let ly = gridTop;
+    let ly = top;
     doc.setDrawColor(INK);
     doc.setLineWidth(0.25);
     doc.setFillColor("#eef2f7");
@@ -438,7 +547,7 @@ async function buildReportCardDoc(
     doc.setFont("helvetica", "bold");
     doc.setFontSize(7.5);
     doc.setTextColor(INK);
-    doc.text("Behavioral Assessment", M + 4 + 2, ly + 4);
+    doc.text(title, M + 4 + 2, ly + 4);
     gradeLetters.forEach((l, i) => {
       doc.text(l, M + 4 + traitColW + letterColW * i + letterColW / 2, ly + 4, { align: "center" });
     });
@@ -450,15 +559,26 @@ async function buildReportCardDoc(
       doc.text(trait, M + 4 + 1.5, ly + 3.8, { maxWidth: traitColW - 3 });
       gradeLetters.forEach((l, i) => {
         const cx = M + 4 + traitColW + letterColW * i + letterColW / 2;
-        if (grade === l) doc.text("✓", cx, ly + 3.8, { align: "center" });
+        if (grade === l) doc.text("âœ“", cx, ly + 3.8, { align: "center" });
       });
       ly += 5.5;
     }
-    leftBottom = ly;
+    return ly;
+  }
+
+  let leftBottom = gridTop;
+  let rightBottom = gridTop;
+  if (config.showPsychomotor) {
+    if (card.coCurricular && Object.keys(card.coCurricular).length) {
+      leftBottom = drawTraitGrid("Psychomotor & Affective Domain", Object.entries(card.coCurricular), leftBottom);
+      leftBottom += 3;
+    }
+    if (card.psychomotor && Object.keys(card.psychomotor).length) {
+      leftBottom = drawTraitGrid("Behavioral Assessment", Object.entries(card.psychomotor), leftBottom);
+    }
   }
 
   {
-    const leftW = contentW * 0.56;
     const rightX = M + 4 + leftW + 6;
     const rightW = contentW - leftW - 6;
     let ry = gridTop;

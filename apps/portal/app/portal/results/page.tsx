@@ -18,6 +18,13 @@ import {
 // pulls in Prisma, which client code can't import).
 const DEFAULT_BEHAVIORAL_TRAITS = ["Neatness", "Punctuality", "Honesty", "Self Control", "Obedience", "Politeness", "Relationship with Others"];
 
+// The five traits on the printed sheet's separate "Psychomotor & Affective
+// Domain" grid — mirrors DEFAULT_PSYCHOMOTOR_TRAITS in
+// packages/core/src/server/reportCard.ts, stored on the ReportCard's
+// `coCurricular` field (not `psychomotor`, which holds the behavioral grid
+// above).
+const DEFAULT_PSYCHOMOTOR_TRAITS = ["Handwriting", "Sports/Games", "Verbal Fluency", "Leadership", "Musical Skill"];
+
 interface ResultComponent {
   name: string;
   category: "CA" | "EXAM";
@@ -63,6 +70,8 @@ interface ReportCard {
   }> | null;
   // Behavioral assessment: fixed trait name -> single-letter grade (A-E).
   psychomotor?: Record<string, string> | null;
+  // Psychomotor & Affective Domain: same shape, separate grid.
+  coCurricular?: Record<string, string> | null;
   attendanceRemark?: string | null;
   remark?: string | null;
   studentAge?: number | null;
@@ -188,6 +197,7 @@ export default function ResultsPage() {
   const [detailsTarget, setDetailsTarget] = useState<ReportCard | null>(null);
   const [detailsForm, setDetailsForm] = useState<{
     psychomotor: Record<string, string>;
+    coCurricular: Record<string, string>;
     remark: string;
     formMasterName: string;
     principalComment: string;
@@ -195,7 +205,7 @@ export default function ResultsPage() {
     feesOwed: string;
     nextTermFees: string;
     feesPayableBy: string;
-  }>({ psychomotor: {}, remark: "", formMasterName: "", principalComment: "", principalName: "", feesOwed: "", nextTermFees: "", feesPayableBy: "" });
+  }>({ psychomotor: {}, coCurricular: {}, remark: "", formMasterName: "", principalComment: "", principalName: "", feesOwed: "", nextTermFees: "", feesPayableBy: "" });
   const [detailsSaving, setDetailsSaving] = useState(false);
 
   // Admin: mark all draft report cards ready (flag to show publish buttons)
@@ -232,7 +242,7 @@ export default function ResultsPage() {
         school,
         reportCardConfig,
         {
-          student: { ...rc.student.user, admissionNumber: rc.student.admissionNumber },
+          student: { ...rc.student.user, admissionNumber: rc.student.admissionNumber, photoUrl: rc.student.photoUrl },
           className: rc.classGroup ? `${rc.classGroup.level.name} ${rc.classGroup.name}` : null,
           term: rc.term,
           sessionName: rc.term?.session?.name ?? null,
@@ -242,6 +252,7 @@ export default function ResultsPage() {
           gpa: rc.gpa ?? null,
           items: rc.items ? rc.items.map((i) => ({ ...i, remark: i.remark ?? null, position: i.position ?? null })) : null,
           psychomotor: rc.psychomotor ?? null,
+          coCurricular: rc.coCurricular ?? null,
           attendanceRemark: rc.attendanceRemark ?? null,
           studentAge: rc.studentAge ?? null,
           schoolDaysOpened: rc.schoolDaysOpened ?? null,
@@ -331,8 +342,14 @@ export default function ResultsPage() {
     const psychomotor = Object.fromEntries(
       traitNames.map((t) => [t, BEHAVIORAL_GRADES.includes(storedTraits[t] ?? "") ? storedTraits[t]! : ""]),
     );
+    const storedCoCurricular = rc.coCurricular && Object.keys(rc.coCurricular).length ? rc.coCurricular : {};
+    const coCurricularNames = Object.keys(storedCoCurricular).length ? Object.keys(storedCoCurricular) : DEFAULT_PSYCHOMOTOR_TRAITS;
+    const coCurricular = Object.fromEntries(
+      coCurricularNames.map((t) => [t, BEHAVIORAL_GRADES.includes(storedCoCurricular[t] ?? "") ? storedCoCurricular[t]! : ""]),
+    );
     return {
       psychomotor,
+      coCurricular,
       remark: remarkOverride ?? rc.remark ?? "",
       formMasterName: rc.formMasterName ?? "",
       principalComment: rc.principalComment ?? "",
@@ -354,6 +371,7 @@ export default function ResultsPage() {
     try {
       const body = {
         psychomotor: detailsForm.psychomotor,
+        coCurricular: detailsForm.coCurricular,
         remark: detailsForm.remark,
         formMasterName: detailsForm.formMasterName,
         principalComment: detailsForm.principalComment,
@@ -1173,6 +1191,23 @@ export default function ResultsPage() {
             </div>
           }
         >
+          <Field label="Psychomotor & affective domain" hint="Graded A (best) to E.">
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 10 }}>
+              {Object.keys(detailsForm.coCurricular).map((trait) => (
+                <div key={trait} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                  <span style={{ fontSize: 13.5 }}>{trait}</span>
+                  <Select
+                    style={{ maxWidth: 90 }}
+                    value={detailsForm.coCurricular[trait] ?? ""}
+                    onChange={(e) => setDetailsForm({ ...detailsForm, coCurricular: { ...detailsForm.coCurricular, [trait]: e.target.value } })}
+                  >
+                    <option value="">—</option>
+                    {BEHAVIORAL_GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
+                  </Select>
+                </div>
+              ))}
+            </div>
+          </Field>
           <Field label="Behavioral assessment" hint="Graded A (best) to E.">
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 10 }}>
               {Object.keys(detailsForm.psychomotor).map((trait) => (

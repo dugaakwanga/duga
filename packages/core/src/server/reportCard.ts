@@ -43,6 +43,20 @@ export const DEFAULT_BEHAVIORAL_TRAITS = [
   "Relationship with Others",
 ];
 
+// The five traits on the printed sheet's separate "Psychomotor & Affective
+// Domain" grid, graded A-E — stored on `coCurricular` (not `psychomotor`,
+// which already holds the behavioral grid above and predates this one; a
+// field rename would mean a migration touching every existing report
+// card). Seeded the same way: left blank until the class teacher grades
+// them, and re-collation never overwrites a value already set.
+export const DEFAULT_PSYCHOMOTOR_TRAITS = [
+  "Handwriting",
+  "Sports/Games",
+  "Verbal Fluency",
+  "Leadership",
+  "Musical Skill",
+];
+
 // Runs `fn` over `items` with at most `limit` in flight at once — the
 // remote Supabase pooler this app talks to (see .env DATABASE_URL's
 // connection_limit) only allows a handful of concurrent connections, so an
@@ -283,8 +297,9 @@ export async function collateReportCards(opts: CollateOptions) {
     };
     return prisma.reportCard.upsert({
       where: { studentId_termId: { studentId: student.id, termId } },
-      // psychomotor is deliberately omitted here — re-collation must never
-      // overwrite behavioral grades a class teacher already entered.
+      // psychomotor and coCurricular are deliberately omitted here —
+      // re-collation must never overwrite behavioral/psychomotor grades a
+      // class teacher already entered.
       update: {
         ...commonData,
         isPublished: willPublish ? true : existing?.isPublished ?? false,
@@ -301,6 +316,7 @@ export async function collateReportCards(opts: CollateOptions) {
         publishedBy: willPublish ? publishedBy : undefined,
         isPaidGated: true,
         psychomotor: Object.fromEntries(DEFAULT_BEHAVIORAL_TRAITS.map((t) => [t, ""])),
+        coCurricular: Object.fromEntries(DEFAULT_PSYCHOMOTOR_TRAITS.map((t) => [t, ""])),
       },
     });
   });

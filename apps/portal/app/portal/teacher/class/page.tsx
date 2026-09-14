@@ -32,6 +32,7 @@ interface StudentCard {
     position: number | null;
     remark: string | null;
     psychomotor: Record<string, string> | null;
+    coCurricular: Record<string, string> | null;
     items: ReportCardItem[];
     teacherSubmittedAt: string | null;
   } | null;
@@ -69,6 +70,7 @@ export default function MyClassPage() {
   const [studentError, setStudentError] = useState<string | null>(null);
   const [remarkDraft, setRemarkDraft] = useState("");
   const [traitsDraft, setTraitsDraft] = useState<Record<string, string>>({});
+  const [coCurricularDraft, setCoCurricularDraft] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const [modalTab, setModalTab] = useState("performance");
@@ -87,6 +89,7 @@ export default function MyClassPage() {
       setStudentCard(d);
       setRemarkDraft(d.reportCard?.remark ?? "");
       setTraitsDraft(d.reportCard?.psychomotor ?? {});
+      setCoCurricularDraft(d.reportCard?.coCurricular ?? {});
     } catch (e) {
       setStudentError((e as Error).message);
     } finally {
@@ -114,9 +117,9 @@ export default function MyClassPage() {
     try {
       await api(`results/${studentCard.reportCard.id}/updateDetails`, {
         method: "POST",
-        body: { remark: remarkDraft, psychomotor: traitsDraft },
+        body: { remark: remarkDraft, psychomotor: traitsDraft, coCurricular: coCurricularDraft },
       });
-      setStudentCard((c) => (c ? { ...c, reportCard: c.reportCard ? { ...c.reportCard, remark: remarkDraft, psychomotor: traitsDraft } : null } : c));
+      setStudentCard((c) => (c ? { ...c, reportCard: c.reportCard ? { ...c.reportCard, remark: remarkDraft, psychomotor: traitsDraft, coCurricular: coCurricularDraft } : null } : c));
     } catch (e) {
       alert((e as Error).message);
     } finally {
@@ -317,6 +320,22 @@ export default function MyClassPage() {
                       </Alert>
                     )}
 
+                    {Object.keys(coCurricularDraft).length > 0 && (
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 8 }}>Psychomotor &amp; affective domain</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 10 }}>
+                          {Object.keys(coCurricularDraft).map((trait) => (
+                            <Field key={trait} label={trait}>
+                              <Select value={coCurricularDraft[trait] ?? ""} onChange={(e) => setCoCurricularDraft((t) => ({ ...t, [trait]: e.target.value }))}>
+                                <option value="">—</option>
+                                {["A", "B", "C", "D", "E"].map((g) => <option key={g} value={g}>{g}</option>)}
+                              </Select>
+                            </Field>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {Object.keys(traitsDraft).length > 0 && (
                       <div>
                         <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 8 }}>Behavioral grades</div>
@@ -365,6 +384,16 @@ export default function MyClassPage() {
                                 <span>{i.total ?? "—"} ({i.grade ?? "—"})</span>
                               </div>
                             ))}
+                          </div>
+                        )}
+                        {Object.keys(coCurricularDraft).length > 0 && (
+                          <div style={{ marginBottom: 12 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>Psychomotor &amp; affective domain</div>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                              {Object.entries(coCurricularDraft).map(([trait, g]) => (
+                                <Badge key={trait} tone="neutral">{trait}: {g || "—"}</Badge>
+                              ))}
+                            </div>
                           </div>
                         )}
                         {Object.keys(traitsDraft).length > 0 && (
