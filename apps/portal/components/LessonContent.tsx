@@ -1,6 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type MouseEvent, type ReactNode } from "react";
+import { DocumentViewerModal, isDocumentLink } from "@/components/DocumentViewer";
 
 // Renders a lesson note the way it's meant to be read — section headings,
 // bullet lists, and paragraphs styled like a real document, with each
@@ -80,17 +81,35 @@ function isHtml(content: string): boolean {
 }
 
 export default function LessonContent({ content, images }: { content: string; images: string[] }) {
+  const [viewer, setViewer] = useState<{ url: string; name: string } | null>(null);
+
+  // A document link (see LessonEditor's "Attach a PDF/Word note") used to
+  // just navigate away — intercept the click and open it in the in-app
+  // viewer below instead, so "reading the note" doesn't mean leaving it.
+  function onContentClick(e: MouseEvent<HTMLDivElement>) {
+    const link = (e.target as HTMLElement).closest("a");
+    if (!link) return;
+    const href = link.getAttribute("href");
+    if (!href || !isDocumentLink(href)) return;
+    e.preventDefault();
+    setViewer({ url: href, name: link.textContent?.trim() || "Document" });
+  }
+
   if (isHtml(content)) {
     return (
-      <div
-        className="lesson-content-html"
-        style={{ fontSize: 14, lineHeight: 1.75 }}
-        // Authored only by teaching staff through LessonEditor (a controlled
-        // rich-text editor, not free-form HTML input) or converted
-        // server/client-side from the AI's own plain-text draft — never
-        // reflects arbitrary student/parent input.
-        dangerouslySetInnerHTML={{ __html: content }}
-      />
+      <>
+        <div
+          className="lesson-content-html"
+          style={{ fontSize: 14, lineHeight: 1.75 }}
+          onClick={onContentClick}
+          // Authored only by teaching staff through LessonEditor (a controlled
+          // rich-text editor, not free-form HTML input) or converted
+          // server/client-side from the AI's own plain-text draft — never
+          // reflects arbitrary student/parent input.
+          dangerouslySetInnerHTML={{ __html: content }}
+        />
+        <DocumentViewerModal url={viewer?.url ?? null} name={viewer?.name} onClose={() => setViewer(null)} />
+      </>
     );
   }
 

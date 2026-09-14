@@ -116,12 +116,13 @@ export default function LearningPage() {
 
   async function deleteItem(item: Item) {
     if (!confirm(`Delete this ${kind.slice(0, -1)}? This cannot be undone.`)) return;
+    setError(null);
     try {
       const action = kind === "notes" ? "deleteNote" : kind === "assignments" ? "deleteAssignment" : kind === "tests" ? "deleteTest" : "deleteLive";
       await api(`learning/${item.id}/${action}`, { method: "POST", body: {} });
-      load();
+      await load();
     } catch (e) {
-      alert((e as Error).message);
+      setError(`Couldn't delete this: ${(e as Error).message}`);
     }
   }
 

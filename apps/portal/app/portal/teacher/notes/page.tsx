@@ -229,11 +229,15 @@ export default function TeacherNotesPage() {
 
   async function deleteNote(n: Note) {
     if (!confirm(`Delete "${n.topic}"? This cannot be undone.`)) return;
+    setError(null);
     try {
       await api(`learning/${n.id}/deleteNote`, { method: "POST", body: {} });
-      load();
+      await load();
     } catch (e) {
-      alert((e as Error).message);
+      // A plain alert() is easy to dismiss without reading and leaves no
+      // trace of what actually went wrong — surface it in the persistent
+      // banner at the top of the page instead, same as a load failure.
+      setError(`Couldn't delete "${n.topic}": ${(e as Error).message}`);
     }
   }
 
