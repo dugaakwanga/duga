@@ -1,4 +1,4 @@
-import type { Module } from ".";
+﻿import type { Module } from ".";
 import { can, str, num } from "../helpers";
 import { generateSmartTimetable } from "./timetable";
 import { findSchemeChunks } from "./scheme";
@@ -338,15 +338,15 @@ export const aiModule: Module = {
         "at genuinely different, meaningful points across the note — most notes need 1 or 2; use 0 if the topic has no natural visual at all (e.g. a grammar rule). " +
         "Never describe the same picture twice.";
 
-      // The note is displayed as plain text, not rendered markdown — no
-      // **bold**, ### headings, or --- dividers, or they show up as literal
-      // asterisks and hashes on screen instead of formatting. Use section
-      // labels like "Objectives:" on their own line and a plain "- " for
-      // bullets instead.
-      const plainTextInstruction =
-        " Write in PLAIN TEXT only — this is shown as-is, not rendered as markdown. Do NOT use **bold**, _italic_, ### headings, or --- dividers. " +
-        "For each section, write its label on its own line ending with a colon (e.g. 'Objectives:'), a blank line, then the section's content, " +
-        "then a blank line before the next section. Use a plain '- ' at the start of a line for a bullet point.";
+      // The reply is converted into real HTML client-side (lessonHtml.ts),
+      // which understands **bold**, a "Label:" line as a heading, and a
+      // leading "- " as a bullet — so ask for exactly that lightweight
+      // shape rather than fighting the model's own natural tendency to
+      // reach for **bold** anyway (asking it not to was unreliable).
+      const formatInstruction =
+        " Formatting: write each section's label on its own line ending with a colon (e.g. 'Objectives:'), a blank line, then the section's " +
+        "content, then a blank line before the next section. Use '- ' at the start of a line for a bullet point, and **word** to bold a term " +
+        "worth emphasizing. Do NOT use ### headings or --- dividers.";
 
       // A short outline isn't usable as the actual material a teacher
       // stands in front of a class with — force real depth per section.
@@ -356,7 +356,7 @@ export const aiModule: Module = {
         "steps the teacher actually does in class, in order. The quick assessment needs at least 4 real questions. Aim for genuine depth over brevity.";
 
       if (matches.length === 0) {
-        const system = "You write structured lesson notes with: Objectives, Key points (bulleted), Teaching activity, and Quick assessment." + lengthInstruction + illustrationInstruction + plainTextInstruction;
+        const system = "You write structured lesson notes with: Objectives, Key points (bulleted), Teaching activity, and Quick assessment." + lengthInstruction + illustrationInstruction + formatInstruction;
         const prompt = `Subject: ${subject}\nTopic: ${topic ?? "(choose an appropriate topic for this subject and level)"}${level ? `\nLevel/Class: ${level}` : ""}${week ? `\nWeek: ${week}` : ""}`;
         const reply = await generate(system, prompt, 0.7, 3500);
         const { content, illustrations } = extractIllustrations(reply);
@@ -369,7 +369,7 @@ export const aiModule: Module = {
         "Use ONLY topics/subtopics that actually appear in the excerpt — if a specific week or topic was requested, find it in the excerpt " +
         "(the excerpt is a raw extract from a PDF, so formatting may be messy — read past that). Expand each subtopic named in the excerpt into " +
         "real, taught content — the excerpt itself is just a syllabus line, not the lesson. " +
-        "Output: Objectives, Key points (bulleted), Teaching activity, and Quick assessment." + lengthInstruction + illustrationInstruction + plainTextInstruction;
+        "Output: Objectives, Key points (bulleted), Teaching activity, and Quick assessment." + lengthInstruction + illustrationInstruction + formatInstruction;
       const prompt = `Scheme of work excerpt:\n${excerpt}\n\n---\nDraft a lesson note for Subject: ${subject}${level ? `, Level/Class: ${level}` : ""}${week ? `, Week ${week}` : ""}${topic ? `, Topic: ${topic}` : " — pick the most relevant week/topic from the excerpt above"}.`;
       const reply = await generate(system, prompt, 0.6, 3500);
       const { content, illustrations } = extractIllustrations(reply);

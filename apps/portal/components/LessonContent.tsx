@@ -70,7 +70,30 @@ function TextBlock({ text }: { text: string }) {
   return <>{nodes}</>;
 }
 
+// New notes (written with LessonEditor, a real rich-text editor) store
+// `content` as actual HTML — headings, bold, lists and inline <img> tags
+// are already real markup, so they render as-is. Older notes, saved before
+// the rich editor existed, are plain text with the token scheme described
+// above; those still go through the manual parser below.
+function isHtml(content: string): boolean {
+  return /^\s*</.test(content);
+}
+
 export default function LessonContent({ content, images }: { content: string; images: string[] }) {
+  if (isHtml(content)) {
+    return (
+      <div
+        className="lesson-content-html"
+        style={{ fontSize: 14, lineHeight: 1.75 }}
+        // Authored only by teaching staff through LessonEditor (a controlled
+        // rich-text editor, not free-form HTML input) or converted
+        // server/client-side from the AI's own plain-text draft — never
+        // reflects arbitrary student/parent input.
+        dangerouslySetInnerHTML={{ __html: content }}
+      />
+    );
+  }
+
   const parts = content.split(TOKEN);
   const inlineCount = parts.length - 1;
   const extraImages = images.slice(inlineCount).filter(Boolean);

@@ -1211,3 +1211,29 @@ body {
   .duga-card,
   .duga-stat { box-shadow: none !important; border-color: #ccc !important; }
 }
+
+/* ---------- Lesson note rich-text editor (Quill) ---------- */
+.lesson-editor .ql-toolbar { border: none; border-bottom: 1px solid var(--duga-border); border-radius: 10px 10px 0 0; }
+.lesson-editor .ql-container { border: none; border-radius: 0 0 10px 10px; font-size: 14.5px; font-family: inherit; }
+.lesson-editor .ql-editor { min-height: 360px; line-height: 1.7; padding: 18px 20px; }
+.lesson-editor .ql-editor img { max-width: 100%; border-radius: 12px; margin: 10px 0; }
+.lesson-editor .ql-editor h1 { font-size: 22px; }
+.lesson-editor .ql-editor h2 { font-size: 18.5px; }
+.lesson-editor .ql-editor h3 { font-size: 16px; font-weight: 800; color: var(--duga-primary-ink); }
+@media (max-width: 620px) {
+  .lesson-editor .ql-editor { min-height: 260px; padding: 14px; }
+}
+
+/* Rendered (read-only) lesson content — same visual language as the editor
+   above, but for the raw HTML dangerouslySetInnerHTML renders as-is. */
+.lesson-content-html h1, .lesson-content-html h2, .lesson-content-html h3 {
+  font-weight: 800; color: var(--duga-primary-ink); margin: 20px 0 8px;
+}
+.lesson-content-html h1 { font-size: 22px; }
+.lesson-content-html h2 { font-size: 18.5px; }
+.lesson-content-html h3 { font-size: 16px; }
+.lesson-content-html p { margin: 0 0 14px; }
+.lesson-content-html ul, .lesson-content-html ol { margin: 4px 0 14px; padding-left: 22px; }
+.lesson-content-html li { margin-bottom: 5px; }
+.lesson-content-html img { max-width: 100%; border-radius: 12px; margin: 10px 0; display: block; }
+.lesson-content-html strong { font-weight: 700; }

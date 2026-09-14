@@ -197,7 +197,7 @@ export function Avatar({ name, src, size = 40 }: { name: string; src?: string | 
 // ---------------------------------------------------------------------------
 // Modal
 // ---------------------------------------------------------------------------
-export function Modal({ open, onClose, title, children, footer, wide }: { open: boolean; onClose: () => void; title: ReactNode; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
+export function Modal({ open, onClose, title, children, footer, wide, maxWidth }: { open: boolean; onClose: () => void; title: ReactNode; children: ReactNode; footer?: ReactNode; wide?: boolean; maxWidth?: number }) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -216,7 +216,7 @@ export function Modal({ open, onClose, title, children, footer, wide }: { open: 
       <div
         onClick={(e) => e.stopPropagation()}
         className="duga-card"
-        style={{ width: "100%", maxWidth: wide ? 820 : 520, maxHeight: "90vh", overflowY: "auto" }}
+        style={{ width: "100%", maxWidth: maxWidth ?? (wide ? 820 : 520), maxHeight: "90vh", overflowY: "auto" }}
       >
         <div className="duga-card__header">
           <div className="duga-card__title">{title}</div>
