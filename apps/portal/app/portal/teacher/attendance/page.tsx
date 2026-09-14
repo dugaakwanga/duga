@@ -38,6 +38,11 @@ export default function TeacherAttendancePage() {
   // school ever used this app) looks like it returned real attendance,
   // since every unmarked student defaults to PRESENT below.
   const [hasExistingRecords, setHasExistingRecords] = useState(true);
+  // Hides the roster/marking table behind an explicit confirmation when
+  // there's no real data for the picked date — a list of every student's
+  // name defaulted to PRESENT read as real attendance even with a banner
+  // above it. Reset on every fresh load.
+  const [confirmedNoData, setConfirmedNoData] = useState(false);
 
   const loadClasses = useCallback(async () => {
     try {
@@ -62,6 +67,7 @@ export default function TeacherAttendancePage() {
       const res = await api<{ roster: RosterRow[] }>(`attendance/roster?classGroupId=${classGroupId}&date=${date}`, { method: "POST" });
       setRows(res.roster);
       setHasExistingRecords(res.roster.some((r) => r.status && r.status !== "UNMARKED"));
+      setConfirmedNoData(false);
       const st: Record<string, Status> = {};
       res.roster.forEach((r) => {
         if (r.status && r.status !== "UNMARKED") st[r.studentId] = r.status as Status;
@@ -125,17 +131,25 @@ export default function TeacherAttendancePage() {
             <Button onClick={loadRoster} loading={loading}>Load roster</Button>
           </div>
 
-          {rows.length > 0 && !hasExistingRecords && (
-            <Alert tone="info">
-              No attendance was taken on {date} — everyone below is shown as PRESENT only as a starting point for marking it now, not because
-              that&apos;s what was recorded.
-            </Alert>
-          )}
           {message && <Alert tone="success" >{message}</Alert>}
           {error && <Alert tone="danger">{error}</Alert>}
 
-          {rows.length > 0 && (
+          {rows.length > 0 && !hasExistingRecords && !confirmedNoData && (
             <>
+              <Alert tone="info">No attendance was taken on {date}.</Alert>
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+                <Button variant="outline" onClick={() => setConfirmedNoData(true)}>Mark attendance for this day</Button>
+              </div>
+            </>
+          )}
+
+          {rows.length > 0 && (hasExistingRecords || confirmedNoData) && (
+            <>
+              {!hasExistingRecords && (
+                <Alert tone="info">
+                  Everyone below is shown as PRESENT only as a starting point for marking it now — none of this reflects real recorded attendance yet.
+                </Alert>
+              )}
               <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", margin: "16px 0 8px" }}>
                 <span style={{ fontSize: 13, fontWeight: 600 }}>Quick set:</span>
                 {STATUSES.map((s) => (

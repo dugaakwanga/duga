@@ -75,6 +75,11 @@ function MarkPanel({ scope, onSaved }: { scope: "admin" | "teacher"; onSaved: ()
   // before the school ever used this app — doesn't look like it returned
   // real historical attendance.
   const [hasExistingRecords, setHasExistingRecords] = useState(true);
+  // When a date has no real records, the roster/marking table is hidden
+  // behind this explicit confirmation instead of showing right away — a
+  // list of every student's name defaulted to PRESENT read as real
+  // attendance even with a banner above it. Reset on every fresh load.
+  const [confirmedNoData, setConfirmedNoData] = useState(false);
 
   useEffect(() => {
     const req = scope === "admin" ? api<{ items: ClassOption[] }>("classes") : api<ClassOption[]>("teacher/formClasses", { method: "POST" }).then((items) => ({ items }));
@@ -90,6 +95,7 @@ function MarkPanel({ scope, onSaved }: { scope: "admin" | "teacher"; onSaved: ()
       const res = await api<{ roster: RosterRow[] }>(`attendance/roster?classGroupId=${classGroupId}&date=${date}`, { method: "POST" });
       setRows(res.roster);
       setHasExistingRecords(res.roster.some((r) => r.status && r.status !== "UNMARKED"));
+      setConfirmedNoData(false);
       const st: Record<string, MarkStatus> = {};
       res.roster.forEach((r) => {
         st[r.studentId] = r.status && r.status !== "UNMARKED" ? (r.status as MarkStatus) : "PRESENT";
@@ -168,17 +174,25 @@ function MarkPanel({ scope, onSaved }: { scope: "admin" | "teacher"; onSaved: ()
             This date is in the past — saving will retroactively override whatever attendance was already recorded for {date}.
           </Alert>
         )}
-        {rows.length > 0 && !hasExistingRecords && (
-          <Alert tone="info">
-            No attendance was taken on {date} — everyone below is shown as PRESENT only as a starting point for marking it now, not because that&apos;s
-            what was recorded.
-          </Alert>
-        )}
         {message && <Alert tone="success">{message}</Alert>}
         {error && <Alert tone="danger">{error}</Alert>}
 
-        {rows.length > 0 && (
+        {rows.length > 0 && !hasExistingRecords && !confirmedNoData && (
           <>
+            <Alert tone="info">No attendance was taken on {date}.</Alert>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+              <Button variant="outline" onClick={() => setConfirmedNoData(true)}>Mark attendance for this day</Button>
+            </div>
+          </>
+        )}
+
+        {rows.length > 0 && (hasExistingRecords || confirmedNoData) && (
+          <>
+            {!hasExistingRecords && (
+              <Alert tone="info">
+                Everyone below is shown as PRESENT only as a starting point for marking it now — none of this reflects real recorded attendance yet.
+              </Alert>
+            )}
             <div className="duga-table-wrap" style={{ marginTop: 12 }}>
               <table className="duga-table">
                 <thead>
