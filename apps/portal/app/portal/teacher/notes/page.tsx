@@ -302,7 +302,9 @@ export default function TeacherNotesPage() {
                   ))}
                 </div>
               )}
-              <p style={{ fontSize: 13.5, color: "var(--duga-ink-2)", margin: "0 0 8px" }}>{n.content.slice(0, 200)}</p>
+              <p style={{ fontSize: 13.5, color: "var(--duga-ink-2)", margin: "0 0 8px", whiteSpace: "pre-wrap" }}>
+                {n.content.length > 200 ? `${n.content.slice(0, 200)}…` : n.content}
+              </p>
               <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginBottom: 10 }}>Added {new Date(n.createdAt).toLocaleDateString()}</div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 <Button size="sm" variant="outline" onClick={() => openEdit(n)}>Edit</Button>

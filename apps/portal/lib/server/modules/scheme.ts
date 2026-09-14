@@ -322,11 +322,24 @@ export const schemeModule: Module = {
         where: { scheme: { schoolId } },
         select: { id: true, schemeId: true, levelName: true, subjectName: true, term: true, text: true, tableJson: true },
       });
-      const matches = candidates.filter((c) => {
+      let matches = candidates.filter((c) => {
         const levelOk = c.levelName && normalize(c.levelName) === level;
         const subjectOk = normalize(c.subjectName).includes(subject) || subject.includes(normalize(c.subjectName));
         return levelOk && subjectOk;
       });
+
+      // Scope to the school's current active term — this used to mix every
+      // term's chunks together (up to 3, in whatever order the query
+      // returned), so a teacher working in First Term would see Second and
+      // Third Term topics in the same list. Only fall back to every term's
+      // chunks when there's no active term, or scoping would leave nothing
+      // (an untagged/mis-parsed chunk shouldn't just vanish).
+      const activeTerm = await prisma.term.findFirst({ where: { schoolId, status: "ACTIVE" }, select: { termNumber: true } });
+      const activeTermWord = activeTerm ? (["FIRST", "SECOND", "THIRD"][activeTerm.termNumber - 1] ?? null) : null;
+      if (activeTermWord) {
+        const forActiveTerm = matches.filter((c) => c.term === activeTermWord);
+        if (forActiveTerm.length > 0) matches = forActiveTerm;
+      }
       if (matches.length === 0) return { topics: [], grounded: false };
 
       const topics: Array<{ week: string | null; topic: string; term: string | null }> = [];

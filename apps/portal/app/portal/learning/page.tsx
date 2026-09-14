@@ -41,6 +41,10 @@ export default function LearningPage() {
   const [submitForm, setSubmitForm] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [liveBusy, setLiveBusy] = useState<string | null>(null);
+  // Cards only ever showed the first 160 characters with no way to read the
+  // rest — for a lesson note that's most of the note gone. This opens the
+  // full text (and any attachments) in a modal instead.
+  const [viewItem, setViewItem] = useState<Item | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -249,10 +253,28 @@ export default function LearningPage() {
                   ))}
                 </div>
               )}
-              <p style={{ fontSize: 13.5, color: "var(--duga-ink-2)", margin: "0 0 8px" }}>
-                {(item.content ?? item.instructions ?? item.description ?? "").slice(0, 160)}
-              </p>
-              <div style={{ fontSize: 12.5, color: "var(--duga-muted)" }}>
+              {(() => {
+                const full = item.content ?? item.instructions ?? item.description ?? "";
+                const truncated = full.length > 160;
+                return (
+                  <p style={{ fontSize: 13.5, color: "var(--duga-ink-2)", margin: "0 0 4px", whiteSpace: "pre-wrap" }}>
+                    {truncated ? `${full.slice(0, 160)}…` : full}
+                    {truncated && (
+                      <>
+                        {" "}
+                        <button
+                          type="button"
+                          onClick={() => setViewItem(item)}
+                          style={{ background: "none", border: "none", padding: 0, color: "var(--duga-primary)", fontWeight: 600, fontSize: 13, cursor: "pointer" }}
+                        >
+                          Read more
+                        </button>
+                      </>
+                    )}
+                  </p>
+                );
+              })()}
+              <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginBottom: 8 }}>
                 {kind === "assignments" && item.dueAt && <>Due: {new Date(item.dueAt).toLocaleString()}</>}
                 {kind === "tests" && item._count && <> {item._count.questions ?? 0} questions</>}
                 {kind === "live" && item.scheduledAt && <>Starts: {new Date(item.scheduledAt).toLocaleString()}</>}
@@ -391,6 +413,34 @@ export default function LearningPage() {
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <Button variant="ghost" onClick={() => setSubmitItem(null)}>Cancel</Button>
           <Button loading={submitting} onClick={submitAssignment}>Submit</Button>
+        </div>
+      </Modal>
+
+      <Modal open={!!viewItem} onClose={() => setViewItem(null)} title={viewItem?.topic ?? viewItem?.title ?? ""} wide>
+        {viewItem && (
+          <div style={{ display: "grid", gap: 14 }}>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <Badge tone="info">{viewItem.classSubject?.subject?.name ?? "—"}</Badge>
+              {viewItem.classSubject?.classGroup && (
+                <Badge tone="neutral">{viewItem.classSubject.classGroup.level.name} {viewItem.classSubject.classGroup.name}</Badge>
+              )}
+              {viewItem.week ? <Badge tone="accent">Week {viewItem.week}</Badge> : null}
+            </div>
+            {viewItem.attachments && viewItem.attachments.length > 0 && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {viewItem.attachments.map((url, i) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img key={i} src={url} alt="" style={{ width: 220, height: 160, objectFit: "cover", borderRadius: 8, border: "1px solid var(--duga-border)" }} />
+                ))}
+              </div>
+            )}
+            <p style={{ fontSize: 14, lineHeight: 1.7, color: "var(--duga-ink-2)", whiteSpace: "pre-wrap", margin: 0 }}>
+              {viewItem.content ?? viewItem.instructions ?? viewItem.description ?? ""}
+            </p>
+          </div>
+        )}
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 18 }}>
+          <Button variant="ghost" onClick={() => setViewItem(null)}>Close</Button>
         </div>
       </Modal>
     </div>

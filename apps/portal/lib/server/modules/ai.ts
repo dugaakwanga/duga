@@ -337,8 +337,18 @@ export const aiModule: Module = {
         "at genuinely different, meaningful points across the note — most notes need 1 or 2; use 0 if the topic has no natural visual at all (e.g. a grammar rule). " +
         "Never describe the same picture twice.";
 
+      // The note is displayed as plain text, not rendered markdown — no
+      // **bold**, ### headings, or --- dividers, or they show up as literal
+      // asterisks and hashes on screen instead of formatting. Use section
+      // labels like "Objectives:" on their own line and a plain "- " for
+      // bullets instead.
+      const plainTextInstruction =
+        " Write in PLAIN TEXT only — this is shown as-is, not rendered as markdown. Do NOT use **bold**, _italic_, ### headings, or --- dividers. " +
+        "For each section, write its label on its own line ending with a colon (e.g. 'Objectives:'), a blank line, then the section's content, " +
+        "then a blank line before the next section. Use a plain '- ' at the start of a line for a bullet point.";
+
       if (matches.length === 0) {
-        const system = "You write structured lesson notes with: Objectives, Key points (bulleted), Teaching activity, and Quick assessment." + illustrationInstruction;
+        const system = "You write structured lesson notes with: Objectives, Key points (bulleted), Teaching activity, and Quick assessment." + illustrationInstruction + plainTextInstruction;
         const prompt = `Subject: ${subject}\nTopic: ${topic ?? "(choose an appropriate topic for this subject and level)"}${level ? `\nLevel/Class: ${level}` : ""}${week ? `\nWeek: ${week}` : ""}`;
         const reply = await generate(system, prompt, 0.7, 1600);
         const { content, illustrations } = extractIllustrations(reply);
@@ -350,7 +360,7 @@ export const aiModule: Module = {
         "You write structured lesson notes for a Nigerian school teacher, strictly grounded in the official scheme-of-work excerpt provided. " +
         "Use ONLY topics/subtopics that actually appear in the excerpt — if a specific week or topic was requested, find it in the excerpt " +
         "(the excerpt is a raw extract from a PDF, so formatting may be messy — read past that). " +
-        "Output: Objectives, Key points (bulleted), Teaching activity, and Quick assessment." + illustrationInstruction;
+        "Output: Objectives, Key points (bulleted), Teaching activity, and Quick assessment." + illustrationInstruction + plainTextInstruction;
       const prompt = `Scheme of work excerpt:\n${excerpt}\n\n---\nDraft a lesson note for Subject: ${subject}${level ? `, Level/Class: ${level}` : ""}${week ? `, Week ${week}` : ""}${topic ? `, Topic: ${topic}` : " — pick the most relevant week/topic from the excerpt above"}.`;
       const reply = await generate(system, prompt, 0.6, 1800);
       const { content, illustrations } = extractIllustrations(reply);
