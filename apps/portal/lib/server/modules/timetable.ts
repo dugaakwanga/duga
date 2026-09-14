@@ -34,6 +34,26 @@ function timeAfter(start: string, minutes: number) {
   return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
 }
 
+// A reusable "Period 1 is always 08:00-08:40" template, set once by the
+// admin (see savePeriodTemplate below) — the smart generator (further down)
+// uses these times instead of guessing a fixed 50-minute default for every
+// school regardless of its actual bell schedule.
+interface PeriodTemplateEntry {
+  number: number;
+  startTime: string;
+  endTime: string;
+}
+const PERIOD_TEMPLATE_KEY = "periodTemplate";
+
+async function getPeriodTemplate(schoolId: string): Promise<PeriodTemplateEntry[]> {
+  const row = await prisma.schoolSetting.findUnique({ where: { schoolId_key: { schoolId, key: PERIOD_TEMPLATE_KEY } } });
+  const periods = (row?.value as { periods?: unknown } | null)?.periods;
+  if (!Array.isArray(periods)) return [];
+  return periods
+    .filter((p): p is PeriodTemplateEntry => !!p && typeof p === "object" && Number.isInteger((p as PeriodTemplateEntry).number) && typeof (p as PeriodTemplateEntry).startTime === "string" && typeof (p as PeriodTemplateEntry).endTime === "string")
+    .sort((a, b) => a.number - b.number);
+}
+
 async function validateRegularEntry(schoolId: string, input: RegularEntryInput, ignoreId?: string) {
   if (!Number.isInteger(input.dayOfWeek) || input.dayOfWeek < 0 || input.dayOfWeek > 6 || !Number.isInteger(input.periodNumber) || input.periodNumber < 1) {
     throw new Error("Choose a valid day and period number");
@@ -89,6 +109,16 @@ export async function generateSmartTimetable(
   const { termId, section } = opts;
   const periodsPerDay = Math.max(1, Math.min(12, opts.periodsPerDay ?? 7));
   const dayNumbers = [1, 2, 3, 4, 5];
+  const periodTemplate = await getPeriodTemplate(schoolId);
+  const templateByNumber = new Map(periodTemplate.map((p) => [p.number, p]));
+  // Falls back to a hardcoded 08:00-start, 50-minute-apart default for any
+  // period the admin hasn't configured a time for yet.
+  function periodTimes(periodNumber: number): { startTime: string; endTime: string } {
+    const configured = templateByNumber.get(periodNumber);
+    if (configured) return configured;
+    const startTime = timeAfter("08:00", (periodNumber - 1) * 50);
+    return { startTime, endTime: timeAfter(startTime, 45) };
+  }
   const candidates = await prisma.classSubject.findMany({
     where: { schoolId, teacherId: { not: null }, ...(section ? { classGroup: { level: { section } } } : {}) },
     include: { classGroup: { include: { level: true } }, subject: true },
@@ -146,8 +176,7 @@ export async function generateSmartTimetable(
         const teacherKey = `${assignment.teacherId}:${dayOfWeek}`;
         if ((teacherDayLoad.get(teacherKey) ?? 0) >= cap) continue;
         for (let periodNumber = 1; periodNumber <= periodsPerDay; periodNumber++) {
-          const startTime = timeAfter("08:00", (periodNumber - 1) * 50);
-          const endTime = timeAfter(startTime, 45);
+          const { startTime, endTime } = periodTimes(periodNumber);
           const classKey = `${assignment.classGroupId}:${dayOfWeek}`;
           const roomKey = room ? `${room}:${dayOfWeek}` : undefined;
           if ((teacherSlots.get(teacherKey) ?? []).some((slot) => overlaps(startTime, endTime, slot.start, slot.end))) continue;
@@ -250,10 +279,38 @@ export const timetableModule: Module = {
         }
       : undefined;
 
-    return { role, grid, examTimetable, refs };
+    const periodTemplate = isManager ? await getPeriodTemplate(schoolId) : undefined;
+
+    return { role, grid, examTimetable, refs, periodTemplate };
   },
 
   actions: {
+    // Admin sets a reusable "Period N is always this start-to-end time"
+    // template once — the smart generator above then follows it instead of
+    // a hardcoded default. Stored as one JSON blob (a plain school-setting
+    // row) rather than a dedicated table since it's small and read as a
+    // whole, never queried by individual period.
+    savePeriodTemplate: async (ctx) => {
+      can(ctx, "timetable:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const raw = Array.isArray(ctx.body.periods) ? ctx.body.periods : [];
+      const time = /^([01]\d|2[0-3]):[0-5]\d$/;
+      const periods: PeriodTemplateEntry[] = raw
+        .map((p: unknown) => {
+          const entry = p as Record<string, unknown>;
+          return { number: Number(entry.number), startTime: String(entry.startTime ?? ""), endTime: String(entry.endTime ?? "") };
+        })
+        .filter((p) => Number.isInteger(p.number) && p.number >= 1 && p.number <= 12 && time.test(p.startTime) && time.test(p.endTime) && p.startTime < p.endTime)
+        .sort((a, b) => a.number - b.number);
+      await prisma.schoolSetting.upsert({
+        where: { schoolId_key: { schoolId, key: PERIOD_TEMPLATE_KEY } },
+        update: { value: { periods } as never },
+        create: { schoolId, key: PERIOD_TEMPLATE_KEY, value: { periods } as never },
+      });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "timetable.periodTemplateUpdated", entityType: "School", entityId: schoolId, meta: { periods } });
+      return { periods };
+    },
+
     // Constraint-based timetable builder. It uses the subject's weekly period
     // requirement and only creates slots that are free for both the class and
     // assigned teacher, so generated entries obey the same rules as manual ones.

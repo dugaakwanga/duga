@@ -26,6 +26,12 @@ interface ExamEntry {
   classGroup: { id: string; level: { name: string }; name: string } | null;
 }
 
+interface PeriodTemplateEntry {
+  number: number;
+  startTime: string;
+  endTime: string;
+}
+
 interface TimetableData {
   role: string;
   grid: Array<{ day: string; index: number; entries: Entry[] }>;
@@ -36,6 +42,7 @@ interface TimetableData {
     teachers: Array<{ id: string; user: { firstName: string; lastName: string } }>;
     terms: Array<{ id: string; name: string }>;
   };
+  periodTemplate?: PeriodTemplateEntry[];
 }
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -151,6 +158,9 @@ export default function TimetablePage() {
   const [csvText, setCsvText] = useState("");
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ created: number; failed: number; results: Array<{ row: number; ok: boolean; error?: string }> } | null>(null);
+  const [periodModal, setPeriodModal] = useState(false);
+  const [periods, setPeriods] = useState<PeriodTemplateEntry[]>([]);
+  const [savingPeriods, setSavingPeriods] = useState(false);
 
   // Was previously `!!data?.refs` — the server always includes a `refs` key
   // (an empty object for non-managers), so that check was always truthy and
@@ -162,6 +172,7 @@ export default function TimetablePage() {
     return api<TimetableData>("timetable", { query: { classGroupId: cgId || undefined } })
       .then((d) => {
         setData(d);
+        setPeriods(d.periodTemplate ?? []);
         // Default to the first class in the active section so the admin
         // never lands on the old "every class mixed together" view.
         const firstClass = d.refs?.classes[0];
@@ -235,6 +246,32 @@ export default function TimetablePage() {
     }
   }
 
+  function addPeriodRow() {
+    const nextNumber = (periods.length ? Math.max(...periods.map((p) => p.number)) : 0) + 1;
+    setPeriods([...periods, { number: nextNumber, startTime: "08:00", endTime: "08:40" }]);
+  }
+
+  function updatePeriodRow(index: number, patch: Partial<PeriodTemplateEntry>) {
+    setPeriods(periods.map((p, i) => (i === index ? { ...p, ...patch } : p)));
+  }
+
+  function removePeriodRow(index: number) {
+    setPeriods(periods.filter((_, i) => i !== index));
+  }
+
+  async function savePeriods() {
+    setSavingPeriods(true);
+    try {
+      await api("timetable/savePeriodTemplate", { method: "POST", body: { periods } });
+      setPeriodModal(false);
+      load(classGroupId);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setSavingPeriods(false);
+    }
+  }
+
   async function generate() {
     if (!confirm("Generate missing timetable periods for all assigned class subjects in the active section? Existing periods will be kept.")) return;
     setGenerating(true);
@@ -301,6 +338,7 @@ export default function TimetablePage() {
         actions={
           isAdmin ? (
             <>
+              <Button variant="outline" onClick={() => setPeriodModal(true)} style={{ marginRight: 10 }}>Period times</Button>
               <Button variant="outline" loading={generating} onClick={generate} style={{ marginRight: 10 }}>Generate timetable</Button>
               <Button variant="accent" loading={publishing} onClick={publish} style={{ marginRight: 10 }}>Publish & notify</Button>
               <Button variant="outline" onClick={() => openModal("import")} style={{ marginRight: 10 }}>Import CSV</Button>
@@ -358,6 +396,34 @@ export default function TimetablePage() {
           </div>
         )}
       </Card>
+
+      <Modal open={periodModal} onClose={() => setPeriodModal(false)} title="Period times" wide>
+        <div style={{ fontSize: 13, color: "var(--duga-muted)", marginBottom: 14 }}>
+          Set when each period starts and ends — &quot;Generate timetable&quot; follows these times instead of guessing. A period left unset here
+          defaults to an 08:00 start, 50 minutes apart.
+        </div>
+        <div style={{ display: "grid", gap: 10 }}>
+          {periods.map((p, i) => (
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "90px 1fr 1fr auto", gap: 10, alignItems: "end" }}>
+              <Field label="Period">
+                <Input type="number" min={1} max={12} value={p.number} onChange={(e) => updatePeriodRow(i, { number: Number(e.target.value) || 1 })} />
+              </Field>
+              <Field label="Start time">
+                <Input type="time" value={p.startTime} onChange={(e) => updatePeriodRow(i, { startTime: e.target.value })} />
+              </Field>
+              <Field label="End time">
+                <Input type="time" value={p.endTime} onChange={(e) => updatePeriodRow(i, { endTime: e.target.value })} />
+              </Field>
+              <Button variant="ghost" onClick={() => removePeriodRow(i)}>Remove</Button>
+            </div>
+          ))}
+        </div>
+        <Button variant="outline" size="sm" onClick={addPeriodRow} style={{ marginTop: 12 }}>+ Add period</Button>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+          <Button variant="ghost" onClick={() => setPeriodModal(false)}>Cancel</Button>
+          <Button loading={savingPeriods} onClick={savePeriods}>Save period times</Button>
+        </div>
+      </Modal>
 
       <Modal
         open={!!modal}
