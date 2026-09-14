@@ -25,6 +25,26 @@ function stripNulBytes(s: string): string {
   return s.split(String.fromCharCode(0)).join("");
 }
 
+// PDFs built from an old Word bullet list often extract their bullet glyph
+// as a Private-Use-Area codepoint — that specific font's own internal slot
+// for "•" — rather than the real Unicode bullet; no other font has a glyph
+// there, so browsers render it as a blank box (confirmed live: a real
+// school's scheme PDF extracted its bullets as U+F0B7). Mapped back to a
+// real "•" here. Also collapses the stray tabs the same PDFs use to
+// separate what were side-by-side table-column words on one flattened
+// line, so raw text reads properly even before (or if) the AI reformats it
+// into a real table. Applied both at upload time (new PDFs) and whenever
+// existing chunk text is read, so already-ingested sections self-heal
+// without needing a re-upload.
+function normalizeSchemeText(s: string): string {
+  return s
+    .replace(/[]/g, "•")
+    .replace(/[ \t]+/g, " ")
+    .replace(/ ?\n ?/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 // A single uploaded PDF often spans more than one of the school's real
 // sections at once (e.g. one "Pre-Primary & Primary" document covering
 // Nursery through Primary 6) — SchemeOfWork.section is just the admin's
@@ -79,10 +99,13 @@ async function formatChunkTable(chunk: { id: string; subjectName: string; levelN
     "You reformat a messy, PDF-extracted scheme-of-work section back into a clean table. The raw text below came from a real table in a PDF but " +
     "lost its row/column structure during extraction — one word or short phrase per line, in reading order (header row, then each data row's " +
     "cells in order). Reconstruct the table's actual columns (e.g. Week, Topic, Content — or whatever this section's own header row names) and " +
-    "rows. Keep the original wording exactly; do not summarize, shorten, or invent content. " +
+    "rows. Keep the original wording exactly; do not summarize, shorten, or invent content. Where a cell is itself a list of several subtopics " +
+    "(each originally marked with a '•'), keep them as separate '• ' bulleted lines within that cell's string, one per line, rather than " +
+    "joining them into a single run-on sentence. " +
     'Respond with ONLY a JSON object, no markdown fences, no commentary: {"columns": [...], "rows": [[...], ...]} where each row array has ' +
     "exactly one string per column, in the same column order.";
-  const prompt = `Subject: ${chunk.subjectName}${chunk.levelName ? `\nLevel: ${chunk.levelName}` : ""}${chunk.term ? `\nTerm: ${chunk.term}` : ""}\n\nRaw extracted text:\n${chunk.text}`;
+  const cleanText = normalizeSchemeText(chunk.text);
+  const prompt = `Subject: ${chunk.subjectName}${chunk.levelName ? `\nLevel: ${chunk.levelName}` : ""}${chunk.term ? `\nTerm: ${chunk.term}` : ""}\n\nRaw extracted text:\n${cleanText}`;
 
   let table: SchemeTable | null = null;
   try {
@@ -172,7 +195,7 @@ export const schemeModule: Module = {
             levelName: c.levelName ?? lastLevel,
             subjectName: c.subjectName,
             term: c.term,
-            text: c.text.slice(0, MAX_CHUNK_CHARS),
+            text: normalizeSchemeText(c.text).slice(0, MAX_CHUNK_CHARS),
             pageStart: c.pageStart,
             pageEnd: c.pageEnd,
           };
@@ -242,9 +265,17 @@ export const schemeModule: Module = {
       } else if (role === "STUDENT") {
         const student = await prisma.student.findFirst({
           where: { id: ctx.session.user.student?.id ?? "none" },
-          select: { classGroup: { select: { level: { select: { name: true } } } } },
+          select: { currentClassGroupId: true, classGroup: { select: { level: { select: { name: true } } } } },
         });
         allowedLevels = student?.classGroup?.level ? [normalize(student.classGroup.level.name)] : [];
+        // A level (e.g. "Primary 4") can span several class groups that
+        // don't all take the same subjects (4A takes French, 4B doesn't) —
+        // scope to what this student's OWN class is actually assigned,
+        // not everything anyone at their level might see.
+        const cs = student?.currentClassGroupId
+          ? await prisma.classSubject.findMany({ where: { schoolId, classGroupId: student.currentClassGroupId }, select: { subject: { select: { name: true } } } })
+          : [];
+        allowedSubjects = [...new Set(cs.map((c) => normalize(c.subject.name)))];
       } else if (role === "PARENT") {
         const links = await prisma.studentParent.findMany({
           where: { parent: { userId: ctx.session.user.id } },
@@ -264,7 +295,7 @@ export const schemeModule: Module = {
           })
         : [];
 
-      const withSection = allChunks.map((c) => ({ ...c, section: deriveSection(c.levelName, levelMap, schemeById.get(c.schemeId)?.section ?? "") }));
+      const withSection = allChunks.map((c) => ({ ...c, text: normalizeSchemeText(c.text), section: deriveSection(c.levelName, levelMap, schemeById.get(c.schemeId)?.section ?? "") }));
 
       const chunks = withSection.filter((c) => {
         if (section && normalize(c.section) !== normalize(section)) return false;
