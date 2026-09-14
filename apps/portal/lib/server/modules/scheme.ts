@@ -40,6 +40,14 @@ async function levelSectionMap(schoolId: string): Promise<Map<string, string>> {
 
 const PRE_PRIMARY_KEYWORDS = ["NURSERY", "PLAY", "CRECHE", "RECEPTION", "KG", "PREPRIMARY"];
 
+// Shared by the topics action and findSchemeChunks (lesson-note grounding)
+// so both scope to the same term instead of mixing First/Second/Third Term
+// chunks together.
+export async function activeTermWord(schoolId: string): Promise<string | null> {
+  const activeTerm = await prisma.term.findFirst({ where: { schoolId, status: "ACTIVE" }, select: { termNumber: true } });
+  return activeTerm ? (["FIRST", "SECOND", "THIRD"][activeTerm.termNumber - 1] ?? null) : null;
+}
+
 function deriveSection(levelName: string | null, levelMap: Map<string, string>, fallback: string): string {
   if (!levelName) return fallback;
   const n = normalize(levelName);
@@ -334,10 +342,9 @@ export const schemeModule: Module = {
       // Third Term topics in the same list. Only fall back to every term's
       // chunks when there's no active term, or scoping would leave nothing
       // (an untagged/mis-parsed chunk shouldn't just vanish).
-      const activeTerm = await prisma.term.findFirst({ where: { schoolId, status: "ACTIVE" }, select: { termNumber: true } });
-      const activeTermWord = activeTerm ? (["FIRST", "SECOND", "THIRD"][activeTerm.termNumber - 1] ?? null) : null;
-      if (activeTermWord) {
-        const forActiveTerm = matches.filter((c) => c.term === activeTermWord);
+      const termWord = await activeTermWord(schoolId);
+      if (termWord) {
+        const forActiveTerm = matches.filter((c) => c.term === termWord);
         if (forActiveTerm.length > 0) matches = forActiveTerm;
       }
       if (matches.length === 0) return { topics: [], grounded: false };
@@ -402,6 +409,15 @@ export async function findSchemeChunks(schoolId: string, opts: { levelName?: str
   // still far more useful to the AI than no curriculum context at all.
   if (matches.length === 0 && level && subject) {
     matches = candidates.filter((c) => normalize(c.subjectName).includes(subject) || subject.includes(normalize(c.subjectName)));
+  }
+  // Scope to the school's active term — without this, a recurring generic
+  // label that repeats every term verbatim (e.g. "REVISION" or "MIDTERM
+  // EXAMINATION") could match a topicHint against the WRONG term's chunk,
+  // grounding a First Term note in Second/Third Term curriculum text.
+  const termWord = await activeTermWord(schoolId);
+  if (termWord) {
+    const forTerm = matches.filter((c) => c.term === termWord);
+    if (forTerm.length > 0) matches = forTerm;
   }
   if (opts.topicHint) {
     const hint = opts.topicHint.toLowerCase();

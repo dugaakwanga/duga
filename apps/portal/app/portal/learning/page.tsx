@@ -5,6 +5,7 @@ import Link from "next/link";
 import { PageHeader, Card, Badge, Button, Modal, Field, Input, Textarea, Alert, Spinner, EmptyState, Tabs, Icon, Select } from "@duga/ui";
 import { api } from "@/lib/client/api";
 import { groupClassSubjectsBySubject } from "@/lib/client/classSubjectOptions";
+import LessonContent from "@/components/LessonContent";
 
 type Kind = "notes" | "assignments" | "tests" | "live";
 
@@ -245,16 +246,19 @@ export default function LearningPage() {
                   <Badge tone="neutral">{item.classSubject.classGroup.level.name} {item.classSubject.classGroup.name}</Badge>
                 )}
               </div>
-              {kind === "notes" && item.attachments && item.attachments.length > 0 && (
+              {kind === "notes" && item.attachments && item.attachments.some(Boolean) && (
                 <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 8 }}>
-                  {item.attachments.map((url, i) => (
+                  {item.attachments.filter(Boolean).map((url, i) => (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img key={i} src={url} alt="" style={{ width: 100, height: 76, objectFit: "cover", borderRadius: 6, flexShrink: 0 }} />
                   ))}
                 </div>
               )}
               {(() => {
-                const full = item.content ?? item.instructions ?? item.description ?? "";
+                // Strip the inline-image token here — this is the plain-
+                // text snippet; LessonContent (the "Read more" modal below)
+                // is where it actually becomes a picture.
+                const full = (item.content ?? item.instructions ?? item.description ?? "").replace(/\[\[ILLUSTRATION_HERE\]\]/g, " ").replace(/\s{2,}/g, " ").trim();
                 const truncated = full.length > 160;
                 return (
                   <p style={{ fontSize: 13.5, color: "var(--duga-ink-2)", margin: "0 0 4px", whiteSpace: "pre-wrap" }}>
@@ -426,17 +430,27 @@ export default function LearningPage() {
               )}
               {viewItem.week ? <Badge tone="accent">Week {viewItem.week}</Badge> : null}
             </div>
-            {viewItem.attachments && viewItem.attachments.length > 0 && (
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {viewItem.attachments.map((url, i) => (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img key={i} src={url} alt="" style={{ width: 220, height: 160, objectFit: "cover", borderRadius: 8, border: "1px solid var(--duga-border)" }} />
-                ))}
-              </div>
+            {kind === "notes" ? (
+              // Renders headings/bullets/paragraphs like a real document and
+              // drops each image in exactly where the AI placed it in the
+              // text, instead of a flat gallery disconnected from the words
+              // that describe it.
+              <LessonContent content={viewItem.content ?? ""} images={viewItem.attachments ?? []} />
+            ) : (
+              <>
+                {viewItem.attachments && viewItem.attachments.some(Boolean) && (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {viewItem.attachments.filter(Boolean).map((url, i) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img key={i} src={url} alt="" style={{ width: 220, height: 160, objectFit: "cover", borderRadius: 8, border: "1px solid var(--duga-border)" }} />
+                    ))}
+                  </div>
+                )}
+                <p style={{ fontSize: 14, lineHeight: 1.7, color: "var(--duga-ink-2)", whiteSpace: "pre-wrap", margin: 0 }}>
+                  {viewItem.content ?? viewItem.instructions ?? viewItem.description ?? ""}
+                </p>
+              </>
             )}
-            <p style={{ fontSize: 14, lineHeight: 1.7, color: "var(--duga-ink-2)", whiteSpace: "pre-wrap", margin: 0 }}>
-              {viewItem.content ?? viewItem.instructions ?? viewItem.description ?? ""}
-            </p>
           </div>
         )}
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 18 }}>

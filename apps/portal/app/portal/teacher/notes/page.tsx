@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { PageHeader, Card, Badge, Button, Input, Textarea, Select, Modal, Alert, Spinner, EmptyState, Icon } from "@duga/ui";
 import { api } from "@/lib/client/api";
 import { groupClassSubjectsBySubject } from "@/lib/client/classSubjectOptions";
+import LessonContent from "@/components/LessonContent";
 
 interface ClassSubjectOption {
   id: string;
@@ -26,8 +27,17 @@ interface Note {
 // Pollinations.ai: a free, no-key, no-signup image generation endpoint — the
 // image is generated on request and served directly from this URL, so there
 // is nothing to upload or store server-side; the URL itself *is* the image.
+// Diffusion models (this one included) can't reliably render legible text
+// inside an image — asking for a "labeled diagram" mostly produces
+// unlabeled or garbled-text pictures. Asking for a clear, recognizable
+// illustration of the actual subject instead is what these models are
+// genuinely good at, so that's what the prompt below asks for.
 function illustrationUrl(prompt: string): string {
-  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=768&height=512&nologo=true`;
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=768&height=512&nologo=true&model=flux`;
+}
+
+function illustrationPrompt(subject: string): string {
+  return `a clear, simple, colorful illustration of ${subject}, flat vector children's textbook art style, plain white background, no text, no words, no logo, no watermark, no signature`;
 }
 
 const emptyForm = (): Record<string, string> => ({});
@@ -46,6 +56,7 @@ export default function TeacherNotesPage() {
   const [generatingImage, setGeneratingImage] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Topic picker: real weeks/topics from the scheme of work for whichever
@@ -99,6 +110,7 @@ export default function TeacherNotesPage() {
     setForm(emptyForm());
     setGroundedHint(null);
     setImages([]);
+    setShowPreview(false);
   }
 
   function openNew() {
@@ -106,6 +118,7 @@ export default function TeacherNotesPage() {
     setForm(emptyForm());
     setGroundedHint(null);
     setImages([]);
+    setShowPreview(false);
     setOpen(true);
   }
 
@@ -119,6 +132,7 @@ export default function TeacherNotesPage() {
     });
     setGroundedHint(null);
     setImages(n.attachments ?? []);
+    setShowPreview(false);
     setOpen(true);
   }
 
@@ -156,20 +170,22 @@ export default function TeacherNotesPage() {
         : "No matching scheme of work section found — this is a generic draft. Upload one in Settings → Scheme of Work for a curriculum-grounded draft.";
       setGroundedHint(base);
 
-      // The AI can mark more than one point in the note where a diagram
-      // genuinely helps — generate one image per description and add each
-      // to the gallery below as it lands, rather than waiting for all of
-      // them (a slow one shouldn't hold up the others).
+      // The content now carries a literal "[[ILLUSTRATION_HERE]]" token at
+      // each point the AI wants a picture — the same token, repeated, so
+      // the renderer (LessonContent) matches the Nth occurrence to
+      // images[N]. That alignment only holds if this array stays exactly
+      // illustrations.length long, in order — a failed generation leaves
+      // its slot "" (skipped by the renderer) rather than being dropped,
+      // which would shift every later image out of position.
       const illustrations = res.illustrations ?? [];
       if (illustrations.length > 0) {
         setGeneratingImage(true);
+        const slots: string[] = new Array(illustrations.length).fill("");
         let addedCount = 0;
         await Promise.all(
-          illustrations.map(async (desc) => {
+          illustrations.map(async (desc, i) => {
             try {
-              const prompt = `simple educational diagram: ${desc}, for a ${cs.classGroup.level.name} ${cs.subject.name} class, labeled, clean line art, no watermark, no text`;
-              const url = await loadIllustration(prompt);
-              setImages((prev) => [...prev, url]);
+              slots[i] = await loadIllustration(illustrationPrompt(desc));
               addedCount += 1;
             } catch {
               // The AI still identified a good illustration idea — the note
@@ -177,10 +193,15 @@ export default function TeacherNotesPage() {
             }
           }),
         );
+        setImages(slots);
         setGeneratingImage(false);
-        if (addedCount > 0) {
-          setGroundedHint(`${base} Added ${addedCount} matching illustration${addedCount === 1 ? "" : "s"} to the images below.`);
-        }
+        setGroundedHint(
+          addedCount > 0
+            ? `${base} Placed ${addedCount} illustration${addedCount === 1 ? "" : "s"} right where they're discussed.`
+            : base,
+        );
+      } else {
+        setImages([]);
       }
     } catch (e) {
       alert((e as Error).message);
@@ -193,8 +214,7 @@ export default function TeacherNotesPage() {
     const cs = options.find((o) => o.id === form.classSubjectId);
     if (!form.topic) return alert("Enter a topic first");
     setGeneratingImage(true);
-    const prompt = `simple educational diagram of ${form.topic} for a ${cs?.classGroup.level.name ?? "school"} ${cs?.subject.name ?? ""} class, labeled, clean line art, no watermark, no text`;
-    const url = illustrationUrl(prompt);
+    const url = illustrationUrl(illustrationPrompt(`${form.topic}, for a ${cs?.classGroup.level.name ?? "school"} ${cs?.subject.name ?? ""} class`));
     const probe = new Image();
     probe.onload = () => { setImages((prev) => [...prev, url]); setGeneratingImage(false); };
     probe.onerror = () => { setGeneratingImage(false); alert("Couldn't generate an illustration right now — the free image service may be busy. Try again."); };
@@ -219,8 +239,12 @@ export default function TeacherNotesPage() {
     }
   }
 
-  function removeImage(url: string) {
-    setImages((prev) => prev.filter((u) => u !== url));
+  // Blanks the slot rather than removing it outright — the first N images
+  // are positionally matched to the Nth "[[ILLUSTRATION_HERE]]" token in
+  // the content (see generateFromScheme), so filtering it out would shift
+  // every image after it out of place. LessonContent skips a blank slot.
+  function removeImage(index: number) {
+    setImages((prev) => prev.map((u, i) => (i === index ? "" : u)));
   }
 
   async function saveDraft() {
@@ -294,17 +318,26 @@ export default function TeacherNotesPage() {
                 {n.week ? <Badge tone="accent">Week {n.week}</Badge> : null}
                 <Badge tone={n.isPublished ? "success" : "neutral"}>{n.isPublished ? "Published" : "Draft"}</Badge>
               </div>
-              {n.attachments && n.attachments.length > 0 && (
+              {n.attachments && n.attachments.some(Boolean) && (
                 <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 8 }}>
-                  {n.attachments.map((url, i) => (
+                  {n.attachments.filter(Boolean).map((url, i) => (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img key={i} src={url} alt={n.topic} style={{ width: 90, height: 70, objectFit: "cover", borderRadius: 6, flexShrink: 0 }} />
                   ))}
                 </div>
               )}
-              <p style={{ fontSize: 13.5, color: "var(--duga-ink-2)", margin: "0 0 8px", whiteSpace: "pre-wrap" }}>
-                {n.content.length > 200 ? `${n.content.slice(0, 200)}…` : n.content}
-              </p>
+              {(() => {
+                // Strip the inline-image token from this plain-text
+                // snippet — LessonContent (in the Preview toggle and on
+                // the student Learning page) is where it actually turns
+                // into a picture; here it would just show as literal text.
+                const preview = n.content.replace(/\[\[ILLUSTRATION_HERE\]\]/g, " ").replace(/\s{2,}/g, " ").trim();
+                return (
+                  <p style={{ fontSize: 13.5, color: "var(--duga-ink-2)", margin: "0 0 8px", whiteSpace: "pre-wrap" }}>
+                    {preview.length > 200 ? `${preview.slice(0, 200)}…` : preview}
+                  </p>
+                );
+              })()}
               <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginBottom: 10 }}>Added {new Date(n.createdAt).toLocaleDateString()}</div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 <Button size="sm" variant="outline" onClick={() => openEdit(n)}>Edit</Button>
@@ -383,6 +416,18 @@ export default function TeacherNotesPage() {
           </div>
           {groundedHint && <Alert tone={groundedHint.startsWith("Drafted") ? "success" : "info"}>{groundedHint}</Alert>}
           <Textarea id="content" rows={7} value={form.content ?? ""} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="Write the lesson note (objectives, activities, summary)…, or generate one above. You can always come back and edit this before publishing." />
+          {(form.content ?? "").trim() && (
+            <div>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setShowPreview((v) => !v)}>
+                {showPreview ? "Hide preview" : "Preview how students will see this"}
+              </Button>
+              {showPreview && (
+                <div style={{ border: "1px solid var(--duga-border)", borderRadius: 12, padding: 18, marginTop: 8, background: "#fff" }}>
+                  <LessonContent content={form.content ?? ""} images={images} />
+                </div>
+              )}
+            </div>
+          )}
 
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
             <label style={{ fontSize: 12.5, fontWeight: 600 }}>Images</label>
@@ -396,22 +441,24 @@ export default function TeacherNotesPage() {
               <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => uploadImage(e.target.files?.[0])} />
             </div>
           </div>
-          {images.length > 0 && (
+          {images.some(Boolean) && (
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              {images.map((url, i) => (
-                <div key={i} style={{ position: "relative" }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={url} alt="" style={{ width: 140, height: 100, objectFit: "cover", borderRadius: 8, border: "1px solid var(--duga-border)" }} />
-                  <button
-                    type="button"
-                    onClick={() => removeImage(url)}
-                    aria-label="Remove image"
-                    style={{ position: "absolute", top: -8, right: -8, width: 22, height: 22, borderRadius: "50%", border: "none", background: "var(--duga-danger, #c0392b)", color: "#fff", cursor: "pointer", fontSize: 13, lineHeight: 1 }}
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
+              {images.map((url, i) =>
+                url ? (
+                  <div key={i} style={{ position: "relative" }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={url} alt="" style={{ width: 140, height: 100, objectFit: "cover", borderRadius: 8, border: "1px solid var(--duga-border)" }} />
+                    <button
+                      type="button"
+                      onClick={() => removeImage(i)}
+                      aria-label="Remove image"
+                      style={{ position: "absolute", top: -8, right: -8, width: 22, height: 22, borderRadius: "50%", border: "none", background: "var(--duga-danger, #c0392b)", color: "#fff", cursor: "pointer", fontSize: 13, lineHeight: 1 }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : null,
+              )}
             </div>
           )}
         </div>

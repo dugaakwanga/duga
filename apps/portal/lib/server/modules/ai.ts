@@ -90,12 +90,13 @@ export async function generate(system: string, prompt: string | ChatTurn[], temp
 }
 
 // Pulls the model's self-placed "[ILLUSTRATION: ...]" cues (see draftLesson)
-// out of the drafted text — the model can mark more than one point in a
-// longer note where a diagram genuinely helps, not just a single image
-// tacked on at the end. Notes render as plain text (no inline positioning
-// yet), so each cue line is simply removed from the visible content; the
-// caller generates one image per returned description and adds each to the
-// note's image list.
+// out of the drafted text and replaces each one, in place, with a literal
+// "[[ILLUSTRATION_HERE]]" token — every occurrence is the same token, so
+// the Nth occurrence in the text lines up with the Nth entry in the
+// returned `illustrations` array. LessonContent.tsx (the renderer) walks
+// the text splitting on that token and drops each generated image in
+// exactly where the model put it, instead of a plain-text dump with images
+// bolted on at the end.
 function extractIllustrations(text: string): { content: string; illustrations: string[] } {
   const matches = [...text.matchAll(/^\s*\[ILLUSTRATION:\s*(.+?)\]\s*$/gim)];
   if (matches.length === 0) return { content: text.trim(), illustrations: [] };
@@ -103,7 +104,7 @@ function extractIllustrations(text: string): { content: string; illustrations: s
   const illustrations: string[] = [];
   for (const m of matches) {
     illustrations.push(m[1]!.trim());
-    content = content.replace(m[0], "");
+    content = content.replace(m[0], "[[ILLUSTRATION_HERE]]");
   }
   return { content: content.replace(/\n{3,}/g, "\n\n").trim(), illustrations };
 }
@@ -347,10 +348,17 @@ export const aiModule: Module = {
         "For each section, write its label on its own line ending with a colon (e.g. 'Objectives:'), a blank line, then the section's content, " +
         "then a blank line before the next section. Use a plain '- ' at the start of a line for a bullet point.";
 
+      // A short outline isn't usable as the actual material a teacher
+      // stands in front of a class with — force real depth per section.
+      const lengthInstruction =
+        " Write a THOROUGH, complete lesson note a teacher could teach directly from, not a one-line outline. Each key point needs 2-4 full " +
+        "sentences of real explanation in plain language a child can follow, not just a phrase. The teaching activity must describe concrete " +
+        "steps the teacher actually does in class, in order. The quick assessment needs at least 4 real questions. Aim for genuine depth over brevity.";
+
       if (matches.length === 0) {
-        const system = "You write structured lesson notes with: Objectives, Key points (bulleted), Teaching activity, and Quick assessment." + illustrationInstruction + plainTextInstruction;
+        const system = "You write structured lesson notes with: Objectives, Key points (bulleted), Teaching activity, and Quick assessment." + lengthInstruction + illustrationInstruction + plainTextInstruction;
         const prompt = `Subject: ${subject}\nTopic: ${topic ?? "(choose an appropriate topic for this subject and level)"}${level ? `\nLevel/Class: ${level}` : ""}${week ? `\nWeek: ${week}` : ""}`;
-        const reply = await generate(system, prompt, 0.7, 1600);
+        const reply = await generate(system, prompt, 0.7, 3500);
         const { content, illustrations } = extractIllustrations(reply);
         return { reply: content, grounded: false, illustrations };
       }
@@ -359,10 +367,11 @@ export const aiModule: Module = {
       const system =
         "You write structured lesson notes for a Nigerian school teacher, strictly grounded in the official scheme-of-work excerpt provided. " +
         "Use ONLY topics/subtopics that actually appear in the excerpt — if a specific week or topic was requested, find it in the excerpt " +
-        "(the excerpt is a raw extract from a PDF, so formatting may be messy — read past that). " +
-        "Output: Objectives, Key points (bulleted), Teaching activity, and Quick assessment." + illustrationInstruction + plainTextInstruction;
+        "(the excerpt is a raw extract from a PDF, so formatting may be messy — read past that). Expand each subtopic named in the excerpt into " +
+        "real, taught content — the excerpt itself is just a syllabus line, not the lesson. " +
+        "Output: Objectives, Key points (bulleted), Teaching activity, and Quick assessment." + lengthInstruction + illustrationInstruction + plainTextInstruction;
       const prompt = `Scheme of work excerpt:\n${excerpt}\n\n---\nDraft a lesson note for Subject: ${subject}${level ? `, Level/Class: ${level}` : ""}${week ? `, Week ${week}` : ""}${topic ? `, Topic: ${topic}` : " — pick the most relevant week/topic from the excerpt above"}.`;
-      const reply = await generate(system, prompt, 0.6, 1800);
+      const reply = await generate(system, prompt, 0.6, 3500);
       const { content, illustrations } = extractIllustrations(reply);
       return { reply: content, grounded: true, illustrations, sections: matches.map((m) => ({ subjectName: m.subjectName, levelName: m.levelName, term: m.term })) };
     },
