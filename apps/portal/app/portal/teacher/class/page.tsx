@@ -6,6 +6,13 @@ import { PageHeader, Card, Stat, Badge, Select, Alert, Spinner, EmptyState, Icon
 import { api } from "@/lib/client/api";
 import { BarChart } from "@/components/charts";
 import { useSection } from "@/components/SectionContext";
+import {
+  renderReportCardPreviewUrl,
+  type ReportCardPdfSchool,
+  type ReportCardPdfConfig,
+  type ReportCardPdfComponent,
+  type ReportCardPdfGradeBand,
+} from "@/lib/client/reportCardPdf";
 
 interface RosterStudent {
   id: string;
@@ -20,23 +27,44 @@ interface ReportCardItem {
   exam: number | null;
   total: number | null;
   grade: string | null;
+  remark: string | null;
+  position: number | null;
+  classAverage: number | null;
+  componentScores: Record<string, number> | null;
   subject: { name: string };
 }
 
 interface StudentCard {
-  student: { id: string; name: string; admissionNumber: string | null };
-  activeTerm: { id: string; name: string } | null;
+  student: { id: string; name: string; admissionNumber: string | null; photoUrl: string | null };
+  classGroupName: string;
+  activeTerm: { id: string; name: string; startDate: string | null; endDate: string | null; sessionName: string | null } | null;
   reportCard: {
     id: string;
     average: number | null;
     position: number | null;
+    classSize: number | null;
+    gpa: number | null;
     remark: string | null;
     psychomotor: Record<string, string> | null;
     coCurricular: Record<string, string> | null;
+    attendanceRemark: string | null;
+    studentAge: number | null;
+    schoolDaysOpened: number | null;
+    daysPresent: number | null;
+    feesOwed: number | string | null;
+    nextTermFees: number | string | null;
+    feesPayableBy: string | null;
+    formMasterName: string | null;
+    principalComment: string | null;
+    principalName: string | null;
     items: ReportCardItem[];
     teacherSubmittedAt: string | null;
   } | null;
   attendance: { total: number; present: number; rate: number };
+  school: ReportCardPdfSchool | null;
+  reportCardConfig: ReportCardPdfConfig | null;
+  gradingScale: ReportCardPdfGradeBand[];
+  components: ReportCardPdfComponent[];
 }
 
 interface SubjectPerf {
@@ -74,8 +102,63 @@ export default function MyClassPage() {
   const [saving, setSaving] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const [modalTab, setModalTab] = useState("performance");
-  const [showPreview, setShowPreview] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewing, setPreviewing] = useState(false);
   const [submitBusy, setSubmitBusy] = useState(false);
+
+  useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
+
+  // Renders the SAME PDF the student/parent ultimately sees (not a
+  // hand-rolled summary) using whatever grades/comments are currently
+  // drafted, so "Preview final draft" is a genuine preview of the real
+  // report card, not a stand-in for it.
+  async function openPreview() {
+    if (!studentCard?.reportCard || !studentCard.school || !studentCard.reportCardConfig) return;
+    setPreviewing(true);
+    try {
+      const url = await renderReportCardPreviewUrl(
+        studentCard.school,
+        studentCard.reportCardConfig,
+        {
+          student: { ...(() => { const [firstName, ...rest] = studentCard.student.name.split(" "); return { firstName: firstName ?? studentCard.student.name, lastName: rest.join(" ") }; })(), admissionNumber: studentCard.student.admissionNumber ?? undefined, photoUrl: studentCard.student.photoUrl },
+          className: studentCard.classGroupName,
+          term: studentCard.activeTerm ? { name: studentCard.activeTerm.name, startDate: studentCard.activeTerm.startDate, endDate: studentCard.activeTerm.endDate } : null,
+          sessionName: studentCard.activeTerm?.sessionName ?? null,
+          average: studentCard.reportCard.average,
+          position: studentCard.reportCard.position,
+          classSize: studentCard.reportCard.classSize,
+          gpa: studentCard.reportCard.gpa,
+          items: studentCard.reportCard.items.map((i) => ({ ...i, subject: i.subject })),
+          psychomotor: traitsDraft,
+          coCurricular: coCurricularDraft,
+          attendanceRemark: studentCard.reportCard.attendanceRemark,
+          studentAge: studentCard.reportCard.studentAge,
+          schoolDaysOpened: studentCard.reportCard.schoolDaysOpened,
+          daysPresent: studentCard.reportCard.daysPresent,
+          feesOwed: studentCard.reportCard.feesOwed !== null && studentCard.reportCard.feesOwed !== undefined ? Number(studentCard.reportCard.feesOwed) : null,
+          nextTermFees: studentCard.reportCard.nextTermFees !== null && studentCard.reportCard.nextTermFees !== undefined ? Number(studentCard.reportCard.nextTermFees) : null,
+          feesPayableBy: studentCard.reportCard.feesPayableBy,
+          remark: remarkDraft || studentCard.reportCard.remark,
+          formMasterName: studentCard.reportCard.formMasterName,
+          principalComment: studentCard.reportCard.principalComment,
+          principalName: studentCard.reportCard.principalName,
+        },
+        studentCard.components,
+        studentCard.gradingScale,
+      );
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(url);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setPreviewing(false);
+    }
+  }
+
+  function closePreview() {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+  }
 
   async function openStudent(s: RosterStudent) {
     setStudentTarget(s);
@@ -83,7 +166,7 @@ export default function MyClassPage() {
     setStudentError(null);
     setStudentLoading(true);
     setModalTab("performance");
-    setShowPreview(false);
+    closePreview();
     try {
       const d = await api<StudentCard>("teacher/studentCard", { query: { studentId: s.id } });
       setStudentCard(d);
@@ -363,55 +446,18 @@ export default function MyClassPage() {
                     </div>
 
                     <div>
-                      <Button type="button" variant="outline" size="sm" onClick={() => setShowPreview((v) => !v)}>
-                        {showPreview ? "Hide" : "Preview"} final draft
+                      <Button type="button" variant="outline" size="sm" loading={previewing} onClick={previewUrl ? closePreview : openPreview}>
+                        {previewUrl ? "Hide preview" : "Preview final draft"}
                       </Button>
+                      {!studentCard.school && <span style={{ marginLeft: 8, fontSize: 12, color: "var(--duga-muted)" }}>Report card settings still loading…</span>}
                     </div>
 
-                    {showPreview && (
-                      <div style={{ border: "1px dashed var(--duga-border)", borderRadius: 12, padding: 16, background: "var(--duga-surface-2, #f8f9fb)" }}>
-                        <div style={{ fontWeight: 800, fontSize: 15 }}>{studentCard.student.name}</div>
-                        <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginBottom: 12 }}>
-                          {studentCard.activeTerm.name} · Average{" "}
-                          {studentCard.reportCard.average !== null && studentCard.reportCard.average !== undefined ? `${Number(studentCard.reportCard.average).toFixed(1)}%` : "—"} · Position{" "}
-                          {studentCard.reportCard.position ?? "—"}
+                    {previewUrl && (
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 12.5, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--duga-muted)", marginBottom: 8 }}>
+                          This is exactly what the student/parent will see once published
                         </div>
-                        {studentCard.reportCard.items.length > 0 && (
-                          <div style={{ display: "grid", gap: 4, marginBottom: 12 }}>
-                            {studentCard.reportCard.items.map((i) => (
-                              <div key={i.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}>
-                                <span>{i.subject.name}</span>
-                                <span>{i.total ?? "—"} ({i.grade ?? "—"})</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {Object.keys(coCurricularDraft).length > 0 && (
-                          <div style={{ marginBottom: 12 }}>
-                            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>Psychomotor &amp; affective domain</div>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                              {Object.entries(coCurricularDraft).map(([trait, g]) => (
-                                <Badge key={trait} tone="neutral">{trait}: {g || "—"}</Badge>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {Object.keys(traitsDraft).length > 0 && (
-                          <div style={{ marginBottom: 12 }}>
-                            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>Behavioral grades</div>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                              {Object.entries(traitsDraft).map(([trait, g]) => (
-                                <Badge key={trait} tone="neutral">{trait}: {g || "—"}</Badge>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        <div>
-                          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>Class teacher&apos;s comment</div>
-                          <div style={{ fontSize: 13, fontStyle: remarkDraft ? "normal" : "italic", color: remarkDraft ? "inherit" : "var(--duga-muted)" }}>
-                            {remarkDraft || "No comment yet"}
-                          </div>
-                        </div>
+                        <iframe src={previewUrl} title="Report card preview" style={{ width: "100%", height: 700, border: "1px solid var(--duga-border)", borderRadius: 8 }} />
                       </div>
                     )}
 

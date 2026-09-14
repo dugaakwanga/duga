@@ -1,6 +1,7 @@
-import { prisma } from "@duga/core/server";
+import { prisma, getDefaultGradingScale, getResultConfig } from "@duga/core/server";
 import type { Module } from ".";
 import { can, str, resolveSection } from "../helpers";
+import { gpaCalculator, schoolAndReportCardConfig } from "./results";
 
 async function taughtClassIds(teacherId: string, withTeacher: boolean): Promise<string[] | undefined> {
   if (!withTeacher) return undefined;
@@ -338,15 +339,16 @@ export const teacherModule: Module = {
 
       const student = await prisma.student.findFirst({
         where: { id: studentId, schoolId },
-        include: { user: { select: { firstName: true, lastName: true } }, classGroup: true },
+        include: { user: { select: { firstName: true, lastName: true } }, classGroup: { include: { level: true } } },
       });
       if (!student || !student.classGroup || student.classGroup.formTeacherId !== teacher.id) {
         const err = new Error("You can only view students in your own class") as Error & { status?: number };
         err.status = 403;
         throw err;
       }
+      const section = student.classGroup.level.section;
 
-      const activeTerm = await prisma.term.findFirst({ where: { schoolId, status: "ACTIVE" } });
+      const activeTerm = await prisma.term.findFirst({ where: { schoolId, status: "ACTIVE" }, include: { session: true } });
       const reportCard = activeTerm
         ? await prisma.reportCard.findUnique({
             where: { studentId_termId: { studentId, termId: activeTerm.id } },
@@ -357,11 +359,27 @@ export const teacherModule: Module = {
       const records = await prisma.studentAttendance.findMany({ where: { schoolId, studentId }, select: { status: true } });
       const present = records.filter((r) => r.status === "PRESENT" || r.status === "LATE").length;
 
+      // Everything below powers the "Preview final draft" button in My
+      // Class — it must render through the exact same PDF as what the
+      // student/parent ultimately sees, not a hand-rolled summary, so the
+      // teacher is actually previewing the real thing.
+      const [{ school, reportCardConfig }, gradingScale, config, gpaOf] = await Promise.all([
+        schoolAndReportCardConfig(schoolId, section),
+        getDefaultGradingScale(schoolId, section),
+        getResultConfig(schoolId, section),
+        gpaCalculator(schoolId, section),
+      ]);
+
       return {
-        student: { id: student.id, name: `${student.user.firstName} ${student.user.lastName}`, admissionNumber: student.admissionNumber },
-        activeTerm: activeTerm ? { id: activeTerm.id, name: activeTerm.name } : null,
-        reportCard,
+        student: { id: student.id, name: `${student.user.firstName} ${student.user.lastName}`, admissionNumber: student.admissionNumber, photoUrl: student.photoUrl },
+        classGroupName: `${student.classGroup.level.name} ${student.classGroup.name}`,
+        activeTerm: activeTerm ? { id: activeTerm.id, name: activeTerm.name, startDate: activeTerm.startDate, endDate: activeTerm.endDate, sessionName: activeTerm.session?.name ?? null } : null,
+        reportCard: reportCard ? { ...reportCard, gpa: gpaOf(reportCard.items) } : null,
         attendance: { total: records.length, present, rate: records.length ? Math.round((present / records.length) * 100) : 0 },
+        school,
+        reportCardConfig,
+        gradingScale,
+        components: config.components,
       };
     },
   },

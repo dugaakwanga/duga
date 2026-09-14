@@ -6,7 +6,7 @@ import { can, str, num, studentScope, resolveSection } from "../helpers";
 import { assessmentWindowOpen } from "./calendar";
 
 // Grade-point average for a card, derived from the school's grading scale.
-async function gpaCalculator(schoolId: string, section?: string) {
+export async function gpaCalculator(schoolId: string, section?: string) {
   const scale = await getDefaultGradingScale(schoolId, section);
   const gpOf = new Map(scale.map((b) => [b.grade, b.gp]));
   return (items: Array<{ grade: string | null }> | null | undefined): number | null => {
@@ -22,7 +22,7 @@ async function gpaCalculator(schoolId: string, section?: string) {
 // Small, cheap fetch bundled into report-card responses so the client-side
 // PDF renderer has everything it needs (school letterhead + which sections
 // to render) without a separate round trip.
-async function schoolAndReportCardConfig(schoolId: string, section?: string) {
+export async function schoolAndReportCardConfig(schoolId: string, section?: string) {
   const [school, sectionConfig, fallbackConfig] = await Promise.all([
     prisma.school.findUnique({ where: { id: schoolId }, select: { name: true, shortName: true, address: true, logoUrl: true } }),
     section ? prisma.reportCardConfig.findUnique({ where: { schoolId_section: { schoolId, section } } }) : Promise.resolve(null),
@@ -101,7 +101,12 @@ export const resultsModule: Module = {
       const terms = await prisma.term.findMany({ where: { schoolId }, include: { session: true }, orderBy: [{ session: { createdAt: "desc" } }, { termNumber: "asc" }] });
       const activeTerm = terms.find((t) => t.status === "ACTIVE") ?? terms[0];
       const submissions = await submissionSummary(schoolId, classSubjects, activeTerm?.id);
-      return { role, classSubjects, terms, config, submissions, activeTermId: activeTerm?.id };
+      // Was missing entirely — a teacher's "Download PDF" / preview on this
+      // page silently failed (the client guards on `!school ||
+      // !reportCardConfig` before ever calling the PDF builder) because
+      // this branch never returned them, only the student/parent one did.
+      const { school, reportCardConfig } = await schoolAndReportCardConfig(schoolId, section);
+      return { role, classSubjects, terms, config, submissions, activeTermId: activeTerm?.id, school, reportCardConfig, gradingScale };
     }
 
     if (role === "STUDENT" || role === "PARENT") {
