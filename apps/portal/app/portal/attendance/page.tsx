@@ -67,6 +67,14 @@ function MarkPanel({ scope, onSaved }: { scope: "admin" | "teacher"; onSaved: ()
   const [clearing, setClearing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Whether ANY student in the loaded roster has a real, saved record for
+  // this date — if none do, every "PRESENT" shown below is just this
+  // form's own default for an unmarked student (so a fresh sheet doesn't
+  // require clicking PRESENT for everyone), not something actually
+  // recorded. Surfaced explicitly so picking an arbitrary date — even one
+  // before the school ever used this app — doesn't look like it returned
+  // real historical attendance.
+  const [hasExistingRecords, setHasExistingRecords] = useState(true);
 
   useEffect(() => {
     const req = scope === "admin" ? api<{ items: ClassOption[] }>("classes") : api<ClassOption[]>("teacher/formClasses", { method: "POST" }).then((items) => ({ items }));
@@ -81,6 +89,7 @@ function MarkPanel({ scope, onSaved }: { scope: "admin" | "teacher"; onSaved: ()
     try {
       const res = await api<{ roster: RosterRow[] }>(`attendance/roster?classGroupId=${classGroupId}&date=${date}`, { method: "POST" });
       setRows(res.roster);
+      setHasExistingRecords(res.roster.some((r) => r.status && r.status !== "UNMARKED"));
       const st: Record<string, MarkStatus> = {};
       res.roster.forEach((r) => {
         st[r.studentId] = r.status && r.status !== "UNMARKED" ? (r.status as MarkStatus) : "PRESENT";
@@ -157,6 +166,12 @@ function MarkPanel({ scope, onSaved }: { scope: "admin" | "teacher"; onSaved: ()
         {isPast && classGroupId && (
           <Alert tone="warning">
             This date is in the past — saving will retroactively override whatever attendance was already recorded for {date}.
+          </Alert>
+        )}
+        {rows.length > 0 && !hasExistingRecords && (
+          <Alert tone="info">
+            Nothing has actually been recorded for {date} yet — every student below is showing PRESENT only as this form&apos;s starting point, not a
+            real saved record. Adjust anyone who wasn&apos;t present, then Save to actually record it.
           </Alert>
         )}
         {message && <Alert tone="success">{message}</Alert>}

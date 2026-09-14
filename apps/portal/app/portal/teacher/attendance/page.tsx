@@ -33,6 +33,11 @@ export default function TeacherAttendancePage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // See attendance/page.tsx's MarkPanel for the same tracking — without
+  // this, picking any date with no saved records (even one before the
+  // school ever used this app) looks like it returned real attendance,
+  // since every unmarked student defaults to PRESENT below.
+  const [hasExistingRecords, setHasExistingRecords] = useState(true);
 
   const loadClasses = useCallback(async () => {
     try {
@@ -56,6 +61,7 @@ export default function TeacherAttendancePage() {
     try {
       const res = await api<{ roster: RosterRow[] }>(`attendance/roster?classGroupId=${classGroupId}&date=${date}`, { method: "POST" });
       setRows(res.roster);
+      setHasExistingRecords(res.roster.some((r) => r.status && r.status !== "UNMARKED"));
       const st: Record<string, Status> = {};
       res.roster.forEach((r) => {
         if (r.status && r.status !== "UNMARKED") st[r.studentId] = r.status as Status;
@@ -119,6 +125,12 @@ export default function TeacherAttendancePage() {
             <Button onClick={loadRoster} loading={loading}>Load roster</Button>
           </div>
 
+          {rows.length > 0 && !hasExistingRecords && (
+            <Alert tone="info">
+              Nothing has actually been recorded for {date} yet — every student below is showing PRESENT only as this form&apos;s starting point, not
+              a real saved record. Adjust anyone who wasn&apos;t present, then Save to actually record it.
+            </Alert>
+          )}
           {message && <Alert tone="success" >{message}</Alert>}
           {error && <Alert tone="danger">{error}</Alert>}
 
