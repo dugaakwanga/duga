@@ -3,24 +3,28 @@
 import { useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import "react-quill-new/dist/quill.snow.css";
+import "@enzedonline/quill-blot-formatter2/dist/css/quill-blot-formatter2.css";
 import type ReactQuillType from "react-quill-new";
 import { Modal, Field, Input, Button } from "@duga/ui";
+import { api } from "@/lib/client/api";
 
 // next/dynamic's wrapper type drops the ref prop that react-quill-new's real
 // component (a forwardRef component) actually supports — cast back to the
 // real type so `ref={quillRef}` below type-checks.
-const ReactQuill = dynamic(() => import("react-quill-new"), { ssr: false }) as unknown as typeof ReactQuillType;
-
-// Pollinations.ai: free, no-key, no-signup image generation — the image is
-// generated on request and served directly from this URL. Diffusion models
-// (this one included) can't reliably render legible text inside an image,
-// so this asks for a clear illustration of the subject rather than a
-// "labeled diagram" (tested live: the latter came back unlabeled and
-// photorealistic instead of a simple diagram).
-function illustrationUrl(prompt: string): string {
-  const full = `a clear, simple, colorful illustration of ${prompt}, flat vector children's textbook art style, plain white background, no text, no words, no logo, no watermark, no signature`;
-  return `https://image.pollinations.ai/prompt/${encodeURIComponent(full)}?width=768&height=512&nologo=true&model=flux`;
-}
+//
+// The blot-formatter module (image/iframe resize + drag-to-reposition) has to be
+// registered on the SAME Quill class react-quill-new uses internally, before the
+// editor mounts — done here, inside the dynamic loader, so it only ever runs
+// client-side and only once, right before the editor component resolves.
+const ReactQuill = dynamic(async () => {
+  const [{ default: RQ }, { default: Quill }, { default: BlotFormatter }] = await Promise.all([
+    import("react-quill-new"),
+    import("quill"),
+    import("@enzedonline/quill-blot-formatter2"),
+  ]);
+  Quill.register("modules/blotFormatter", BlotFormatter);
+  return RQ;
+}, { ssr: false }) as unknown as typeof ReactQuillType;
 
 const TOOLBAR = [
   [{ header: [1, 2, 3, false] }],
@@ -74,17 +78,12 @@ export default function LessonEditor({
     if (!imageDesc.trim()) return;
     setGenerating(true);
     try {
-      const url = illustrationUrl(imageContext ? `${imageDesc.trim()}, ${imageContext}` : imageDesc.trim());
-      await new Promise<void>((resolve, reject) => {
-        const probe = new Image();
-        probe.onload = () => resolve();
-        probe.onerror = () => reject(new Error("image failed"));
-        probe.src = url;
-      });
-      insertImageAtCursor(url);
+      const prompt = imageContext ? `${imageDesc.trim()}, ${imageContext}` : imageDesc.trim();
+      const res = await api<{ url: string }>("ai/generateImage", { method: "POST", body: { prompt } });
+      insertImageAtCursor(res.url);
       setImageModalOpen(false);
-    } catch {
-      alert("Couldn't generate that image right now — the free image service may be busy. Try again.");
+    } catch (e) {
+      alert((e as Error).message || "Couldn't generate that image right now — the free image service may be busy. Try again.");
     } finally {
       setGenerating(false);
     }
@@ -158,7 +157,7 @@ export default function LessonEditor({
           theme="snow"
           value={value}
           onChange={onChange}
-          modules={{ toolbar: TOOLBAR }}
+          modules={{ toolbar: TOOLBAR, blotFormatter: {} }}
           placeholder={placeholder}
         />
       </div>

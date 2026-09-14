@@ -31,6 +31,51 @@ function available(): boolean {
   return API_KEY.length > 0;
 }
 
+// Together AI's free-tier FLUX.1 [schnell] — genuinely good image quality,
+// unlike Pollinations.ai's degraded serving of the same underlying model
+// family (confirmed by generating and comparing both directly: the same
+// prompt came back sharp and legible from Together, blurry/low-res from
+// Pollinations). Requires a free Together AI account (no card) and its API
+// key in TOGETHER_API_KEY; without one configured this falls back to
+// Pollinations so image generation keeps working, just at lower quality.
+const TOGETHER_API_KEY = process.env.TOGETHER_API_KEY || "";
+
+function pollinationsUrl(prompt: string): string {
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=768&height=512&nologo=true&model=flux`;
+}
+
+export async function generateImageUrl(prompt: string): Promise<string> {
+  if (TOGETHER_API_KEY) {
+    try {
+      const res = await fetch("https://api.together.xyz/v1/images/generations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOGETHER_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "black-forest-labs/FLUX.1-schnell-Free",
+          prompt,
+          width: 768,
+          height: 512,
+          steps: 4,
+          n: 1,
+          response_format: "url",
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const url = data?.data?.[0]?.url;
+        if (typeof url === "string" && url) return url;
+      }
+    } catch {
+      // Together unreachable or errored — fall through to Pollinations below
+      // rather than failing the whole request over one provider's outage.
+    }
+  }
+  return pollinationsUrl(prompt);
+}
+
 // Every AI action shares one per-user budget — nothing here is metered
 // upstream (OpenRouter's free tier), so an unthrottled endpoint is a wide
 // open door for one account to burn the whole school's shared quota (or, on
@@ -226,7 +271,7 @@ export const aiModule: Module = {
         const subjectMatch = prompt.match(/(?:of|showing|about|depicting)\s+(.+)$/i);
         const subject = (subjectMatch?.[1] ?? prompt).replace(/[.?!]+$/, "").trim();
         const imagePrompt = `${subject}, simple clean educational illustration for a Nigerian school, no watermark, no text`;
-        const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt)}?width=768&height=512&nologo=true`;
+        const imageUrl = await generateImageUrl(imagePrompt);
         return { reply: `Here you go — an image of ${subject}:`, imageUrl };
       }
       // The shell tells us which portal page the user is on so the assistant
@@ -307,6 +352,22 @@ export const aiModule: Module = {
       }`;
       const reply = await generate(system, prompt, 0.7, 1200);
       return { reply };
+    },
+
+    // Generates one illustration image server-side (Together AI FLUX.1
+    // [schnell] when TOGETHER_API_KEY is set, Pollinations.ai otherwise) and
+    // returns its URL. Used by the "Generate image here" button in the
+    // lesson editor and by the auto-illustration step after drafting a
+    // lesson from the scheme of work — kept server-side so the Together API
+    // key never reaches the browser.
+    generateImage: async (ctx) => {
+      can(ctx, "ai:use");
+      assertAiRateLimit(ctx);
+      const prompt = str(ctx.body.prompt);
+      if (!prompt) throw new Error("A description is required");
+      const full = `a clear, simple, colorful illustration of ${prompt}, flat vector children's textbook art style, plain white background, no text, no words, no logo, no watermark, no signature`;
+      const url = await generateImageUrl(full);
+      return { url };
     },
 
     // Lesson-note draft grounded in the school's uploaded scheme of work

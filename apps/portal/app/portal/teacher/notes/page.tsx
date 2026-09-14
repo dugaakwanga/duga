@@ -25,28 +25,12 @@ interface Note {
   classSubject: { subject: { name: string }; classGroup: { level: { name: string }; name: string } | null };
 }
 
-// Pollinations.ai: a free, no-key, no-signup image generation endpoint — the
-// image is generated on request and served directly from this URL, so there
-// is nothing to upload or store server-side; the URL itself *is* the image.
-// Diffusion models (this one included) can't reliably render legible text
-// inside an image — asking for a "labeled diagram" mostly produces
-// unlabeled or garbled-text pictures. Asking for a clear, recognizable
-// illustration of the actual subject instead is what these models are
-// genuinely good at, so that's what the prompt below asks for.
-function illustrationUrl(prompt: string): string {
-  const full = `a clear, simple, colorful illustration of ${prompt}, flat vector children's textbook art style, plain white background, no text, no words, no logo, no watermark, no signature`;
-  return `https://image.pollinations.ai/prompt/${encodeURIComponent(full)}?width=768&height=512&nologo=true&model=flux`;
-}
-
-// Loads an image and resolves its URL once ready, or rejects.
-function loadIllustration(prompt: string): Promise<string> {
-  const url = illustrationUrl(prompt);
-  return new Promise((resolve, reject) => {
-    const probe = new Image();
-    probe.onload = () => resolve(url);
-    probe.onerror = () => reject(new Error("image failed"));
-    probe.src = url;
-  });
+// Generated server-side (Together AI's FLUX.1 [schnell] when configured,
+// Pollinations.ai otherwise — see lib/server/modules/ai.ts) so the Together
+// API key never reaches the browser.
+async function loadIllustration(prompt: string): Promise<string> {
+  const res = await api<{ url: string }>("ai/generateImage", { method: "POST", body: { prompt } });
+  return res.url;
 }
 
 const emptyForm = (): Record<string, string> => ({});

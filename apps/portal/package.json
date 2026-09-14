@@ -14,6 +14,7 @@
     "@duga/core": "file:../../packages/core",
     "@duga/db": "file:../../packages/db",
     "@duga/ui": "file:../../packages/ui",
+    "@enzedonline/quill-blot-formatter2": "^3.2.0",
     "@react-three/fiber": "^9.7.0",
     "@supabase/supabase-js": "^2.112.2",
     "bcryptjs": "^2.4.3",
