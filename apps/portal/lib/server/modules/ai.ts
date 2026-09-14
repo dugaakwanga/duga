@@ -1,10 +1,12 @@
-﻿import type { Module } from ".";
+﻿import crypto from "crypto";
+import type { Module } from ".";
 import { can, str, num } from "../helpers";
 import { generateSmartTimetable } from "./timetable";
 import { findSchemeChunks } from "./scheme";
 import { checkRateLimit } from "@duga/core/server";
 import { hasPermission, type Role } from "@duga/core";
 import type { Ctx } from "@/app/api/v1/[...path]/route";
+import { uploadPublicFile } from "@/lib/server/storage";
 
 // ---------------------------------------------------------------------------
 // AI assistant (OpenRouter — free tier)
@@ -101,13 +103,46 @@ async function generateGemini(system: string, prompt: string | ChatTurn[], tempe
   throw lastErr ?? new Error("Gemini request failed.");
 }
 
-// Together AI's free-tier FLUX.1 [schnell] — genuinely good image quality,
-// unlike Pollinations.ai's degraded serving of the same underlying model
-// family (confirmed by generating and comparing both directly: the same
-// prompt came back sharp and legible from Together, blurry/low-res from
-// Pollinations). Requires a free Together AI account (no card) and its API
-// key in TOGETHER_API_KEY; without one configured this falls back to
-// Pollinations so image generation keeps working, just at lower quality.
+// Cloudflare Workers AI's free tier — genuinely good FLUX.1 [schnell]
+// quality (confirmed by generating and looking at the actual output), no
+// card required at all, and it hard-stops at the daily neuron budget
+// instead of billing anything. This is the primary image provider now.
+// Cloudflare returns raw base64 image bytes rather than a hosted URL, so
+// the result is uploaded through the app's own storage (same path as a
+// teacher's manual image upload) and that hosted URL is returned instead —
+// keeps the lesson note's saved HTML small rather than embedding a giant
+// data: URI per image.
+const CLOUDFLARE_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID || "";
+const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN || "";
+
+function cloudflareAvailable(): boolean {
+  return CLOUDFLARE_ACCOUNT_ID.length > 0 && CLOUDFLARE_API_TOKEN.length > 0;
+}
+
+async function generateImageCloudflare(prompt: string): Promise<string> {
+  const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/black-forest-labs/flux-1-schnell`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${CLOUDFLARE_API_TOKEN}`,
+    },
+    body: JSON.stringify({ prompt }),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`Cloudflare image error (${res.status})` + (detail ? `: ${detail.slice(0, 200)}` : ""));
+  }
+  const data = await res.json();
+  const b64 = data?.result?.image;
+  if (typeof b64 !== "string" || !b64) throw new Error("Cloudflare returned no image data");
+  const buffer = Buffer.from(b64, "base64");
+  const { url } = await uploadPublicFile({ folder: "ai-images", name: `${crypto.randomUUID()}.jpg`, mime: "image/jpeg", buffer });
+  return url;
+}
+
+// Together AI's free-tier FLUX.1 [schnell] — kept as a second fallback in
+// case a Together key is ever added (needs a paid deposit as of this
+// writing, so it's inactive without TOGETHER_API_KEY set).
 const TOGETHER_API_KEY = process.env.TOGETHER_API_KEY || "";
 
 function pollinationsUrl(prompt: string): string {
@@ -115,6 +150,14 @@ function pollinationsUrl(prompt: string): string {
 }
 
 export async function generateImageUrl(prompt: string): Promise<string> {
+  if (cloudflareAvailable()) {
+    try {
+      return await generateImageCloudflare(prompt);
+    } catch {
+      // Cloudflare unreachable, quota exhausted for the day, or errored —
+      // fall through to the next provider rather than failing the request.
+    }
+  }
   if (TOGETHER_API_KEY) {
     try {
       const res = await fetch("https://api.together.xyz/v1/images/generations", {
