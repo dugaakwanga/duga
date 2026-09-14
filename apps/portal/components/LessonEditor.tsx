@@ -65,6 +65,15 @@ export default function LessonEditor({
     if (!editor) return;
     const range = savedRangeRef.current ?? { index: editor.getLength(), length: 0 };
     editor.insertEmbed(range.index, "image", url, "user");
+    // Cloudflare's generator only ever outputs a fixed 1024x1024 image —
+    // much bigger and squarer than the 768x512 illustrations this editor
+    // was designed around, so it would otherwise land at a dominating
+    // native size. Give it a sane starting width; the blot-formatter resize
+    // handles (drag a corner) still let a teacher make it bigger or smaller
+    // afterward — this only sets where a freshly inserted image starts.
+    const [imgBlot] = editor.getLeaf(range.index);
+    const node = imgBlot?.domNode as HTMLElement | undefined;
+    if (node && node.tagName === "IMG") node.style.width = "360px";
     editor.setSelection(range.index + 1, 0, "user");
   }
 

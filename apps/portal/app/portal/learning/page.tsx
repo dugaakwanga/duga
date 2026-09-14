@@ -6,6 +6,7 @@ import { PageHeader, Card, Badge, Button, Modal, Field, Input, Textarea, Alert, 
 import { api } from "@/lib/client/api";
 import { groupClassSubjectsBySubject } from "@/lib/client/classSubjectOptions";
 import LessonContent from "@/components/LessonContent";
+import { plainSnippet } from "@/lib/client/lessonHtml";
 
 type Kind = "notes" | "assignments" | "tests" | "live";
 

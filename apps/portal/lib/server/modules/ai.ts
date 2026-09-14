@@ -488,7 +488,7 @@ export const aiModule: Module = {
       assertAiRateLimit(ctx);
       const prompt = str(ctx.body.prompt);
       if (!prompt) throw new Error("A description is required");
-      const full = `a clear, simple, colorful illustration of ${prompt}, flat vector children's textbook art style, plain white background, no text, no words, no logo, no watermark, no signature`;
+      const full = `a clear, simple, colorful illustration of ONLY ${prompt}, flat vector children's textbook art style, plain solid white background, nothing else in the frame, no extra background scenery, no added objects or decorations beyond what was described, no border, no text, no words, no logo, no watermark, no signature`;
       const url = await generateImageUrl(full);
       return { url };
     },
