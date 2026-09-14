@@ -29,6 +29,7 @@ interface RestrictionsConfig {
   resultsRequirePayment: boolean;
   applicationsOpen: boolean;
   feeGatedFeatures: string[];
+  allowStudentToStudentChat: boolean;
 }
 
 interface SettingsData {
@@ -64,7 +65,7 @@ export default function SettingsPage() {
   const [days, setDays] = useState<Record<string, boolean>>(DEFAULT_DAYS);
   const [holidays, setHolidays] = useState<Array<{ date: string; name: string }>>([]);
   const [holidayForm, setHolidayForm] = useState<{ date: string; name: string }>({ date: "", name: "" });
-  const [restrictions, setRestrictions] = useState<RestrictionsConfig>({ resultsRequirePayment: true, applicationsOpen: true, feeGatedFeatures: ["tests", "assignments", "elearn", "games", "live"] });
+  const [restrictions, setRestrictions] = useState<RestrictionsConfig>({ resultsRequirePayment: true, applicationsOpen: true, feeGatedFeatures: ["tests", "assignments", "elearn", "games", "live"], allowStudentToStudentChat: false });
   const [termOpen, setTermOpen] = useState(false);
   const [termForm, setTermForm] = useState<Record<string, string>>({});
   const [termBusy, setTermBusy] = useState(false);
@@ -337,6 +338,17 @@ export default function SettingsPage() {
                 <span style={{ fontSize: 13.5, fontWeight: 600 }}>Accept online applications</span>
                 <Badge tone={restrictions.applicationsOpen ? "success" : "neutral"}>{restrictions.applicationsOpen ? "On" : "Off"}</Badge>
               </button>
+              <button
+                type="button"
+                onClick={() => setRestrictions({ ...restrictions, allowStudentToStudentChat: !restrictions.allowStudentToStudentChat })}
+                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", border: "1px solid var(--duga-border)", borderRadius: 10, cursor: "pointer", textAlign: "left", background: "transparent" }}
+              >
+                <span style={{ fontSize: 13.5, fontWeight: 600 }}>Allow students to message each other</span>
+                <Badge tone={restrictions.allowStudentToStudentChat ? "success" : "neutral"}>{restrictions.allowStudentToStudentChat ? "On" : "Off"}</Badge>
+              </button>
+              <div style={{ fontSize: 12, color: "var(--duga-muted)", marginTop: -4 }}>
+                By default a student can only message a teacher or admin. Turning this on also lets students message each other — students can never message a parent, in either direction, regardless of this setting.
+              </div>
             </div>
 
             <div style={{ fontSize: 13.5, fontWeight: 600, marginTop: 18, marginBottom: 8 }}>Block for students who are owing</div>

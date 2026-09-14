@@ -5,6 +5,7 @@ import { can } from "../helpers";
 
 const SCHOOL_DAYS_KEY = "schoolDays";
 const RESTRICTIONS_KEY = "restrictions";
+const PERIOD_TEMPLATE_KEY = "periodTemplate";
 
 export interface SchoolDaysConfig {
   /** Weekly pattern — keys are ISO weekday names (monday..sunday). */
@@ -21,13 +22,26 @@ export interface RestrictionsConfig {
   /** Which features are blocked for students whose fee-access window has
    * lapsed. Subset of "tests" | "assignments" | "elearn" | "games" | "live". */
   feeGatedFeatures: string[];
+  /** Off by default: students may only message a teacher or admin, never
+   * each other. An admin can open student-to-student direct messaging here
+   * — student-to-parent messaging is never allowed regardless of this
+   * setting, in either direction. */
+  allowStudentToStudentChat: boolean;
 }
 
 const DEFAULT_RESTRICTIONS: RestrictionsConfig = {
   resultsRequirePayment: true,
   applicationsOpen: true,
   feeGatedFeatures: ["tests", "assignments", "elearn", "games", "live"],
+  allowStudentToStudentChat: false,
 };
+
+// Read by messaging.ts to decide whether student-to-student chat is open
+// for this school, without messaging.ts needing to know the settings
+// storage shape (schoolSetting key/value rows) itself.
+export async function getRestrictionsConfig(schoolId: string): Promise<RestrictionsConfig> {
+  return readSetting<RestrictionsConfig>(schoolId, RESTRICTIONS_KEY, DEFAULT_RESTRICTIONS);
+}
 
 async function readSetting<T>(schoolId: string, key: string, fallback: T): Promise<T> {
   const row = await prisma.schoolSetting.findUnique({ where: { schoolId_key: { schoolId, key } } });
@@ -202,6 +216,7 @@ export const settingsModule: Module = {
         feeGatedFeatures: Array.isArray(ctx.body.feeGatedFeatures)
           ? ctx.body.feeGatedFeatures.filter((f: unknown): f is string => typeof f === "string" && validFeatures.has(f))
           : current.feeGatedFeatures,
+        allowStudentToStudentChat: typeof ctx.body.allowStudentToStudentChat === "boolean" ? ctx.body.allowStudentToStudentChat : current.allowStudentToStudentChat,
       };
       await writeSetting(schoolId, RESTRICTIONS_KEY, cfg);
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "settings.restrictionsUpdated", entityType: "School", entityId: schoolId, meta: cfg as unknown as Record<string, unknown> });

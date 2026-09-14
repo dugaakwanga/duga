@@ -168,7 +168,6 @@ const STUDENT_NAV: NavSection[] = [
       { href: "/portal/timetable", label: "My Timetable", icon: "timetable", perm: "timetable:view", feature: "timetable" },
       { href: "/portal/calendar", label: "School Calendar", icon: "timetable", perm: "calendar:view" },
       { href: "/portal/fees", label: "My Fees", icon: "fees", perm: "fees:view", feature: "fees", subfeature: "finance" },
-      { href: "/portal/pta", label: "PTA", icon: "announcements", perm: "pta:view", feature: "pta" },
       { href: "/portal/library", label: "Library", icon: "notes", perm: "library:view", feature: "library" },
       { href: "/portal/hostel", label: "Hostel", icon: "hostel", perm: "hostel:view", feature: "hostel", boardingOnly: true },
       { href: "/portal/transport", label: "Transport", icon: "bus", perm: "transport:view", feature: "transport" },

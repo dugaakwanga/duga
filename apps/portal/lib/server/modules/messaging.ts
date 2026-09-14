@@ -2,17 +2,25 @@ import { prisma } from "@duga/core/server";
 import { dispatchNotification, logAudit } from "@duga/core/server";
 import type { Module } from ".";
 import { can, str } from "../helpers";
+import { getRestrictionsConfig } from "./settings";
 
-function mayDirectMessage(senderRole: string, recipientRole: string): boolean {
+// Student-to-parent messaging is never allowed, in either direction,
+// regardless of any setting — only student<->student is admin-toggleable
+// (off by default: a student may only message a teacher or admin).
+async function mayDirectMessage(schoolId: string, senderRole: string, recipientRole: string): Promise<boolean> {
   if (senderRole === "OWNER" || senderRole === "ADMIN") return true;
+  if (senderRole === "STUDENT" && recipientRole === "STUDENT") {
+    const { allowStudentToStudentChat } = await getRestrictionsConfig(schoolId);
+    return allowStudentToStudentChat;
+  }
   if (senderRole === "STUDENT") return recipientRole === "TEACHER" || recipientRole === "ADMIN";
   if (senderRole === "TEACHER") return recipientRole === "ADMIN" || recipientRole === "STUDENT" || recipientRole === "PARENT";
   if (senderRole === "PARENT") return recipientRole === "TEACHER" || recipientRole === "ADMIN";
   return false;
 }
 
-function assertDirectMessageAllowed(senderRole: string, recipientRole: string) {
-  if (!mayDirectMessage(senderRole, recipientRole)) {
+async function assertDirectMessageAllowed(schoolId: string, senderRole: string, recipientRole: string) {
+  if (!(await mayDirectMessage(schoolId, senderRole, recipientRole))) {
     const err = new Error("This role is not available for direct messages") as Error & { status?: number };
     err.status = 403;
     throw err;
@@ -139,7 +147,7 @@ export const messagingModule: Module = {
     if (otherUserId === ctx.session.user.id) throw new Error("You cannot start a conversation with yourself");
     const other = await prisma.user.findFirst({ where: { id: otherUserId, schoolId: ctx.session.user.schoolId, status: "ACTIVE" } });
     if (!other) throw new Error("User not found");
-    assertDirectMessageAllowed(ctx.session.user.role, other.role);
+    await assertDirectMessageAllowed(ctx.session.user.schoolId, ctx.session.user.role, other.role);
 
     // find existing direct conversation
     const existing = await prisma.conversation.findFirst({
@@ -185,7 +193,7 @@ export const messagingModule: Module = {
       if (conversation.type === "DIRECT") {
         const other = conversation.participants.find((entry) => entry.userId !== ctx.session.user.id)?.user;
         if (!other || other.status !== "ACTIVE") throw new Error("Recipient is unavailable");
-        assertDirectMessageAllowed(ctx.session.user.role, other.role);
+        await assertDirectMessageAllowed(ctx.session.user.schoolId, ctx.session.user.role, other.role);
       }
       const message = await prisma.message.create({
         data: {

@@ -318,7 +318,6 @@ const rolePermissions: Record<Role, Permission[]> = {
     "transport:view",
     "elearn:view",
     "games:play",
-    "pta:view",
     "library:view",
     "ai:use",
     "calendar:view",
