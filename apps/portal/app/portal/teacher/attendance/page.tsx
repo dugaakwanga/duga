@@ -127,8 +127,8 @@ export default function TeacherAttendancePage() {
 
           {rows.length > 0 && !hasExistingRecords && (
             <Alert tone="info">
-              Nothing has actually been recorded for {date} yet — every student below is showing PRESENT only as this form&apos;s starting point, not
-              a real saved record. Adjust anyone who wasn&apos;t present, then Save to actually record it.
+              No attendance was taken on {date} — everyone below is shown as PRESENT only as a starting point for marking it now, not because
+              that&apos;s what was recorded.
             </Alert>
           )}
           {message && <Alert tone="success" >{message}</Alert>}

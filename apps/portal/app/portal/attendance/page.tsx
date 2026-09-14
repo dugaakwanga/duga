@@ -170,8 +170,8 @@ function MarkPanel({ scope, onSaved }: { scope: "admin" | "teacher"; onSaved: ()
         )}
         {rows.length > 0 && !hasExistingRecords && (
           <Alert tone="info">
-            Nothing has actually been recorded for {date} yet — every student below is showing PRESENT only as this form&apos;s starting point, not a
-            real saved record. Adjust anyone who wasn&apos;t present, then Save to actually record it.
+            No attendance was taken on {date} — everyone below is shown as PRESENT only as a starting point for marking it now, not because that&apos;s
+            what was recorded.
           </Alert>
         )}
         {message && <Alert tone="success">{message}</Alert>}
@@ -332,12 +332,12 @@ export default function AttendancePage() {
         <Spinner size={28} />
       ) : items.length === 0 ? (
         <EmptyState
-          title="No attendance records"
+          title={isRangeView ? "No attendance records" : `No attendance was taken on ${date}`}
           hint={
             isRangeView
               ? "Nothing recorded in the last 30 days yet."
               : isAdmin
-                ? "Nothing recorded for this date/class yet — use “Mark or correct attendance” above to add it."
+                ? "Use “Mark or correct attendance” above to add it."
                 : "Records are created when a teacher takes attendance."
           }
         />
