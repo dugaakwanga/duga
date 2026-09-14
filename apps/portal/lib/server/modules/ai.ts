@@ -325,17 +325,23 @@ export const aiModule: Module = {
       const matches = await findSchemeChunks(ctx.session.user.schoolId, { levelName: level, subjectName: subject, topicHint: topic });
 
       // Ask the model to mark its own illustration points wherever a
-      // diagram genuinely helps — not just one image tacked on at the end.
-      // A short note might only need one (or none); a longer, more visual
-      // topic can justify two or three at the specific points they matter.
-      // Each [ILLUSTRATION: ...] line is stripped from the visible note;
-      // the caller generates one image per description and adds it to the
-      // note's image list.
+      // single clear subject genuinely helps — not just one image tacked
+      // on at the end. Tested live: a description needing several items
+      // or labels laid out together (e.g. "a collage of foods with a
+      // label") comes back as an unrecognizable blob-filled grid with
+      // garbled fake text every time — the free image model can only
+      // render ONE concrete subject reliably, nothing that depends on
+      // layout or legible text. So the instruction below forbids exactly
+      // that class of description rather than just hoping the model
+      // avoids it.
       const illustrationInstruction =
-        " Wherever a diagram or scene would genuinely help students understand a SPECIFIC point in the note (not a generic classroom photo), insert a " +
-        "line by itself right after that point: '[ILLUSTRATION: <description>]', where <description> is one specific, simple diagram or scene for " +
-        "exactly that point (e.g. 'a labeled diagram of the water cycle showing evaporation, condensation and precipitation'). Use up to 3 such lines " +
-        "at genuinely different, meaningful points across the note — most notes need 1 or 2; use 0 if the topic has no natural visual at all (e.g. a grammar rule). " +
+        " Wherever ONE single concrete object or scene would genuinely help students picture a SPECIFIC point in the note, insert a line by itself " +
+        "right after that point: '[ILLUSTRATION: <description>]'. <description> must be exactly one clear subject only — e.g. 'a wheat field ready " +
+        "for harvest', 'a cotton plant', 'a hen sitting on eggs'. It must NEVER be a labeled diagram, a chart, a collage, several items shown " +
+        "together, or anything containing text/words/labels/numbers — image generation cannot render legible text or lay out multiple items " +
+        "correctly, and describing more than one subject produces a garbled, unusable image every time. If the point you want to illustrate would " +
+        "need multiple items or labels to make sense, skip the illustration there entirely rather than attempting it. Use up to 3 such lines at " +
+        "genuinely different points — most notes need 1 or 2; use 0 if nothing in the note has a single clear visual subject (e.g. a grammar rule). " +
         "Never describe the same picture twice.";
 
       // The reply is converted into real HTML client-side (lessonHtml.ts),

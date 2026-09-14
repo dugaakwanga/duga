@@ -164,7 +164,7 @@ export default function LessonEditor({
       </div>
 
       <Modal open={imageModalOpen} onClose={() => setImageModalOpen(false)} title="Generate an image">
-        <Field label="What should the image show?" hint='e.g. "a dog showing its body parts" — describe it like you&apos;re talking to an illustrator. It will be inserted right where your cursor was.'>
+        <Field label="What should the image show?" hint='Describe ONE clear subject only, e.g. "a dog" or "a wheat field" — not a labeled diagram, chart, or several items together (image generation can&apos;t render text/labels or lay out multiple items, and comes out as an unusable blob if you ask for that). It will be inserted right where your cursor was.'>
           <Input value={imageDesc} onChange={(e) => setImageDesc(e.target.value)} placeholder="e.g. a dog" />
         </Field>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 }}>
