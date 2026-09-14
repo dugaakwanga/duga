@@ -61,6 +61,7 @@ function AdminMarkPanel({ onSaved }: { onSaved: () => void }) {
   const [statuses, setStatuses] = useState<Record<string, MarkStatus>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -103,6 +104,24 @@ function AdminMarkPanel({ onSaved }: { onSaved: () => void }) {
       setError((e as Error).message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function clearDay() {
+    if (!classGroupId) return;
+    if (!confirm(`Clear ALL attendance recorded for this class on ${date}? Every student goes back to unmarked. This cannot be undone.`)) return;
+    setClearing(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const res = await api<{ count: number }>("attendance/clearDay", { method: "POST", body: { date, classGroupId } });
+      setMessage(`Cleared ${res.count} record(s) for ${date} — the class is back to unmarked.`);
+      onSaved();
+      loadRoster();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setClearing(false);
     }
   }
 
@@ -164,7 +183,8 @@ function AdminMarkPanel({ onSaved }: { onSaved: () => void }) {
                 </tbody>
               </table>
             </div>
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 14 }}>
+              <Button variant="outline" onClick={clearDay} loading={clearing}>Clear this day</Button>
               <Button onClick={save} loading={saving}>{isPast ? "Save override" : "Save attendance"}</Button>
             </div>
           </>

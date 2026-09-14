@@ -91,6 +91,15 @@ export default function TeacherAttendancePage() {
     setStatuses(next);
   }
 
+  // Leaves the card without saving — collapses the roster back to the
+  // class/date picker rather than leaving a half-marked table on screen.
+  function cancel() {
+    setRows([]);
+    setStatuses({});
+    setMessage(null);
+    setError(null);
+  }
+
   const summary = (s: Status) => rows.filter((r) => statuses[r.studentId] === s).length;
 
   return (
@@ -158,7 +167,8 @@ export default function TeacherAttendancePage() {
                 </table>
               </div>
 
-              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 14 }}>
+                <Button variant="ghost" onClick={cancel}>Cancel</Button>
                 <Button onClick={save} loading={saving}>Save attendance</Button>
               </div>
             </>

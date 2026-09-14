@@ -233,6 +233,27 @@ export const attendanceModule: Module = {
       return { classGroupId, date, roster, summary: existing.reduce<Record<string, number>>((acc, r) => { acc[r.status] = (acc[r.status] ?? 0) + 1; return acc; }, {}) };
     },
 
+    // Deletes every attendance record for a class on a given day, resetting
+    // the whole roster back to unmarked — for when a class was marked
+    // wrongly and needs a clean slate rather than clicking through each
+    // student to fix it one at a time. Same reach as marking itself: an
+    // owner/admin can clear any class school-wide, a teacher only their own
+    // form class.
+    clearDay: async (ctx) => {
+      can(ctx, "attendance:take");
+      const schoolId = ctx.session.user.schoolId;
+      const classGroupId = str(ctx.body.classGroupId);
+      const date = str(ctx.body.date);
+      if (!classGroupId || !date) throw new Error("classGroupId and date required");
+      const role = ctx.session.user.role;
+      if (!["TEACHER", "OWNER", "ADMIN"].includes(role)) throw new Error("Only class teachers or admins can clear student attendance");
+      await resolveMarkableClass(schoolId, classGroupId, role, ctx.session.user.teacher?.id);
+      const dateObj = parseAttendanceDate(date);
+      const result = await prisma.studentAttendance.deleteMany({ where: { schoolId, classGroupId, date: dateObj } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "attendance.cleared", entityType: "StudentAttendance", meta: { classGroupId, date, count: result.count, actorRole: role } });
+      return { count: result.count };
+    },
+
     report: async (ctx) => {
       can(ctx, "attendance:view");
       const schoolId = ctx.session.user.schoolId;
