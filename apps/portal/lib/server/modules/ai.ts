@@ -46,29 +46,59 @@ function geminiAvailable(): boolean {
   return GOOGLE_API_KEY.length > 0;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Gemini returned transient 503s ("model overloaded") repeatedly in testing
+// — a couple of retries with a short backoff clears most of them, so a
+// passing user request doesn't need to fall all the way back to the lower
+// quality OpenRouter model just because Google's servers were briefly busy.
 async function generateGemini(system: string, prompt: string | ChatTurn[], temperature: number, maxTokens: number): Promise<string> {
   const turns: ChatTurn[] = typeof prompt === "string" ? [{ role: "user", content: prompt }] : prompt;
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent?key=${GOOGLE_API_KEY}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: system }] },
-      // Gemini uses "model" rather than "assistant" for the AI's own prior turns.
-      contents: turns.map((t) => ({ role: t.role === "assistant" ? "model" : "user", parts: [{ text: t.content }] })),
-      generationConfig: { temperature, maxOutputTokens: maxTokens },
-    }),
+  const body = JSON.stringify({
+    systemInstruction: { parts: [{ text: system }] },
+    // Gemini uses "model" rather than "assistant" for the AI's own prior turns.
+    contents: turns.map((t) => ({ role: t.role === "assistant" ? "model" : "user", parts: [{ text: t.content }] })),
+    generationConfig: { temperature, maxOutputTokens: maxTokens },
   });
-  if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    const err = new Error(`Gemini error (${res.status})` + (detail ? `: ${detail.slice(0, 200)}` : "")) as Error & { status?: number };
-    err.status = 502;
-    throw err;
+
+  let lastErr: Error | undefined;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) await sleep(500 * attempt);
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent?key=${GOOGLE_API_KEY}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+      });
+      if (!res.ok) {
+        const detail = await res.text().catch(() => "");
+        const err = new Error(`Gemini error (${res.status})` + (detail ? `: ${detail.slice(0, 200)}` : "")) as Error & { status?: number };
+        err.status = 502;
+        // 503/502/504 are transient (overloaded/unavailable) — worth a
+        // retry. Anything else (bad key, quota) won't fix itself.
+        if ([502, 503, 504].includes(res.status) && attempt < 2) {
+          lastErr = err;
+          continue;
+        }
+        throw err;
+      }
+      const data = await res.json();
+      const parts = data?.candidates?.[0]?.content?.parts ?? [];
+      const text = parts.map((p: { text?: string }) => p.text ?? "").join("").trim();
+      if (!text) throw new Error("Gemini returned an empty reply.");
+      return text;
+    } catch (e) {
+      if (e instanceof TypeError && attempt < 2) {
+        // Network-level failure (e.g. ECONNRESET) — also worth a retry.
+        lastErr = e;
+        continue;
+      }
+      throw e;
+    }
   }
-  const data = await res.json();
-  const parts = data?.candidates?.[0]?.content?.parts ?? [];
-  const text = parts.map((p: { text?: string }) => p.text ?? "").join("").trim();
-  if (!text) throw new Error("Gemini returned an empty reply.");
-  return text;
+  throw lastErr ?? new Error("Gemini request failed.");
 }
 
 // Together AI's free-tier FLUX.1 [schnell] — genuinely good image quality,
@@ -445,15 +475,19 @@ export const aiModule: Module = {
       // layout or legible text. So the instruction below forbids exactly
       // that class of description rather than just hoping the model
       // avoids it.
+      // Bumped from a flat "up to 3" cap: with one heading per objective
+      // now (see structureInstruction below), a note covering several
+      // objectives should be able to illustrate each one, not just the
+      // note as a whole.
       const illustrationInstruction =
-        " Wherever ONE single concrete object or scene would genuinely help students picture a SPECIFIC point in the note, insert a line by itself " +
+        " Wherever ONE single concrete object or scene would genuinely help students picture a SPECIFIC objective's point, insert a line by itself " +
         "right after that point: '[ILLUSTRATION: <description>]'. <description> must be exactly one clear subject only — e.g. 'a wheat field ready " +
         "for harvest', 'a cotton plant', 'a hen sitting on eggs'. It must NEVER be a labeled diagram, a chart, a collage, several items shown " +
         "together, or anything containing text/words/labels/numbers — image generation cannot render legible text or lay out multiple items " +
-        "correctly, and describing more than one subject produces a garbled, unusable image every time. If the point you want to illustrate would " +
-        "need multiple items or labels to make sense, skip the illustration there entirely rather than attempting it. Use up to 3 such lines at " +
-        "genuinely different points — most notes need 1 or 2; use 0 if nothing in the note has a single clear visual subject (e.g. a grammar rule). " +
-        "Never describe the same picture twice.";
+        "correctly, and describing more than one subject produces a garbled, unusable image every time. If an objective's point would need multiple " +
+        "items or labels to make sense, skip the illustration there entirely rather than attempting it. Use at most ONE such line per objective " +
+        "heading, only where it genuinely helps — skip objectives with no single clear visual subject (e.g. a grammar rule or a definition). Never " +
+        "describe the same picture twice.";
 
       // The reply is converted into real HTML client-side (lessonHtml.ts),
       // which understands **bold**, a "Label:" line as a heading, and a
@@ -461,18 +495,20 @@ export const aiModule: Module = {
       // shape rather than fighting the model's own natural tendency to
       // reach for **bold** anyway (asking it not to was unreliable).
       const formatInstruction =
-        " Formatting: write ONLY the section labels given above as headings, each on its own line ending with a colon (e.g. 'Objectives:'), a " +
-        "blank line, then the section's content, then a blank line before the next section. Do not add any other headings or sub-headings inside " +
-        "a section — write that content as normal paragraphs and bullets instead. Use '- ' at the start of a line for a bullet point, and " +
+        " Formatting: write each heading described above on its own line ending with a colon (e.g. 'Meaning of agriculture:'), a blank line, then " +
+        "that section's content, then a blank line before the next heading. Do not add any other headings or sub-headings beyond the ones " +
+        "described — write extra detail as normal paragraphs and bullets instead. Use '- ' at the start of a line for a bullet point, and " +
         "**word** to bold a term worth emphasizing. Never use '#' characters or markdown heading syntax, '---'/'===' dividers, tables, or code " +
         "blocks/backticks/ASCII diagrams — plain paragraphs with the '- ' bullets and **bold** described above are the ONLY formatting allowed.";
 
       // A short outline isn't usable as the actual material a student
-      // reads to learn from — force real depth per section.
+      // reads to learn from — force real depth per objective, not just per
+      // note.
       const lengthInstruction =
-        " Write a THOROUGH, complete note, not a one-line outline. The explanation needs 2-4 full sentences per point of real teaching in plain " +
-        "language a child can follow, not just a phrase — actually teach the topic, don't just list its subtopics. The practice section needs " +
-        "concrete steps the student can actually try. The quick check needs at least 4 real questions. Aim for genuine depth over brevity.";
+        " Write a THOROUGH, complete note, not a one-line outline. Each objective's own section needs real teaching in plain language a child can " +
+        "follow — several full sentences that actually explain and exemplify it, not a phrase that just restates its name. The 'Try it yourself:' " +
+        "section needs concrete steps the student can actually try. The 'Quick check:' section needs at least one real question per objective " +
+        "covered. Aim for genuine depth over brevity.";
 
       // This note is what the STUDENT reads on their own screen as their
       // study material — it is NOT a lesson plan for the teacher to carry
@@ -487,24 +523,35 @@ export const aiModule: Module = {
         "them something to try themselves, and questions for them to check their own understanding. Never write teacher-directed instructions " +
         "like \"ask pupils to...\" or \"begin the lesson by...\".";
 
-      const sectionLabels = "What you'll learn:, Explanation:, Try it yourself:, and Quick check:";
-
-      // Without this, the model tends to just restate the topic name across
-      // sections rather than teaching toward a specific, checkable outcome —
-      // "well-written" filler instead of content actually designed around
-      // what the student should walk away able to do.
-      const objectiveInstruction =
-        " Before writing, decide the ONE specific, concrete objective this lesson should achieve for the student — something they should be able to DO " +
-        "or explain by the end, based on the exact topic/subtopic given (not a vague restatement of the subject name). Every section must visibly serve " +
-        "that objective: 'What you'll learn:' states it in plain terms, 'Explanation:' actually teaches toward it rather than listing loosely related " +
-        "facts, 'Try it yourself:' is a task that requires using it, and 'Quick check:' tests whether the student actually met it. Do not pad with " +
-        "generic or tangential content that doesn't serve that specific objective — depth means teaching the objective thoroughly, not adding " +
-        "unrelated background.";
+      // A single generic "Explanation:" section was the core complaint —
+      // a scheme-of-work week almost always lists several distinct
+      // subtopics/objectives (semicolon- or bullet-separated in the raw
+      // excerpt text), and mashing them all into one section produces
+      // shallow, unfocused content. This forces one properly developed
+      // heading per objective instead.
+      function structureInstruction(hasExcerpt: boolean): string {
+        const objectiveSource = hasExcerpt
+          ? "The scheme excerpt below lists several distinct learning objectives/subtopics for the requested week (usually separated by semicolons " +
+            "or bullet points in the raw text) — identify every one of them."
+          : "Break the given topic down into 2-4 distinct, concrete learning objectives yourself — specific things the student should be able to " +
+            "do or explain by the end, not vague restatements of the topic name.";
+        return (
+          " " +
+          objectiveSource +
+          " Give EACH objective its own heading, written as a short paraphrase of that objective (2-6 words) ending in a colon — never lump " +
+          "multiple objectives together under one generic heading like 'Explanation:'. Under each heading, thoroughly teach THAT specific " +
+          "objective on its own before moving to the next: explain what it means, why it matters, and give a concrete real-world example a " +
+          "Nigerian student would recognize. Do not pad with generic or tangential content — depth means genuinely teaching each objective, not " +
+          "adding unrelated background. Structure the whole note as: an opening 'What you'll learn:' section briefly listing every objective you " +
+          "are about to cover, then one heading per objective in the order above, then a closing 'Try it yourself:' section with one practical " +
+          "task drawing on everything covered, then a closing 'Quick check:' section with at least one real question per objective covered."
+        );
+      }
 
       if (matches.length === 0) {
-        const system = `You write lesson notes for students, structured as: ${sectionLabels}` + audienceInstruction + objectiveInstruction + lengthInstruction + illustrationInstruction + formatInstruction;
+        const system = "You write lesson notes for students." + structureInstruction(false) + audienceInstruction + lengthInstruction + illustrationInstruction + formatInstruction;
         const prompt = `Subject: ${subject}\nTopic: ${topic ?? "(choose an appropriate topic for this subject and level)"}${level ? `\nLevel/Class: ${level}` : ""}${week ? `\nWeek: ${week}` : ""}`;
-        const reply = await generate(system, prompt, 0.7, 3500);
+        const reply = await generate(system, prompt, 0.7, 4500);
         const { content, illustrations } = extractIllustrations(reply);
         return { reply: content, grounded: false, illustrations };
       }
@@ -515,10 +562,10 @@ export const aiModule: Module = {
         "syllabus your teacher follows, not what you show the student — it tells you WHAT to teach). " +
         "Use ONLY topics/subtopics that actually appear in the excerpt — if a specific week or topic was requested, find it in the excerpt " +
         "(the excerpt is a raw extract from a PDF, so formatting may be messy — read past that). Expand each subtopic named in the excerpt into " +
-        "real, taught content — the excerpt itself is just a syllabus line, not the lesson. " +
-        `Structure: ${sectionLabels}` + audienceInstruction + objectiveInstruction + lengthInstruction + illustrationInstruction + formatInstruction;
+        "real, taught content — the excerpt itself is just a syllabus line, not the lesson." +
+        structureInstruction(true) + audienceInstruction + lengthInstruction + illustrationInstruction + formatInstruction;
       const prompt = `Scheme of work excerpt (syllabus — do not show this to the student, teach FROM it):\n${excerpt}\n\n---\nWrite a student-facing lesson note for Subject: ${subject}${level ? `, Level/Class: ${level}` : ""}${week ? `, Week ${week}` : ""}${topic ? `, Topic: ${topic}` : " — pick the most relevant week/topic from the excerpt above"}.`;
-      const reply = await generate(system, prompt, 0.6, 3500);
+      const reply = await generate(system, prompt, 0.6, 4500);
       const { content, illustrations } = extractIllustrations(reply);
       return { reply: content, grounded: true, illustrations, sections: matches.map((m) => ({ subjectName: m.subjectName, levelName: m.levelName, term: m.term })) };
     },
