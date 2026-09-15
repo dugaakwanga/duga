@@ -65,9 +65,13 @@ export function PushInstallGate({ role }: { role: string }) {
 
   if (skip) return null;
   if (standalone && permission === "granted") return null;
-  // Can't be satisfied on this browser (no Notification API at all) —
-  // don't lock a parent out of the portal over something they can't fix.
-  if (permission === "unsupported") return null;
+  // iOS Safari doesn't expose the Notification API at all until the site is
+  // actually running standalone (added to the Home Screen) — so "unsupported"
+  // before that point just means "not installed yet," not "never possible."
+  // Only bail once they're ALREADY standalone and STILL have no Notification
+  // API — that's a genuine dead end (very old iOS, or a browser with no push
+  // support at all) where forcing further gets a parent nowhere.
+  if (standalone && permission === "unsupported") return null;
 
   async function install() {
     if (!installEvent) return;
