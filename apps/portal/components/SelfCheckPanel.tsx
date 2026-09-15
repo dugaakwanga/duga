@@ -122,7 +122,7 @@ export default function SelfCheckPanel({ noteId }: { noteId: string }) {
                     placeholder="Type your answer here…"
                     rows={2}
                   />
-                  {state.error && <Alert tone="info">Couldn't check that just now — {state.error}</Alert>}
+                  {state.error && <Alert tone="info">Couldn&apos;t check that just now — {state.error}</Alert>}
                   <div>
                     <Button size="sm" onClick={() => submitAnswer(i, q)} loading={state.checking} disabled={!state.text.trim()}>
                       {state.error ? "Try again" : "Submit answer"}
