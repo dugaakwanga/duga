@@ -626,11 +626,23 @@ export const aiModule: Module = {
         "syllabus your teacher follows, not what you show the student — it tells you WHAT to teach). " +
         "Use ONLY topics/subtopics that actually appear in the excerpt — if a specific week or topic was requested, find it in the excerpt " +
         "(the excerpt is a raw extract from a PDF, so formatting may be messy — read past that). Expand each subtopic named in the excerpt into " +
-        "real, taught content — the excerpt itself is just a syllabus line, not the lesson." +
+        "real, taught content — the excerpt itself is just a syllabus line, not the lesson. " +
+        "If the specific week or topic requested genuinely does not appear anywhere in the excerpt, do NOT write an apology, an explanation, or " +
+        "any lesson note at all — respond with EXACTLY the single line NOT_FOUND_IN_SCHEME and nothing else." +
         structureInstruction(true) + audienceInstruction + lengthInstruction + illustrationInstruction + formatInstruction;
       const prompt = `Scheme of work excerpt (syllabus — do not show this to the student, teach FROM it):\n${excerpt}\n\n---\nWrite a student-facing lesson note for Subject: ${subject}${level ? `, Level/Class: ${level}` : ""}${week ? `, Week ${week}` : ""}${topic ? `, Topic: ${topic}` : " — pick the most relevant week/topic from the excerpt above"}.`;
       // Same reasoning-overhead headroom as the ungrounded path above.
       const reply = await generate(system, prompt, 0.6, 7000);
+      // The model sometimes ignores the strict-grounding instruction above
+      // and apologizes in prose instead of the NOT_FOUND_IN_SCHEME marker —
+      // catch that free-text refusal too so it never lands in a note's
+      // content field looking like real lesson material.
+      const looksLikeRefusal = /^(i'?m sorry|i apologize|i cannot|i can'?t|unfortunately)\b/i.test(reply.trim());
+      if (reply.trim() === "NOT_FOUND_IN_SCHEME" || looksLikeRefusal) {
+        throw new Error(
+          `"${topic || `Week ${week || "?"}`}" doesn't appear in the uploaded scheme of work for ${subject}${level ? ` (${level})` : ""}. Try a different week/topic, or leave Topic blank and pick from what's listed.`,
+        );
+      }
       const { content, illustrations } = extractIllustrations(reply);
       return { reply: content, grounded: true, illustrations, sections: matches.map((m) => ({ subjectName: m.subjectName, levelName: m.levelName, term: m.term })) };
     },

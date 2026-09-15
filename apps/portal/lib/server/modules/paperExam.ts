@@ -17,7 +17,14 @@ function parseAiGrading(reply: string, maxScore: number): { score: number; feedb
   // tolerant of the model wrapping it in markdown/extra text either side.
   const m = reply.match(/SCORE\s*:\s*(\d+(?:\.\d+)?)/i);
   const score = m ? Math.max(0, Math.min(maxScore, Math.round(Number(m[1])))) : 0;
-  const feedback = reply.replace(/SCORE\s*:\s*\d+(?:\.\d+)?/i, "").trim() || reply.trim();
+  let feedback = reply.replace(/SCORE\s*:\s*\d+(?:\.\d+)?/i, "").trim() || reply.trim();
+  // No "SCORE:" line at all usually means the model declined outright (a
+  // refusal, a content-policy block, an "I can't view images" reply) —
+  // don't let that raw prose surface to the teacher looking like real
+  // feedback on the student's work.
+  if (!m && /^(i'?m sorry|i apologize|i cannot|i can'?t|unfortunately|as an ai)\b/i.test(feedback)) {
+    feedback = "The AI couldn't grade this script (it declined to respond) — please review and score it manually.";
+  }
   return { score, feedback };
 }
 
