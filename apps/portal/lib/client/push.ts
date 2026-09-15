@@ -29,9 +29,47 @@ export function pushConfigured(): boolean {
   return Boolean(firebaseConfig.apiKey && firebaseConfig.projectId && vapidKey);
 }
 
-// Requests notification permission (if not already decided), registers the
-// FCM service worker, retrieves a device token, and hands it to the backend.
-// Returns "granted" | "denied" | "unsupported" so the caller can react.
+type MessagingSdk = typeof import("firebase/messaging");
+
+interface Loaded {
+  messaging: import("firebase/messaging").Messaging;
+  registration: ServiceWorkerRegistration;
+  sdk: MessagingSdk;
+}
+
+let loaderPromise: Promise<Loaded | null> | null = null;
+
+// Downloads the Firebase SDK chunk and registers the service worker ahead of
+// time, cached so it only ever happens once. Call this as early as possible
+// (as soon as the install gate is showing, well before "Turn on alerts" is
+// actually tapped) so that button only has to wait on the permission prompt
+// + token exchange, not a cold network fetch of the SDK on top of it.
+function loadMessaging(): Promise<Loaded | null> {
+  if (!loaderPromise) {
+    loaderPromise = (async () => {
+      if (!pushConfigured() || typeof window === "undefined" || !("serviceWorker" in navigator)) return null;
+      const [{ initializeApp, getApps }, sdk, registration] = await Promise.all([
+        import("firebase/app"),
+        import("firebase/messaging"),
+        navigator.serviceWorker.register("/firebase-messaging-sw.js"),
+      ]);
+      const app = getApps()[0] ?? initializeApp(firebaseConfig);
+      return { messaging: sdk.getMessaging(app), registration, sdk };
+    })();
+  }
+  return loaderPromise;
+}
+
+// Fire-and-forget — call as soon as it's known push will likely be needed
+// (the install gate mounting) so loadMessaging()'s work is already done, or
+// well underway, by the time the user actually taps "Turn on alerts".
+export function preloadMessaging(): void {
+  void loadMessaging();
+}
+
+// Requests notification permission (if not already decided), then reuses
+// the preloaded SDK/service worker to fetch a device token and hand it to
+// the backend. Returns "granted" | "denied" | "unsupported".
 export async function requestPermissionAndRegister(): Promise<"granted" | "denied" | "unsupported"> {
   if (typeof window === "undefined" || !("Notification" in window) || !("serviceWorker" in navigator)) {
     return "unsupported";
@@ -42,14 +80,9 @@ export async function requestPermissionAndRegister(): Promise<"granted" | "denie
   if (permission !== "granted") return "denied";
 
   try {
-    const [{ initializeApp, getApps }, { getMessaging, getToken }] = await Promise.all([
-      import("firebase/app"),
-      import("firebase/messaging"),
-    ]);
-    const app = getApps()[0] ?? initializeApp(firebaseConfig);
-    const registration = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
-    const messaging = getMessaging(app);
-    const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration });
+    const loaded = await loadMessaging();
+    if (!loaded) return "denied";
+    const token = await loaded.sdk.getToken(loaded.messaging, { vapidKey, serviceWorkerRegistration: loaded.registration });
     if (!token) return "denied";
     await api("push/register", { method: "POST", body: { token, userAgent: navigator.userAgent }, loading: false });
     return "granted";
@@ -57,4 +90,28 @@ export async function requestPermissionAndRegister(): Promise<"granted" | "denie
     console.error("push registration failed:", e);
     return "denied";
   }
+}
+
+// FCM only routes a push through the service worker's background handler
+// when the app/tab is NOT focused — a message that arrives while the portal
+// is actively open and in the foreground is delivered straight to the page
+// instead, and nothing shows it unless something here listens for it. Call
+// once permission is already granted, e.g. right after the install gate
+// finishes — matches the same title/body/link shape and icon the background
+// handler in firebase-messaging-sw.js uses, so a clock-in alert looks and
+// behaves the same regardless of whether the app happened to be open.
+export async function startForegroundPushListener(): Promise<void> {
+  const loaded = await loadMessaging();
+  if (!loaded || Notification.permission !== "granted") return;
+  loaded.sdk.onMessage(loaded.messaging, (payload) => {
+    const title = payload.notification?.title || "DUGA Portal";
+    const body = payload.notification?.body || "";
+    const link = payload.fcmOptions?.link || (payload.data as Record<string, string> | undefined)?.link || "/portal";
+    const n = new Notification(title, { body, icon: "/icons/icon-192.png", data: { link } });
+    n.onclick = () => {
+      window.focus();
+      window.location.href = link;
+      n.close();
+    };
+  });
 }

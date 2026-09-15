@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Card, Button, Alert, Icon } from "@duga/ui";
-import { isStandalone, isIos, pushConfigured, requestPermissionAndRegister } from "@/lib/client/push";
+import { isStandalone, isIos, pushConfigured, requestPermissionAndRegister, preloadMessaging, startForegroundPushListener } from "@/lib/client/push";
 
 interface InstallPromptEvent extends Event {
   prompt: () => void;
@@ -25,7 +25,9 @@ export function PushInstallGate({ role }: { role: string }) {
   const [installed, setInstalled] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [checkedOnce, setCheckedOnce] = useState(false);
   const registeredRef = useRef(false);
+  const foregroundListenerRef = useRef(false);
 
   // Don't gate: anyone but a parent, the set-password form itself (so it
   // isn't blocked before they can even set a password), or a school that
@@ -40,6 +42,12 @@ export function PushInstallGate({ role }: { role: string }) {
   useEffect(() => {
     if (skip) return;
     check();
+    // Start downloading the Firebase SDK + registering the service worker
+    // right away, in the background — by the time the parent actually
+    // reaches "Turn on alerts" (after doing Step 1), that work is already
+    // done instead of adding a cold-fetch delay on top of the permission
+    // prompt + token exchange.
+    preloadMessaging();
     const onVisible = () => check();
     const onInstallPrompt = (e: Event) => {
       e.preventDefault();
@@ -61,6 +69,15 @@ export function PushInstallGate({ role }: { role: string }) {
     if (skip || !standalone || permission !== "granted" || registeredRef.current) return;
     registeredRef.current = true;
     requestPermissionAndRegister();
+  }, [skip, standalone, permission]);
+
+  // FCM's service worker only shows a push while the app is in the
+  // background — a message that arrives while a parent has the portal
+  // actively open needs this listener instead, or it's silently dropped.
+  useEffect(() => {
+    if (skip || !standalone || permission !== "granted" || foregroundListenerRef.current) return;
+    foregroundListenerRef.current = true;
+    startForegroundPushListener();
   }, [skip, standalone, permission]);
 
   if (skip) return null;
@@ -151,7 +168,21 @@ export function PushInstallGate({ role }: { role: string }) {
                 {installed && (
                   <Alert tone="success">Installed. Now open the app from your Home Screen icon to continue.</Alert>
                 )}
-                <Button variant="outline" size="sm" onClick={check}>
+                {checkedOnce && !standalone && (
+                  <Alert tone="warning">
+                    Still showing as not installed. Tapping this button only re-checks — it can&apos;t detect the icon by itself while you&apos;re
+                    still inside this browser tab. Please <strong>close this browser tab completely</strong>, then find and tap the{" "}
+                    <strong>DUGA Portal icon on your Home Screen</strong> (not this browser) to open it from there.
+                  </Alert>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setCheckedOnce(true);
+                    check();
+                  }}
+                >
                   I&apos;ve added it — check again
                 </Button>
               </div>
@@ -164,8 +195,13 @@ export function PushInstallGate({ role }: { role: string }) {
                 </div>
                 {error && <Alert tone="danger">{error}</Alert>}
                 <Button variant="accent" onClick={turnOnAlerts} loading={busy}>
-                  Turn on alerts
+                  {busy ? "Setting up alerts…" : "Turn on alerts"}
                 </Button>
+                {busy && (
+                  <div style={{ fontSize: 12, color: "var(--duga-muted)" }}>
+                    This can take a few seconds the first time — hang tight.
+                  </div>
+                )}
               </div>
             )}
           </div>
