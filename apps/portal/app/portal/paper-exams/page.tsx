@@ -211,7 +211,7 @@ export default function PaperExamsPage() {
 
   async function openEditExam(e: Exam) {
     try {
-      const full = await api<Exam>(`paperExam/${e.id}/examGet`);
+      const full = await api<Exam>(`paperExam/${e.id}/examGet`, { method: "POST", body: {} });
       setExamForm({
         id: full.id,
         classSubjectId: full.classSubjectId,

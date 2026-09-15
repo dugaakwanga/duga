@@ -27,7 +27,7 @@ const ReactQuill = dynamic(async () => {
 }, { ssr: false }) as unknown as typeof ReactQuillType;
 
 const TOOLBAR = [
-  [{ header: [1, 2, 3, false] }],
+  [{ header: [1, 2, 3, 4, false] }],
   ["bold", "italic", "underline"],
   [{ list: "ordered" }, { list: "bullet" }],
   ["clean"],

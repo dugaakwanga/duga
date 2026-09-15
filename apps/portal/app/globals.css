@@ -1220,6 +1220,7 @@ body {
 .lesson-editor .ql-editor h1 { font-size: 22px; }
 .lesson-editor .ql-editor h2 { font-size: 18.5px; }
 .lesson-editor .ql-editor h3 { font-size: 16px; font-weight: 800; color: var(--duga-primary-ink); }
+.lesson-editor .ql-editor h4 { font-size: 14px; font-weight: 700; color: var(--duga-ink-2, var(--duga-muted)); }
 @media (max-width: 620px) {
   .lesson-editor .ql-editor { min-height: 260px; padding: 14px; }
 }
@@ -1232,6 +1233,7 @@ body {
 .lesson-content-html h1 { font-size: 22px; }
 .lesson-content-html h2 { font-size: 18.5px; }
 .lesson-content-html h3 { font-size: 16px; }
+.lesson-content-html h4 { font-size: 14px; font-weight: 700; color: var(--duga-ink-2, var(--duga-muted)); margin: 14px 0 6px; }
 .lesson-content-html p { margin: 0 0 14px; }
 .lesson-content-html ul, .lesson-content-html ol { margin: 4px 0 14px; padding-left: 22px; }
 .lesson-content-html li { margin-bottom: 5px; }

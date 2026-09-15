@@ -37,6 +37,19 @@ function textToHtml(text: string): string {
     if (/^[-=*_]{3,}$/.test(clean)) continue;
     clean = clean.replace(/^#{1,6}\s+/, "");
     if (!clean) continue;
+    // A sub-heading is written the same way as a heading but with TWO
+    // trailing colons (e.g. "Types of soil::") — checked before the
+    // single-colon heading below since "Label::" would otherwise just fail
+    // that pattern silently (it requires exactly one trailing colon).
+    const subheading = clean.match(/^\*{0,2}([A-Za-z][A-Za-z /'’]{2,40})::\*{0,2}$/);
+    if (subheading) {
+      if (inList) {
+        html += "</ul>";
+        inList = false;
+      }
+      html += `<h4>${escapeHtml(subheading[1]!)}</h4>`;
+      continue;
+    }
     // Allows an apostrophe so a label like "What you'll learn:" (straight
     // or curly quote) is recognized as a heading instead of silently
     // falling through to a plain paragraph.
@@ -106,6 +119,14 @@ export function plainSnippet(content: string, maxLen = 200): string {
   const text = looksLikeHtml(content)
     ? content.replace(/<[^>]+>/g, " ")
     : content.replace(/\[\[ILLUSTRATION_HERE\]\]/g, " ");
-  const clean = text.replace(/&nbsp;/g, " ").replace(/\s{2,}/g, " ").trim();
+  const clean = text
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/\s{2,}/g, " ")
+    .trim();
   return clean.length > maxLen ? `${clean.slice(0, maxLen)}…` : clean;
 }

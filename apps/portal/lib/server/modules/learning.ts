@@ -5,6 +5,7 @@ import type { Ctx } from "@/app/api/v1/[...path]/route";
 import { can, str, num, pick, idArray, isAssignedTo, ensureTeacher, assertFeeAccess } from "../helpers";
 import { assertSubfeature } from "../features";
 import { assessmentWindowOpen } from "./calendar";
+import { generate } from "./ai";
 
 type Kind = "notes" | "assignments" | "tests" | "live";
 
@@ -88,6 +89,45 @@ async function targetStudentsForClass(schoolId: string, classGroupId: string, ta
     throw new Error("Every selected student must be active and belong to the selected class");
   }
   return students;
+}
+
+// Parses the "Q1: ...\nA1: ...\nQ2: ...\nA2: ..." shape asked for in
+// selfCheck's prompt below — tolerant of the model adding blank lines or
+// extra prose between pairs, same spirit as paperExam.ts's line parsers.
+// Accumulates any wrapped continuation lines into the current question/
+// answer rather than dropping them, since a free-form model reply isn't
+// guaranteed to keep each one on a single line.
+function parseSelfCheckQuestions(reply: string): Array<{ question: string; modelAnswer: string }> {
+  const lines = reply.split(/\n/).map((l) => l.trim());
+  const questions: Array<{ question: string; modelAnswer: string }> = [];
+  let question: string | null = null;
+  let answer: string[] | null = null;
+
+  function flush() {
+    if (question && answer && answer.join(" ").trim()) {
+      questions.push({ question, modelAnswer: answer.join(" ").trim() });
+    }
+    question = null;
+    answer = null;
+  }
+
+  for (const line of lines) {
+    const qm = line.match(/^Q\d*\s*:\s*(.+)$/i);
+    if (qm) {
+      flush();
+      question = qm[1]!.trim();
+      continue;
+    }
+    const am = line.match(/^A\d*\s*:\s*(.+)$/i);
+    if (am && question) {
+      answer = [am[1]!.trim()];
+      continue;
+    }
+    // A continuation line — only meaningful once we're mid-answer.
+    if (line && answer) answer.push(line);
+  }
+  flush();
+  return questions;
 }
 
 const includeBase = {
@@ -664,6 +704,80 @@ export const learningModule: Module = {
       await prisma.liveClass.delete({ where: { id: ctx.id } });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "live.deleted", entityType: "LiveClass", entityId: ctx.id });
       return { ok: true };
+    },
+
+    // ---- Self-check questions (student-facing study aid) ----------------
+    // Deliberately ephemeral: generated fresh from the note's own content
+    // each time, never persisted — this is a study aid a student can revisit
+    // for a new set of questions, not a graded record of what they answered.
+    selfCheck: async (ctx) => {
+      can(ctx, "learning:view");
+      const schoolId = ctx.session.user.schoolId;
+      const ids = await visibleClassSubjectIds(ctx);
+      const consumers = await viewerStudents(ctx);
+      const consumer = consumers.length > 0 || ctx.session.user.role === "PARENT";
+      const note = await prisma.lessonNote.findFirst({ where: { id: ctx.id, schoolId, classSubjectId: { in: ids } } });
+      if (!note || (consumer && !note.isPublished)) throw new Error("Lesson note not found");
+
+      const rl = checkRateLimit(`selfcheck:${ctx.session.user.id}`, 20, 5 * 60_000);
+      if (!rl.allowed) {
+        const err = new Error(`Too many requests — please wait about ${Math.ceil((rl.retryAfterSeconds ?? 60) / 60)} minute(s) and try again.`) as Error & { status?: number };
+        err.status = 429;
+        throw err;
+      }
+
+      const plain = note.content.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s{2,}/g, " ").trim().slice(0, 4000);
+      const system =
+        "You write short, friendly comprehension self-check questions for a school lesson note. " +
+        "Base every question only on the given content — never invent facts not present in it. " +
+        "Model answers should be one short sentence, in plain simple language a student that age would use.";
+      const prompt =
+        `Lesson topic: ${note.topic}\n\nLesson content:\n${plain}\n\n` +
+        "Write exactly 3 short-answer comprehension questions covering different parts of the content, from easiest to hardest. " +
+        "Respond in exactly this format, nothing else:\nQ1: <question>\nA1: <model answer>\nQ2: <question>\nA2: <model answer>\nQ3: <question>\nA3: <model answer>";
+      // The free reasoning model this app falls back to (see ai.ts) spends a
+      // large, variable share of max_tokens on hidden reasoning before ever
+      // writing the actual reply — draftLesson budgets 4500 for a full note,
+      // so 1500 here (a handful of short Q&A pairs) still leaves headroom,
+      // rather than the reply getting cut off mid-answer.
+      const reply = await generate(system, prompt, 0.5, 1500);
+      const questions = parseSelfCheckQuestions(reply);
+      if (!questions.length) throw new Error("Couldn't come up with self-check questions this time — please try again.");
+      return { questions };
+    },
+
+    // Judges a student's typed answer against the model answer generated by
+    // selfCheck above. Not a score — just correct/incorrect plus one
+    // encouraging line, tolerant of wording that isn't a verbatim match.
+    checkAnswer: async (ctx) => {
+      can(ctx, "learning:view");
+      const question = str(ctx.body.question);
+      const modelAnswer = str(ctx.body.modelAnswer);
+      const answer = str(ctx.body.answer);
+      if (!question || !modelAnswer || !answer) throw new Error("question, modelAnswer and answer are required");
+
+      const rl = checkRateLimit(`selfcheck:${ctx.session.user.id}`, 30, 5 * 60_000);
+      if (!rl.allowed) {
+        const err = new Error(`Too many requests — please wait about ${Math.ceil((rl.retryAfterSeconds ?? 60) / 60)} minute(s) and try again.`) as Error & { status?: number };
+        err.status = 429;
+        throw err;
+      }
+
+      const system =
+        "You are a kind, encouraging teacher checking a student's short typed answer against a model answer. " +
+        "Be generous — accept any answer that captures the key idea, even if the wording, length or exact phrasing differs.";
+      const prompt =
+        `Question: ${question}\nModel answer: ${modelAnswer}\nStudent's answer: ${answer.slice(0, 1000)}\n\n` +
+        "Respond in exactly this format, nothing else:\nCORRECT: yes or no\nFEEDBACK: one short, encouraging sentence";
+      // Same reasoning-overhead headroom as selfCheck above, applied to a
+      // shorter task.
+      const reply = await generate(system, prompt, 0.3, 700);
+      const correct = /CORRECT\s*:\s*yes/i.test(reply);
+      const feedbackMatch = reply.match(/FEEDBACK\s*:\s*(.+)/i);
+      // A malformed/cut-off reply should never leak the raw "CORRECT: yes"
+      // marker to the student — fall back to a plain, still-useful message.
+      const feedback = feedbackMatch?.[1]?.trim() || (correct ? "Nice work!" : "Not quite — check the model answer below.");
+      return { correct, feedback };
     },
   },
 };

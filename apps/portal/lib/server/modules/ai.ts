@@ -267,13 +267,18 @@ export async function generate(system: string, prompt: string | ChatTurn[], temp
 // bolted on at the end.
 function extractIllustrations(text: string): { content: string; illustrations: string[] } {
   const matches = [...text.matchAll(/^\s*\[ILLUSTRATION:\s*(.+?)\]\s*$/gim)];
-  if (matches.length === 0) return { content: text.trim(), illustrations: [] };
   let content = text;
   const illustrations: string[] = [];
   for (const m of matches) {
     illustrations.push(m[1]!.trim());
     content = content.replace(m[0], "[[ILLUSTRATION_HERE]]");
   }
+  // Belt-and-braces against the model explaining itself despite being told
+  // not to (seen live: "[No illustration – describing multiple colours
+  // would need more than one subject.]") — strip any other bracketed line
+  // that's clearly commentary about an illustration rather than the
+  // "[ILLUSTRATION: ...]" cue itself, which is already handled above.
+  content = content.replace(/^\s*\[[^\]]*\billustration\b[^\]]*\]\s*$/gim, "");
   return { content: content.replace(/\n{3,}/g, "\n\n").trim(), illustrations };
 }
 
@@ -528,9 +533,10 @@ export const aiModule: Module = {
         "for harvest', 'a cotton plant', 'a hen sitting on eggs'. It must NEVER be a labeled diagram, a chart, a collage, several items shown " +
         "together, or anything containing text/words/labels/numbers — image generation cannot render legible text or lay out multiple items " +
         "correctly, and describing more than one subject produces a garbled, unusable image every time. If an objective's point would need multiple " +
-        "items or labels to make sense, skip the illustration there entirely rather than attempting it. Use at most ONE such line per objective " +
-        "heading, only where it genuinely helps — skip objectives with no single clear visual subject (e.g. a grammar rule or a definition). Never " +
-        "describe the same picture twice.";
+        "items or labels to make sense, skip the illustration there entirely rather than attempting it — silently: never write a bracketed note, " +
+        "aside, or any other text explaining that you skipped one or why; the student reading this note must never see your reasoning about " +
+        "images, only the note itself. Use at most ONE such line per objective heading, only where it genuinely helps — skip objectives with no " +
+        "single clear visual subject (e.g. a grammar rule or a definition). Never describe the same picture twice.";
 
       // The reply is converted into real HTML client-side (lessonHtml.ts),
       // which understands **bold**, a "Label:" line as a heading, and a
@@ -539,19 +545,23 @@ export const aiModule: Module = {
       // reach for **bold** anyway (asking it not to was unreliable).
       const formatInstruction =
         " Formatting: write each heading described above on its own line ending with a colon (e.g. 'Meaning of agriculture:'), a blank line, then " +
-        "that section's content, then a blank line before the next heading. Do not add any other headings or sub-headings beyond the ones " +
-        "described — write extra detail as normal paragraphs and bullets instead. Use '- ' at the start of a line for a bullet point, and " +
-        "**word** to bold a term worth emphasizing. Never use '#' characters or markdown heading syntax, '---'/'===' dividers, tables, or code " +
-        "blocks/backticks/ASCII diagrams — plain paragraphs with the '- ' bullets and **bold** described above are the ONLY formatting allowed.";
+        "that section's content, then a blank line before the next heading. Where an objective genuinely has distinct parts worth separating (see " +
+        "the sub-heading guidance above), write a sub-heading on its own line ending with TWO colons instead of one (e.g. 'Types of soil::'), " +
+        "followed by a blank line and that part's own content — same rule, just two colons instead of one. Do not add any heading or sub-heading " +
+        "beyond what's described above — write everything else as normal paragraphs and bullets. Use '- ' at the start of a line for a bullet " +
+        "point, and **word** to bold a term worth emphasizing. Never use '#' characters or markdown heading syntax, '---'/'===' dividers, tables, " +
+        "or code blocks/backticks/ASCII diagrams — plain paragraphs with the '- ' bullets and **bold** described above are the ONLY formatting " +
+        "allowed.";
 
       // A short outline isn't usable as the actual material a student
       // reads to learn from — force real depth per objective, not just per
       // note.
       const lengthInstruction =
         " Write a THOROUGH, complete note, not a one-line outline. Each objective's own section needs real teaching in plain language a child can " +
-        "follow — several full sentences that actually explain and exemplify it, not a phrase that just restates its name. The 'Try it yourself:' " +
-        "section needs concrete steps the student can actually try. The 'Quick check:' section needs at least one real question per objective " +
-        "covered. Aim for genuine depth over brevity.";
+        "follow — several full sentences that actually explain and exemplify it, not a phrase that just restates its name. If you use sub-headings " +
+        "to break an objective into parts, each sub-part needs the same real depth too, not a one-liner. The 'Try it yourself:' section needs " +
+        "concrete steps the student can actually try. The 'Quick check:' section needs at least one real question per objective covered. Aim for " +
+        "genuine depth over brevity.";
 
       // This note is what the STUDENT reads on their own screen as their
       // study material — it is NOT a lesson plan for the teacher to carry
@@ -584,17 +594,28 @@ export const aiModule: Module = {
           " Give EACH objective its own heading, written as a short paraphrase of that objective (2-6 words) ending in a colon — never lump " +
           "multiple objectives together under one generic heading like 'Explanation:'. Under each heading, thoroughly teach THAT specific " +
           "objective on its own before moving to the next: explain what it means, why it matters, and give a concrete real-world example a " +
-          "Nigerian student would recognize. Do not pad with generic or tangential content — depth means genuinely teaching each objective, not " +
-          "adding unrelated background. Structure the whole note as: an opening 'What you'll learn:' section briefly listing every objective you " +
-          "are about to cover, then one heading per objective in the order above, then a closing 'Try it yourself:' section with one practical " +
-          "task drawing on everything covered, then a closing 'Quick check:' section with at least one real question per objective covered."
+          "Nigerian student would recognize. Where an objective naturally splits into 2-3 distinct parts or types worth teaching separately " +
+          "(e.g. an objective about 'types of soil' covering sandy, clay and loamy soil one at a time, or one about 'stages of a process' " +
+          "covering each stage), give each part its own sub-heading nested under that objective's heading (see sub-heading formatting below) " +
+          "instead of running them together as one block — a short, single-idea objective needs no sub-heading at all, just its own paragraph(s) " +
+          "directly under the main heading. Do not pad with generic or tangential content — depth means genuinely teaching each objective (and " +
+          "each of its parts, if it has sub-headings), not adding unrelated background. Structure the whole note as: an opening 'What you'll " +
+          "learn:' section briefly listing every objective you are about to cover, then one heading per objective in the order above (each with " +
+          "its own sub-headings where it has distinct parts), then a closing 'Try it yourself:' section with one practical task drawing on " +
+          "everything covered, then a closing 'Quick check:' section with at least one real question per objective covered."
         );
       }
 
       if (matches.length === 0) {
         const system = "You write lesson notes for students." + structureInstruction(false) + audienceInstruction + lengthInstruction + illustrationInstruction + formatInstruction;
         const prompt = `Subject: ${subject}\nTopic: ${topic ?? "(choose an appropriate topic for this subject and level)"}${level ? `\nLevel/Class: ${level}` : ""}${week ? `\nWeek: ${week}` : ""}`;
-        const reply = await generate(system, prompt, 0.7, 4500);
+        // Gemini 3.5 Flash (the primary provider here — see generate() above)
+        // is itself a reasoning model: it spends a large, variable share of
+        // max_tokens on hidden "thinking" before writing the visible reply,
+        // so the budget needs real headroom beyond the note's own length or
+        // a long note (especially now with sub-headings) can get cut off
+        // mid-sentence.
+        const reply = await generate(system, prompt, 0.7, 7000);
         const { content, illustrations } = extractIllustrations(reply);
         return { reply: content, grounded: false, illustrations };
       }
@@ -608,7 +629,8 @@ export const aiModule: Module = {
         "real, taught content — the excerpt itself is just a syllabus line, not the lesson." +
         structureInstruction(true) + audienceInstruction + lengthInstruction + illustrationInstruction + formatInstruction;
       const prompt = `Scheme of work excerpt (syllabus — do not show this to the student, teach FROM it):\n${excerpt}\n\n---\nWrite a student-facing lesson note for Subject: ${subject}${level ? `, Level/Class: ${level}` : ""}${week ? `, Week ${week}` : ""}${topic ? `, Topic: ${topic}` : " — pick the most relevant week/topic from the excerpt above"}.`;
-      const reply = await generate(system, prompt, 0.6, 4500);
+      // Same reasoning-overhead headroom as the ungrounded path above.
+      const reply = await generate(system, prompt, 0.6, 7000);
       const { content, illustrations } = extractIllustrations(reply);
       return { reply: content, grounded: true, illustrations, sections: matches.map((m) => ({ subjectName: m.subjectName, levelName: m.levelName, term: m.term })) };
     },

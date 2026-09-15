@@ -6,6 +6,7 @@ import { PageHeader, Card, Badge, Button, Modal, Field, Input, Textarea, Alert, 
 import { api } from "@/lib/client/api";
 import { groupClassSubjectsBySubject } from "@/lib/client/classSubjectOptions";
 import LessonContent from "@/components/LessonContent";
+import SelfCheckPanel from "@/components/SelfCheckPanel";
 import { plainSnippet } from "@/lib/client/lessonHtml";
 
 type Kind = "notes" | "assignments" | "tests" | "live";
@@ -257,14 +258,17 @@ export default function LearningPage() {
                 </div>
               )}
               {(() => {
-                // Strip the inline-image token here — this is the plain-
-                // text snippet; LessonContent (the "Read more" modal below)
-                // is where it actually becomes a picture.
-                const full = (item.content ?? item.instructions ?? item.description ?? "").replace(/\[\[ILLUSTRATION_HERE\]\]/g, " ").replace(/\s{2,}/g, " ").trim();
-                const truncated = full.length > 160;
+                // plainSnippet strips real HTML tags (new rich-text notes)
+                // or the inline-image token (old plain-text notes) and
+                // decodes entities, so the preview is always readable text —
+                // LessonContent (the "Read more" modal below) is where the
+                // full HTML/markdown actually renders.
+                const raw = item.content ?? item.instructions ?? item.description ?? "";
+                const full = plainSnippet(raw, 160);
+                const truncated = full.endsWith("…");
                 return (
                   <p style={{ fontSize: 13.5, color: "var(--duga-ink-2)", margin: "0 0 4px", whiteSpace: "pre-wrap" }}>
-                    {truncated ? `${full.slice(0, 160)}…` : full}
+                    {full}
                     {truncated && (
                       <>
                         {" "}
@@ -433,11 +437,14 @@ export default function LearningPage() {
               {viewItem.week ? <Badge tone="accent">Week {viewItem.week}</Badge> : null}
             </div>
             {kind === "notes" ? (
-              // Renders headings/bullets/paragraphs like a real document and
-              // drops each image in exactly where the AI placed it in the
-              // text, instead of a flat gallery disconnected from the words
-              // that describe it.
-              <LessonContent content={viewItem.content ?? ""} images={viewItem.attachments ?? []} />
+              <>
+                {/* Renders headings/bullets/paragraphs like a real document and
+                drops each image in exactly where the AI placed it in the
+                text, instead of a flat gallery disconnected from the words
+                that describe it. */}
+                <LessonContent content={viewItem.content ?? ""} images={viewItem.attachments ?? []} />
+                {isStudent && <SelfCheckPanel key={viewItem.id} noteId={viewItem.id} />}
+              </>
             ) : (
               <>
                 {viewItem.attachments && viewItem.attachments.some(Boolean) && (
