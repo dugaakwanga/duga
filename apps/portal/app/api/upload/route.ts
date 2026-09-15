@@ -33,7 +33,7 @@ function ext(mime: string, purpose: string): string {
   if (purpose === "library" || purpose === "scheme") {
     return LIBRARY_TYPES[mime] ?? "pdf";
   }
-  if (purpose === "lesson-doc") {
+  if (purpose === "lesson-doc" || purpose === "family-corner-doc") {
     return LESSON_DOC_TYPES[mime] ?? "pdf";
   }
   return IMAGE_TYPES[mime] ?? "jpg";
@@ -77,6 +77,8 @@ export async function POST(request: NextRequest) {
       // admin/owner only), so every teacher upload in the lesson-note
       // editor failed with a permission error.
       assertPermission(session.user.role, "learning:manage");
+    } else if (purpose === "family-corner-doc") {
+      assertPermission(session.user.role, "familyCorner:manage");
     } else {
       assertPermission(session.user.role, "gallery:manage");
     }
@@ -87,12 +89,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "No file uploaded" }, { status: 400 });
     }
     const isLibraryDoc = purpose === "library" || purpose === "scheme";
-    const isLessonDoc = purpose === "lesson-doc";
-    const isDocument = isLibraryDoc || isLessonDoc;
+    // Same PDF/Word type set as a lesson-doc attachment — used for both a
+    // lesson note's attached document and a Family Corner post's.
+    const isPdfDoc = purpose === "lesson-doc" || purpose === "family-corner-doc";
+    const isDocument = isLibraryDoc || isPdfDoc;
     const mime = file.type || (isDocument ? "application/pdf" : "image/jpeg");
-    const allowed = isLibraryDoc ? LIBRARY_TYPES : isLessonDoc ? LESSON_DOC_TYPES : IMAGE_TYPES;
+    const allowed = isLibraryDoc ? LIBRARY_TYPES : isPdfDoc ? LESSON_DOC_TYPES : IMAGE_TYPES;
     if (!allowed[mime]) {
-      const hint = isLibraryDoc ? "Only PDF, EPUB and MOBI files are allowed" : isLessonDoc ? "Only PDF and Word (.doc/.docx) files are allowed" : "Only JPG, PNG, WebP and GIF images are allowed";
+      const hint = isLibraryDoc ? "Only PDF, EPUB and MOBI files are allowed" : isPdfDoc ? "Only PDF and Word (.doc/.docx) files are allowed" : "Only JPG, PNG, WebP and GIF images are allowed";
       return NextResponse.json({ ok: false, error: hint }, { status: 400 });
     }
     // Clock photos are a client-compressed snapshot meant to stay tiny (a few
@@ -106,7 +110,7 @@ export async function POST(request: NextRequest) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const name = `${crypto.randomUUID()}.${ext(mime, purpose)}`;
-    const folder = purpose === "library" ? "library" : purpose === "scheme" ? "scheme" : purpose === "lesson-doc" ? "lesson-docs" : purpose === "paper-exam" ? "paper-exams" : purpose === "avatar" ? "avatars" : purpose === "student-photo" ? "students" : purpose === "school-logo" ? "school" : purpose === "clock-photo" ? "clock" : "gallery";
+    const folder = purpose === "library" ? "library" : purpose === "scheme" ? "scheme" : purpose === "lesson-doc" ? "lesson-docs" : purpose === "family-corner-doc" ? "family-corner-docs" : purpose === "paper-exam" ? "paper-exams" : purpose === "avatar" ? "avatars" : purpose === "student-photo" ? "students" : purpose === "school-logo" ? "school" : purpose === "clock-photo" ? "clock" : "gallery";
     const { url: fileUrl, key, bucket } = await uploadPublicFile({
       folder,
       name,

@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PageHeader, Card, Badge, Alert, Spinner, EmptyState, Button, Modal, Field, Input, Select, Textarea, Icon } from "@duga/ui";
 import { api } from "@/lib/client/api";
+import { DocumentViewerModal } from "@/components/DocumentViewer";
 
 type Category = "RECIPES" | "PARENTING_TIPS" | "CHILD_HEALTH" | "STUDY_SUPPORT" | "FUN_ACTIVITIES";
 
@@ -12,6 +13,8 @@ interface ContentItem {
   title: string;
   body: string;
   imageUrl: string | null;
+  attachmentUrl: string | null;
+  attachmentName: string | null;
   isPublished: boolean;
   createdAt: string;
 }
@@ -43,6 +46,9 @@ export default function FamilyCornerPage() {
   const [form, setForm] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [openItem, setOpenItem] = useState<ContentItem | null>(null);
+  const [viewerDoc, setViewerDoc] = useState<{ url: string; name: string } | null>(null);
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+  const docRef = useRef<HTMLInputElement>(null);
 
   const isManager = role === "OWNER" || role === "ADMIN";
 
@@ -71,8 +77,34 @@ export default function FamilyCornerPage() {
 
   function openEdit(item: ContentItem) {
     setEditing(item);
-    setForm({ category: item.category, title: item.title, body: item.body, imageUrl: item.imageUrl ?? "", isPublished: String(item.isPublished) });
+    setForm({
+      category: item.category,
+      title: item.title,
+      body: item.body,
+      imageUrl: item.imageUrl ?? "",
+      attachmentUrl: item.attachmentUrl ?? "",
+      attachmentName: item.attachmentName ?? "",
+      isPublished: String(item.isPublished),
+    });
     setOpen(true);
+  }
+
+  async function uploadAttachment(file: File | undefined) {
+    if (!file) return;
+    setUploadingDoc(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/upload?purpose=family-corner-doc", { method: "POST", body: fd });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Upload failed");
+      setForm((f) => ({ ...f, attachmentUrl: json.data.url, attachmentName: file.name }));
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setUploadingDoc(false);
+      if (docRef.current) docRef.current.value = "";
+    }
   }
 
   async function save() {
@@ -142,8 +174,13 @@ export default function FamilyCornerPage() {
               <p style={{ fontSize: 13, color: "var(--duga-muted)", margin: "0 0 10px", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
                 {item.body}
               </p>
-              <div style={{ display: "flex", gap: 6 }}>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 <Button size="sm" variant="outline" onClick={() => setOpenItem(item)}>Read more</Button>
+                {item.attachmentUrl && (
+                  <Button size="sm" variant="outline" onClick={() => setViewerDoc({ url: item.attachmentUrl!, name: item.attachmentName || item.title })}>
+                    <Icon name="assignment" size={14} /> {item.attachmentName || "Document"}
+                  </Button>
+                )}
                 {isManager && (
                   <>
                     <Button size="sm" variant="ghost" onClick={() => openEdit(item)}>Edit</Button>
@@ -165,9 +202,20 @@ export default function FamilyCornerPage() {
             )}
             <Badge tone="accent">{CATEGORY_ICON[openItem.category]} {CATEGORY_LABEL[openItem.category]}</Badge>
             <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.6, marginTop: 14 }}>{openItem.body}</p>
+            {openItem.attachmentUrl && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setViewerDoc({ url: openItem.attachmentUrl!, name: openItem.attachmentName || openItem.title })}
+              >
+                <Icon name="assignment" size={14} /> Open {openItem.attachmentName || "attached document"}
+              </Button>
+            )}
           </>
         )}
       </Modal>
+
+      <DocumentViewerModal url={viewerDoc?.url ?? null} name={viewerDoc?.name} onClose={() => setViewerDoc(null)} />
 
       <Modal open={open} onClose={() => setOpen(false)} title={editing ? "Edit content" : "Add content"} wide>
         <Field label="Category" required>
@@ -183,6 +231,27 @@ export default function FamilyCornerPage() {
         </Field>
         <Field label="Content" required>
           <Textarea rows={10} value={form.body ?? ""} onChange={(e) => setForm({ ...form, body: e.target.value })} />
+        </Field>
+        <Field label="Attached PDF or Word document (optional)" hint="A printable recipe sheet or a longer write-up — opens right in the app when a parent taps it.">
+          {form.attachmentUrl ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5 }}>
+              <Icon name="assignment" size={16} /> {form.attachmentName || "Document"}
+              <Button type="button" variant="ghost" size="sm" onClick={() => setForm((f) => ({ ...f, attachmentUrl: "", attachmentName: "" }))}>
+                Remove
+              </Button>
+            </div>
+          ) : (
+            <Button type="button" variant="outline" size="sm" loading={uploadingDoc} onClick={() => docRef.current?.click()}>
+              <Icon name="assignment" size={14} /> Attach a PDF/Word document
+            </Button>
+          )}
+          <input
+            ref={docRef}
+            type="file"
+            accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            style={{ display: "none" }}
+            onChange={(e) => uploadAttachment(e.target.files?.[0])}
+          />
         </Field>
         <Field label="Status">
           <Select value={form.isPublished ?? "true"} onChange={(e) => setForm({ ...form, isPublished: e.target.value })}>

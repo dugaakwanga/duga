@@ -785,14 +785,19 @@ export const learningModule: Module = {
       }
 
       const system =
-        "You are a kind, encouraging teacher checking a student's short typed answer against a model answer. " +
-        "Be generous — accept any answer that captures the key idea, even if the wording, length or exact phrasing differs.";
+        "You are a kind primary/secondary school teacher checking a CHILD's short typed answer against a model answer — grade generously, the way a " +
+        "good teacher marks classwork, not an exam. Mark it CORRECT as long as it captures the core idea or fact the question is actually asking " +
+        "for — do not require the same wording, completeness, grammar, spelling, or every detail the model answer happens to mention. A short, " +
+        "partial, or clumsily-worded answer that still shows the child understood the key point should be marked correct. Only mark it incorrect if " +
+        "it genuinely misses or contradicts the core idea, or is blank/irrelevant.";
       const prompt =
         `Question: ${question}\nModel answer: ${modelAnswer}\nStudent's answer: ${answer.slice(0, 1000)}\n\n` +
         "Respond in exactly this format, nothing else:\nCORRECT: yes or no\nFEEDBACK: one short, encouraging sentence";
-      // Same reasoning-overhead headroom as selfCheck above, applied to a
-      // shorter task.
-      const reply = await generate(system, prompt, 0.3, 700);
+      // Same reasoning-overhead headroom as selfCheck above — bumped further
+      // still after this specific action was seen returning a fully empty
+      // reply (all of 700 tokens spent on hidden reasoning, nothing left to
+      // write the actual answer) even for a short judging task.
+      const reply = await generate(system, prompt, 0.3, 1500);
       const correct = /CORRECT\s*:\s*yes/i.test(reply);
       const feedbackMatch = reply.match(/FEEDBACK\s*:\s*(.+)/i);
       // A malformed/cut-off reply should never leak the raw "CORRECT: yes"

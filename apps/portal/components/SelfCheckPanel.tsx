@@ -13,6 +13,10 @@ interface AnswerState {
   text: string;
   checking: boolean;
   result: { correct: boolean; feedback: string } | null;
+  // Distinct from `result` — the AI call itself failed (empty reply, rate
+  // limit, network), which says nothing about whether the answer was right.
+  // Must never be shown as if it were a "wrong answer" verdict.
+  error: string | null;
 }
 
 // A "check yourself" study aid shown after a lesson note's content — the
@@ -36,7 +40,7 @@ export default function SelfCheckPanel({ noteId }: { noteId: string }) {
       .then((d) => {
         if (cancelled) return;
         setQuestions(d.questions);
-        setAnswers(Object.fromEntries(d.questions.map((_, i) => [i, { text: "", checking: false, result: null }])));
+        setAnswers(Object.fromEntries(d.questions.map((_, i) => [i, { text: "", checking: false, result: null, error: null }])));
       })
       .catch((e) => {
         if (!cancelled) setError((e as Error).message);
@@ -52,21 +56,24 @@ export default function SelfCheckPanel({ noteId }: { noteId: string }) {
   async function submitAnswer(i: number, question: SelfCheckQuestion) {
     const state = answers[i];
     if (!state || !state.text.trim()) return;
-    setAnswers((prev) => ({ ...prev, [i]: { ...prev[i]!, checking: true } }));
+    setAnswers((prev) => ({ ...prev, [i]: { ...prev[i]!, checking: true, error: null } }));
     try {
       const res = await api<{ correct: boolean; feedback: string }>("learning/checkAnswer", {
         method: "POST",
         body: { question: question.question, modelAnswer: question.modelAnswer, answer: state.text },
         loading: false,
       });
-      setAnswers((prev) => ({ ...prev, [i]: { ...prev[i]!, checking: false, result: res } }));
+      setAnswers((prev) => ({ ...prev, [i]: { ...prev[i]!, checking: false, result: res, error: null } }));
     } catch (e) {
-      setAnswers((prev) => ({ ...prev, [i]: { ...prev[i]!, checking: false, result: { correct: false, feedback: (e as Error).message } } }));
+      // The AI call itself failed — not a verdict on the answer, so keep
+      // what they typed and let them just retry the same submit rather than
+      // showing it as a (false) "incorrect" result.
+      setAnswers((prev) => ({ ...prev, [i]: { ...prev[i]!, checking: false, error: (e as Error).message } }));
     }
   }
 
   function retry(i: number) {
-    setAnswers((prev) => ({ ...prev, [i]: { text: "", checking: false, result: null } }));
+    setAnswers((prev) => ({ ...prev, [i]: { text: "", checking: false, result: null, error: null } }));
   }
 
   if (loading) {
@@ -115,9 +122,10 @@ export default function SelfCheckPanel({ noteId }: { noteId: string }) {
                     placeholder="Type your answer here…"
                     rows={2}
                   />
+                  {state.error && <Alert tone="info">Couldn't check that just now — {state.error}</Alert>}
                   <div>
                     <Button size="sm" onClick={() => submitAnswer(i, q)} loading={state.checking} disabled={!state.text.trim()}>
-                      Submit answer
+                      {state.error ? "Try again" : "Submit answer"}
                     </Button>
                   </div>
                 </div>

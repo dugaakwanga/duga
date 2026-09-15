@@ -2337,6 +2337,11 @@ model FamilyContent {
   title             String
   body              String
   imageUrl          String?
+  // An optional attached PDF/Word document — e.g. a printable recipe sheet
+  // or a longer write-up — opened inline the same way a lesson note's
+  // attached document does (see DocumentViewerModal).
+  attachmentUrl     String?
+  attachmentName    String?
   isPublished       Boolean               @default(true)
   publishedByUserId String?
   createdAt         DateTime              @default(now())

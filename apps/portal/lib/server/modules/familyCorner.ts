@@ -40,6 +40,8 @@ export const familyCornerModule: Module = {
         title,
         body,
         imageUrl: str(ctx.body.imageUrl),
+        attachmentUrl: str(ctx.body.attachmentUrl),
+        attachmentName: str(ctx.body.attachmentName),
         isPublished: bool(ctx.body.isPublished) ?? true,
         publishedByUserId: ctx.session.user.id,
       },
@@ -57,6 +59,8 @@ export const familyCornerModule: Module = {
     if (str(ctx.body.title)) data.title = str(ctx.body.title);
     if (str(ctx.body.body)) data.body = str(ctx.body.body);
     if (ctx.body.imageUrl !== undefined) data.imageUrl = str(ctx.body.imageUrl) ?? null;
+    if (ctx.body.attachmentUrl !== undefined) data.attachmentUrl = str(ctx.body.attachmentUrl) ?? null;
+    if (ctx.body.attachmentName !== undefined) data.attachmentName = str(ctx.body.attachmentName) ?? null;
     if (ctx.body.category !== undefined) {
       const category = str(ctx.body.category);
       if (!category || !VALID_CATEGORIES.includes(category as (typeof VALID_CATEGORIES)[number])) throw new Error("Choose a valid category");
