@@ -130,6 +130,19 @@ function parseSelfCheckQuestions(reply: string): Array<{ question: string; model
   return questions;
 }
 
+// pick() passes a date field through exactly as the client sent it — a
+// datetime-local input's raw value ("2026-09-16T11:27", no seconds or
+// timezone) fails Prisma's strict ISO-8601 DateTime validation unconverted,
+// same as any other free-form date string a client might send. Converts to
+// a real Date (or null to clear the field, or undefined to leave it alone
+// if the key wasn't present at all).
+function dateOrNull(v: unknown): Date | null | undefined {
+  if (v === undefined) return undefined;
+  if (v === null || v === "") return null;
+  const d = new Date(String(v));
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
 const includeBase = {
   classSubject: { include: { subject: true, classGroup: { include: { level: true } }, teacher: { include: { user: { select: { firstName: true, lastName: true } } } } } },
 };
@@ -383,19 +396,27 @@ export const learningModule: Module = {
     if (kind === "assignments") {
       const item = await prisma.assignment.findFirst({ where: { id: ctx.id, schoolId, ...teacherFilter } });
       if (!item) throw new Error("Assignment not found");
-      return prisma.assignment.update({ where: { id: ctx.id }, data: pick(ctx.body, ["title", "instructions", "dueAt", "isPublished", "maxScore", "targetStudentIds"]) });
+      const data = pick(ctx.body, ["title", "instructions", "dueAt", "isPublished", "maxScore", "targetStudentIds"]);
+      // The edit form sends maxScore as a string like every other text
+      // input — maxScore is an Int column, so Prisma rejects it unconverted.
+      if (data.maxScore !== undefined) data.maxScore = num(data.maxScore) ?? item.maxScore;
+      if (data.dueAt !== undefined) data.dueAt = dateOrNull(data.dueAt);
+      return prisma.assignment.update({ where: { id: ctx.id }, data });
     }
     if (kind === "tests") {
       const test = await prisma.test.findFirst({ where: { id: ctx.id, schoolId, ...teacherFilter } });
       if (!test) throw new Error("Test not found");
       if (test?.isExam && role !== "OWNER" && role !== "ADMIN") {
         // Exams can only be published (status -> PUBLISHED) by the owner/admin.
-        return prisma.test.update({
-          where: { id: ctx.id },
-          data: pick(ctx.body, ["title", "description", "instruction", "passMark", "startsAt", "endsAt", "durationMinutes", "shuffleQuestions", "showResults", "targetStudentIds"]),
-        });
+        const examData = pick(ctx.body, ["title", "description", "instruction", "passMark", "startsAt", "endsAt", "durationMinutes", "shuffleQuestions", "showResults", "targetStudentIds"]);
+        if (examData.startsAt !== undefined) examData.startsAt = dateOrNull(examData.startsAt);
+        if (examData.endsAt !== undefined) examData.endsAt = dateOrNull(examData.endsAt);
+        return prisma.test.update({ where: { id: ctx.id }, data: examData });
       }
-      return prisma.test.update({ where: { id: ctx.id }, data: pick(ctx.body, ["title", "description", "instruction", "passMark", "startsAt", "endsAt", "durationMinutes", "status", "shuffleQuestions", "showResults", "targetStudentIds"]) });
+      const data = pick(ctx.body, ["title", "description", "instruction", "passMark", "startsAt", "endsAt", "durationMinutes", "status", "shuffleQuestions", "showResults", "targetStudentIds"]);
+      if (data.startsAt !== undefined) data.startsAt = dateOrNull(data.startsAt);
+      if (data.endsAt !== undefined) data.endsAt = dateOrNull(data.endsAt);
+      return prisma.test.update({ where: { id: ctx.id }, data });
     }
     throw new Error("Update not supported for this kind");
   },

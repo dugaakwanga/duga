@@ -99,16 +99,28 @@ export default function LearningPage() {
     }
   }
 
+  // <input type="datetime-local"> only accepts "yyyy-MM-ddTHH:mm" in the
+  // viewer's local time — the API's raw ISO string (with seconds + a "Z"
+  // UTC suffix) silently fails to populate the field at all, so a due date
+  // that's actually set still shows the empty placeholder when editing.
+  function toDatetimeLocal(iso?: string | null): string {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
   function openEdit(item: Item) {
     setForm({
       topic: item.topic ?? "",
       title: item.title ?? "",
       content: item.content ?? "",
       instructions: item.instructions ?? "",
-      dueAt: item.dueAt ?? "",
+      dueAt: toDatetimeLocal(item.dueAt),
       maxScore: String(item.maxScore ?? ""),
       description: item.description ?? "",
-      scheduledAt: item.scheduledAt ?? "",
+      scheduledAt: toDatetimeLocal(item.scheduledAt),
     });
     setEditItem(item);
     setOpen(true);
