@@ -1,4 +1,5 @@
 import { prisma } from "./prisma";
+import { sendPush } from "./push";
 
 export interface NotifyOptions {
   schoolId: string;
@@ -7,7 +8,7 @@ export interface NotifyOptions {
   title: string;
   body?: string;
   link?: string;
-  channels?: Array<"IN_APP" | "EMAIL" | "SMS">;
+  channels?: Array<"IN_APP" | "EMAIL" | "SMS" | "PUSH">;
 }
 
 // Unified notification service. Always persists an in-app notification; sends
@@ -37,6 +38,10 @@ export async function dispatchNotification(opts: NotifyOptions): Promise<void> {
 
   if (channels.includes("SMS")) {
     await sendSms(opts);
+  }
+
+  if (channels.includes("PUSH")) {
+    await sendPush(opts);
   }
 }
 

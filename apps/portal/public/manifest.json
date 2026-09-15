@@ -1,0 +1,14 @@
+{
+  "name": "De Ultimate Glory Academy Portal",
+  "short_name": "DUGA Portal",
+  "description": "School portal for students, parents, teachers, administrators and the proprietor.",
+  "start_url": "/portal",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#caa53a",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

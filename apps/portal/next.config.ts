@@ -7,7 +7,7 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ["@duga/ui"],
   },
-  serverExternalPackages: ["@prisma/client"],
+  serverExternalPackages: ["@prisma/client", "firebase-admin"],
   // Belt-and-braces alongside the pageshow/bfcache check in PortalShell:
   // never let a browser or intermediate proxy cache an authenticated page,
   // so a stale signed-in view can't resurface after logout.

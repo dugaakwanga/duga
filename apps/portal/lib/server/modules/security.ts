@@ -9,18 +9,20 @@ function todayUTC(): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
 
-// In-app only — gate events fire up to twice per student per day (arrival +
-// departure), which for a school this size can exceed Resend's free-tier
-// 100-emails/day cap before the school day is even over. Email would then
-// silently stop working for the rest of the day with no visible sign to
-// staff. In-app notifications have no such ceiling, so they're the reliable
-// channel for this specific, high-volume event type.
+// In-app + push — gate events fire up to twice per student per day (arrival
+// + departure), which for a school this size can exceed any email/SMS free
+// tier's daily-volume or hourly-rate cap well before the school day is even
+// over, and even within a free tier's limits, an inbox isn't a real-time
+// channel. Push (Firebase Cloud Messaging) has no such ceiling and delivers
+// instantly, so it's the reliable channel for this specific, high-volume,
+// time-sensitive event type — in-app stays alongside it for the bell-icon
+// history, and as a fallback for a parent who hasn't installed the app yet.
 async function notifyParents(schoolId: string, studentId: string, title: string, body: string) {
   const links = await prisma.studentParent.findMany({ where: { studentId }, select: { parent: { select: { userId: true } } } });
   const userIds = links.map((l) => l.parent.userId);
   await Promise.all(
     userIds.map((userId) =>
-      dispatchNotification({ schoolId, userId, type: "gate", title, body, channels: ["IN_APP"] }).catch(() => undefined),
+      dispatchNotification({ schoolId, userId, type: "gate", title, body, channels: ["IN_APP", "PUSH"] }).catch(() => undefined),
     ),
   );
 }

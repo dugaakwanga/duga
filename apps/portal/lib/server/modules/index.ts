@@ -47,6 +47,7 @@ import { admissionsTestModule } from "./admissionsTest";
 import { calendarModule } from "./calendar";
 import { schemeModule } from "./scheme";
 import { paperExamModule } from "./paperExam";
+import { pushModule } from "./push";
 
 export const modules: Record<string, Module> = {
   dashboard: dashboardModule,
@@ -85,6 +86,7 @@ export const modules: Record<string, Module> = {
   calendar: calendarModule,
   scheme: schemeModule,
   paperExam: paperExamModule,
+  push: pushModule,
 };
 
 export type { Ctx };

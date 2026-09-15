@@ -8,6 +8,7 @@ import { Icon, Avatar } from "@duga/ui";
 import { api, getActiveSection } from "@/lib/client/api";
 import { siteHomeUrl } from "@/lib/client/site";
 import { SectionProvider, useSection } from "@/components/SectionContext";
+import { PushInstallGate } from "@/components/PushInstallGate";
 import type { Section } from "@/lib/sections";
 
 interface NavItem {
@@ -575,6 +576,7 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
 
   return (
     <SectionProvider available={user.sections ?? []} canSwitch={user.canSwitchSection ?? false}>
+      <PushInstallGate role={user.role} />
       <div className="portal-shell">
       {sidebarOpen && <div className="portal-sidebar-scrim" onClick={() => setSidebarOpen(false)} />}
       <aside className={`portal-sidebar${sidebarOpen ? " open" : ""}`}>

@@ -321,10 +321,27 @@ model User {
   createdFeeOverrides      FeeOverride[]             @relation("OverrideCreator")
   recordedPtaMeetings      PtaMeeting[]              @relation("PtaMeetingRecorder")
   recordedPtaContributions PtaContribution[]         @relation("PtaContributionRecorder")
+  pushTokens               PushToken[]
 
   @@unique([schoolId, email])
   @@index([schoolId, role])
   @@index([schoolId, status])
+}
+
+// A registered browser/device for web push (Firebase Cloud Messaging). One
+// user can have several — a parent's phone and desktop, say — so this is its
+// own table rather than a single column on User.
+model PushToken {
+  id         String   @id @default(cuid())
+  userId     String
+  token      String   @unique
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Student {
