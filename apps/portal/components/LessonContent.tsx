@@ -96,17 +96,35 @@ export default function LessonContent({ content, images }: { content: string; im
   }
 
   if (isHtml(content)) {
+    // Quill (LessonEditor) saves ordinary inter-word spaces as literal
+    // "&nbsp;" entities rather than plain spaces — a well-known quirk of how
+    // its contenteditable model serializes text. A non-breaking space is, by
+    // definition, never a line-break opportunity, so a whole paragraph can
+    // end up as one giant unbreakable "word" the browser can't wrap at all —
+    // exactly what caused the card-preview bug fixed earlier, just showing
+    // up here as full-content overflow instead. A real space renders
+    // identically (HTML collapses runs of whitespace either way), so this is
+    // safe to normalize at render time without touching the stored HTML.
+    const wrappable = content.replace(/&nbsp;/g, " ");
     return (
       <>
         <div
           className="lesson-content-html"
-          style={{ fontSize: 14, lineHeight: 1.75 }}
+          // minWidth: 0 overrides the browser's default `auto` for a grid/flex
+          // item — without it, this block sizes to its text's UNWRAPPED width
+          // (every paragraph laid out on one line) instead of shrinking to fit
+          // the modal, and gets clipped by the card's overflow-x: hidden. The
+          // parent here is the "viewItem" modal's `display: grid` wrapper in
+          // learning/page.tsx. overflowWrap: "anywhere" is a second safety
+          // net — even a genuinely long unbroken token (a URL, say) can now
+          // still be forced to wrap rather than overflow.
+          style={{ fontSize: 14, lineHeight: 1.75, minWidth: 0, overflowWrap: "anywhere" }}
           onClick={onContentClick}
           // Authored only by teaching staff through LessonEditor (a controlled
           // rich-text editor, not free-form HTML input) or converted
           // server/client-side from the AI's own plain-text draft — never
           // reflects arbitrary student/parent input.
-          dangerouslySetInnerHTML={{ __html: content }}
+          dangerouslySetInnerHTML={{ __html: wrappable }}
         />
         <DocumentViewerModal url={viewer?.url ?? null} name={viewer?.name} onClose={() => setViewer(null)} />
       </>
@@ -118,7 +136,7 @@ export default function LessonContent({ content, images }: { content: string; im
   const extraImages = images.slice(inlineCount).filter(Boolean);
 
   return (
-    <div style={{ fontSize: 14 }}>
+    <div style={{ fontSize: 14, minWidth: 0, overflowWrap: "anywhere" }}>
       {parts.map((part, i) => (
         <span key={i}>
           <TextBlock text={part} />

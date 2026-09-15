@@ -440,7 +440,11 @@ export default function LearningPage() {
 
       <Modal open={!!viewItem} onClose={() => setViewItem(null)} title={viewItem?.topic ?? viewItem?.title ?? ""} wide>
         {viewItem && (
-          <div style={{ display: "grid", gap: 14 }}>
+          // gridTemplateColumns: "minmax(0,1fr)" (not just "grid") stops a
+          // child with long unwrapped text from stretching this column past
+          // the modal's width — the browser's default single-column "auto"
+          // track otherwise sizes to content's full unwrapped width.
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr)", gap: 14 }}>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               <Badge tone="info">{viewItem.classSubject?.subject?.name ?? "—"}</Badge>
               {viewItem.classSubject?.classGroup && (

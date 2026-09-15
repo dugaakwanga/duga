@@ -229,6 +229,7 @@ const rolePermissions: Record<Role, Permission[]> = {
     "gate:view",
     "calendar:view",
     "calendar:manage",
+    "familyCorner:view",
     "familyCorner:manage",
   ],
   // Bursar access is intentionally limited to finance, plus view-only
