@@ -27,7 +27,7 @@ export const dashboardModule: Module = {
         finance = financeOn && (row?.value === true || row?.value === "true");
       }
       const attendanceWhere = { schoolId, ...(section ? { student: { section } } : {}) };
-      const [studentCount, staff, classCount, invoiceStats, applications, unpaid, today, attendanceRows, averageResult] = await Promise.all([
+      const [studentCount, staff, classCount, invoiceStats, applications, unpaid, today, attendanceTotal, attendancePresent, averageResult] = await Promise.all([
         prisma.student.count({ where: studentWhere }),
         prisma.teacher.findMany({ where: { schoolId, user: { status: "ACTIVE" } }, select: { id: true, sections: true } }),
         prisma.classGroup.count({ where: classWhere }),
@@ -35,12 +35,16 @@ export const dashboardModule: Module = {
         prisma.application.count({ where: { schoolId, status: "RECEIVED", ...(section ? { section } : {}) } }),
         finance ? prisma.invoice.count({ where: { schoolId, status: { in: ["UNPAID", "PARTIAL"] }, ...(section ? { student: { is: { section } } } : {}) } }) : Promise.resolve(0),
         prisma.studentAttendance.count({ where: { ...attendanceWhere, date: new Date() } }),
-        prisma.studentAttendance.findMany({ where: attendanceWhere, select: { status: true }, take: 5000 }),
+        // Was a findMany() pulling up to 5000 raw rows (every attendance record
+        // ever taken school-wide, unbounded by date) just to count them in JS
+        // for a percentage — two COUNT queries get the same number without
+        // shipping thousands of rows over the wire on every dashboard load.
+        prisma.studentAttendance.count({ where: attendanceWhere }),
+        prisma.studentAttendance.count({ where: { ...attendanceWhere, status: { in: ["PRESENT", "LATE"] } } }),
         prisma.reportCard.aggregate({ where: { schoolId, isPublished: true, ...(section ? { classGroup: { level: { section } } } : {}) }, _avg: { average: true }, _count: { average: true } }),
       ]);
       const staffCount = section ? staff.filter((teacher) => Array.isArray(teacher.sections) && teacher.sections.some((s) => typeof s === "string" && s.trim().toLowerCase() === section.trim().toLowerCase())).length : staff.length;
-      const present = attendanceRows.filter((row) => row.status === "PRESENT" || row.status === "LATE").length;
-      const attendanceRate = attendanceRows.length ? Math.round((present / attendanceRows.length) * 100) : 0;
+      const attendanceRate = attendanceTotal ? Math.round((attendancePresent / attendanceTotal) * 100) : 0;
       return {
         role,
         counts: { studentCount, staffCount, classCount, applications, unpaid, today },

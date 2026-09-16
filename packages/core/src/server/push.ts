@@ -24,6 +24,12 @@ function loadMessaging(): Promise<import("firebase-admin/messaging").Messaging |
 // registered. Unlike email/SMS this channel has no free-tier volume or rate
 // ceiling, so it's the right choice for high-frequency, time-sensitive
 // events (e.g. gate clock-in/out) — see notifyParents() in security.ts.
+// Token error codes that mean the device/browser itself is gone
+// (uninstalled, permission revoked, token rotated out) — worth deleting so
+// we stop trying. Anything else (quota, transient network) is not a
+// reason to give up on the token, just this one send.
+const STALE_TOKEN_CODES = new Set(["messaging/registration-token-not-registered", "messaging/invalid-registration-token"]);
+
 export async function sendPush(opts: NotifyOptions): Promise<void> {
   try {
     const tokens = await prisma.pushToken.findMany({ where: { userId: opts.userId }, select: { id: true, token: true } });
@@ -35,19 +41,27 @@ export async function sendPush(opts: NotifyOptions): Promise<void> {
       return;
     }
 
-    const res = await messaging.sendEachForMulticast({
+    const payload = {
       tokens: tokens.map((t) => t.token),
       notification: { title: opts.title, body: opts.body || "" },
       data: opts.link ? { link: opts.link } : undefined,
       webpush: opts.link ? { fcmOptions: { link: opts.link } } : undefined,
-    });
+    };
 
-    // Clean up tokens the device/browser no longer recognizes (uninstalled,
-    // permission revoked, etc.) so we stop trying to send to them.
+    // A momentary FCM/network blip shouldn't silently drop a time-sensitive
+    // alert (e.g. a gate clock-in) — retry once before giving up.
+    let res;
+    try {
+      res = await messaging.sendEachForMulticast(payload);
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      res = await messaging.sendEachForMulticast(payload);
+    }
+
     const stale: string[] = [];
     res.responses.forEach((r, i) => {
       const id = tokens[i]?.id;
-      if (id && !r.success && r.error?.code === "messaging/registration-token-not-registered") {
+      if (id && !r.success && r.error?.code && STALE_TOKEN_CODES.has(r.error.code)) {
         stale.push(id);
       }
     });

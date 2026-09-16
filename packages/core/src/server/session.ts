@@ -50,26 +50,24 @@ export async function getSession(): Promise<SessionUser | null> {
 
   // A momentary DB connection blip here shouldn't bounce a valid, logged-in
   // user out to "Authentication required" — retry once before giving up.
-  let user: Awaited<ReturnType<typeof loadUser>>;
-  try {
-    user = await loadUser(claims);
-  } catch {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    user = await loadUser(claims);
-  }
+  // The user row and the school row don't depend on each other (the school
+  // id is already in the JWT claims), so load them concurrently instead of
+  // one after the other — this runs on every authenticated request, so the
+  // saved round trip adds up across the whole app.
+  const [user, school] = await Promise.all([
+    loadUser(claims).catch(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return loadUser(claims);
+    }),
+    prisma.school.findUnique({ where: { id: claims.schoolId }, select: { platformStatus: true } }).catch(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return prisma.school.findUnique({ where: { id: claims.schoolId }, select: { platformStatus: true } });
+    }),
+  ]);
 
   let result: SessionUser | null = null;
-  if (user && user.status === "ACTIVE" && isSchoolRole(user.role)) {
-    let school;
-    try {
-      school = await prisma.school.findUnique({ where: { id: user.schoolId }, select: { platformStatus: true } });
-    } catch {
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      school = await prisma.school.findUnique({ where: { id: user.schoolId }, select: { platformStatus: true } });
-    }
-    if (school && school.platformStatus === "ACTIVE") {
-      result = { user, claims: { ...claims, role: user.role } };
-    }
+  if (user && user.status === "ACTIVE" && isSchoolRole(user.role) && school && school.platformStatus === "ACTIVE") {
+    result = { user, claims: { ...claims, role: user.role } };
   }
   sessionCache.set(token, { value: result, expiresAt: Date.now() + SESSION_CACHE_TTL_MS });
   // Bound the cache in long-lived (warm serverless / dev) processes — a plain
