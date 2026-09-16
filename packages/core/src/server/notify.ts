@@ -50,9 +50,19 @@ export async function dispatchNotification(opts: NotifyOptions): Promise<void> {
   }
 }
 
+// Admissions mail (application status, "you're admitted") comes from the
+// admissions inbox; every other notification type comes from the general
+// info inbox — two separate Resend-verified senders on the same domain.
+function fromAddressFor(type: string): string {
+  if (type === "application") {
+    return process.env.MAIL_FROM_ADMISSIONS || process.env.MAIL_FROM || "no-reply@deultimateglory.com";
+  }
+  return process.env.MAIL_FROM || "no-reply@deultimateglory.com";
+}
+
 async function sendEmail(opts: NotifyOptions) {
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.MAIL_FROM || "no-reply@deultimateglory.com";
+  const from = fromAddressFor(opts.type);
   try {
     const user = await prisma.user.findUnique({ where: { id: opts.userId }, select: { email: true } });
     if (!user?.email) return;
@@ -73,11 +83,12 @@ async function sendEmail(opts: NotifyOptions) {
 
 // Send an email to an arbitrary address that isn't (yet) tied to a User row
 // — e.g. an admissions applicant who hasn't been admitted, so has no portal
-// account for dispatchNotification's user-scoped lookups to find.
+// account for dispatchNotification's user-scoped lookups to find. Only ever
+// called for admissions flows, so it always sends from the admissions inbox.
 export async function sendRawEmail(to: string, subject: string, body: string): Promise<void> {
   if (!to) return;
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.MAIL_FROM || "no-reply@deultimateglory.com";
+  const from = fromAddressFor("application");
   try {
     if (apiKey) {
       const res = await fetch("https://api.resend.com/emails", {
