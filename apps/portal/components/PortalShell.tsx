@@ -616,7 +616,12 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
 
       <div className="portal-main">
         <header className="portal-topbar">
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          {/* flex + minWidth:0 so this row itself stretches to fill the
+          space .portal-topbar's space-between leaves it — without it, the
+          title inside (which shrinks/ellipsizes via CSS) has no actual
+          space to shrink FROM, since its immediate parent was sizing to
+          content instead of the row, and the title collapsed to 0 width. */}
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flex: "1 1 auto", minWidth: 0 }}>
             <button className="duga-btn duga-btn--ghost duga-btn--sm portal-mobile-toggle" onClick={() => setSidebarOpen((v) => !v)} aria-label="Toggle menu">
               <Icon name="menu" size={18} />
             </button>

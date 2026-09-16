@@ -16,6 +16,24 @@ html, body {
   overflow-x: hidden;
 }
 
+/* Second half of the safety net above: overflow-x:hidden on html/body stops
+   a runaway-width element from scrolling the WHOLE PAGE sideways, but by
+   itself it just clips that element's content instead of fixing why it
+   went wide in the first place — the "text gets cut off" version of the
+   same bug, seen repeatedly in flex/grid containers (a Card, an Alert, the
+   topbar) where one long unbroken line of text sizes the flex/grid item to
+   its full unwrapped width. Per spec, a flex/grid item's default min-width
+   is `auto` — effectively "never shrink narrower than my content wants" —
+   not 0, so an ellipsis/wrap rule on that same element has no box left to
+   actually apply to. This resets it globally so text is free to wrap or
+   ellipsis inside its container instead of forcing the container wider.
+   Any element that genuinely needs a floor (e.g. a fixed-width select) is
+   unaffected — a real min-width set via a class or inline style always
+   wins over this on specificity. */
+*, *::before, *::after {
+  min-width: 0;
+}
+
 .portal-body {
   background: var(--duga-surface);
   color: var(--duga-ink);
@@ -139,12 +157,24 @@ html, body {
   font-size: 17px;
   font-weight: 560;
   color: var(--duga-primary-ink);
+  /* Always truncate with an ellipsis, at every width — not just the ≤560px
+     override below — and actually shrink to allow it: text-overflow does
+     nothing on a flex item that's still sized to its own content (that's
+     what min-width:0 above already fixes generally, flex-shrink is the
+     other half — without it this title simply refuses to give up space to
+     its flex siblings, i.e. exactly how the sign-out button was ending up
+     pushed off-screen/hidden behind a long page title). */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.portal-topbar__actions { display: flex; align-items: center; gap: 8px; }
-.portal-topbar__user { display: flex; align-items: center; gap: 11px; }
-.portal-topbar__user-details { line-height: 1.3; }
-.portal-topbar__user-name { font-size: 13.5px; font-weight: 600; color: var(--duga-primary-ink); }
-.portal-topbar__user-role { font-size: 11.5px; color: var(--duga-muted); text-transform: capitalize; }
+.portal-topbar__actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.portal-topbar__user { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.portal-topbar__user-details { line-height: 1.3; min-width: 0; overflow: hidden; }
+.portal-topbar__user-name { font-size: 13.5px; font-weight: 600; color: var(--duga-primary-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.portal-topbar__user-role { font-size: 11.5px; color: var(--duga-muted); text-transform: capitalize; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 620px) {
   .portal-topbar__user-details { display: none; }
 }
@@ -165,7 +195,12 @@ html, body {
      own "All sections" option and was pushing the select itself below a
      usable width, truncating it mid-word (e.g. "All secti…"). */
   .duga-section-switcher__label { display: none; }
-  .duga-section-switcher__select { max-width: 92px; min-width: 72px; flex-shrink: 0; }
+  /* The actual max-width override for the select lives further down, right
+     after .duga-section-switcher__select's base rule — CSS cascade order
+     (not specificity) decides between two equal-specificity rules, and a
+     narrower max-width declared HERE was silently losing to the base
+     rule's wider 150px simply because that base rule comes later in the
+     file. Keeping the two in one place avoids that trap recurring. */
 }
 
 .portal-sidebar-scrim {
@@ -1191,6 +1226,13 @@ body {
   padding: 4px;
   border-radius: 8px;
   line-height: 1;
+}
+/* Placed here, after the base rule above, so it actually wins on cascade
+   order — an identical override living earlier in the file (inside the
+   ≤560px block near .portal-topbar) was being silently beaten by this
+   same-specificity base rule simply for coming first. */
+@media (max-width: 560px) {
+  .duga-section-switcher__select { max-width: 92px; min-width: 72px; flex-shrink: 0; }
 }
 
 /* Print: strip portal chrome so in-page content (invoices, timetables,
