@@ -30,6 +30,10 @@ messaging.onBackgroundMessage((payload) => {
     body,
     icon: "/icons/icon-192.png",
     badge: "/icons/icon-192.png",
+    // Makes it buzz like a normal app notification on Android (Chrome plays
+    // the device's default notification sound automatically as long as
+    // "silent" isn't set — there's no standard way to pick a custom sound).
+    vibrate: [200, 100, 200],
     data: { link },
   });
 });

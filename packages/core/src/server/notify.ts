@@ -15,7 +15,12 @@ export interface NotifyOptions {
 // email/SMS via adapters when providers are configured, otherwise logs to the
 // server console (development fallback).
 export async function dispatchNotification(opts: NotifyOptions): Promise<void> {
-  const channels = opts.channels?.length ? opts.channels : ["IN_APP"];
+  // PUSH is on by default alongside IN_APP — sendPush() silently no-ops for
+  // any user with no registered device token, so this costs nothing for
+  // users who haven't installed the app, and gets every notification type
+  // onto a phone (as a real beep/vibrate alert) for those who have, without
+  // every call site needing to remember to opt in.
+  const channels = opts.channels?.length ? opts.channels : ["IN_APP", "PUSH"];
 
   if (channels.includes("IN_APP")) {
     await prisma.notification.create({
@@ -122,7 +127,7 @@ export async function dispatchToMany(
   userIds: string[],
   opts: Omit<NotifyOptions, "userId">,
 ): Promise<void> {
-  const channels = opts.channels?.length ? opts.channels : ["IN_APP"];
+  const channels = opts.channels?.length ? opts.channels : ["IN_APP", "PUSH"];
 
   if (channels.includes("IN_APP") && userIds.length) {
     await prisma.notification.createMany({

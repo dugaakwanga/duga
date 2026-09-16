@@ -85,7 +85,7 @@ export const applicationsModule: Module = {
       const title = `Application ${status.toLowerCase()}`;
       const body = `Your application status is now: ${status}.`;
       if (user) {
-        await dispatchNotification({ schoolId, userId: user.id, type: "application", title, body, link: "/portal/applications", channels: ["IN_APP", "EMAIL"] });
+        await dispatchNotification({ schoolId, userId: user.id, type: "application", title, body, link: "/portal/applications", channels: ["IN_APP", "EMAIL", "PUSH"] });
       } else if (app.email) {
         await sendRawEmail(app.email, title, body);
       }
@@ -174,7 +174,7 @@ export const applicationsModule: Module = {
         title: "Congratulations — you've been admitted!",
         body: `Your admission number is ${admissionNumber}.${credentialsLine} Sign in to the student portal to begin.`,
         link: "/portal/student",
-        channels: ["IN_APP", "EMAIL"],
+        channels: ["IN_APP", "EMAIL", "PUSH"],
       });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "application.admitted", entityType: "Application", entityId: app.id, meta: { admissionNumber } });
       return { ok: true, studentId: student.id, admissionNumber, tempEmail: user.email };

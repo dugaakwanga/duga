@@ -107,7 +107,16 @@ export async function startForegroundPushListener(): Promise<void> {
     const title = payload.notification?.title || "DUGA Portal";
     const body = payload.notification?.body || "";
     const link = payload.fcmOptions?.link || (payload.data as Record<string, string> | undefined)?.link || "/portal";
-    const n = new Notification(title, { body, icon: "/icons/icon-192.png", data: { link } });
+    // vibrate on the Notification options only takes effect on platforms
+    // that support it (mainly Android Chrome); navigator.vibrate() is the
+    // direct fallback, and only works because the tab is in the foreground
+    // here (background tabs can't trigger it).
+    const n = new Notification(title, { body, icon: "/icons/icon-192.png", data: { link }, vibrate: [200, 100, 200] } as NotificationOptions);
+    try {
+      navigator.vibrate?.([200, 100, 200]);
+    } catch {
+      // Vibration API not available — nothing to do.
+    }
     n.onclick = () => {
       window.focus();
       window.location.href = link;

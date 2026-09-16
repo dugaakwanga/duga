@@ -210,7 +210,7 @@ export const securityModule: Module = {
           type: "visitor",
           title: "You have a visitor",
           body: `${name} is at the gate to see you${visitor.purpose ? ` — ${visitor.purpose}` : ""}.`,
-          channels: ["IN_APP", "EMAIL"],
+          channels: ["IN_APP", "EMAIL", "PUSH"],
         }).catch(() => undefined);
       }
       return visitor;

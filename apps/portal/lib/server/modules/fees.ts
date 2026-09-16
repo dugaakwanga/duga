@@ -45,7 +45,7 @@ async function notifyParentsOfBalance(schoolId: string, studentId: string, invoi
     title: "Outstanding school fees",
     body: `Outstanding balance: ${formatNaira(Number(invoice.balance))} for ${invoice.invoiceNumber}.`,
     link: "/portal/fees",
-    channels: ["IN_APP", "EMAIL", "SMS"],
+    channels: ["IN_APP", "EMAIL", "SMS", "PUSH"],
   })));
   return links.length;
 }
@@ -585,7 +585,7 @@ export const feesModule: Module = {
             title: "Fee payment reminder",
             body: `Outstanding balance: ${formatNaira(Number(inv.balance))} for ${inv.invoiceNumber}.`,
             link: "/portal/fees",
-            channels: ["IN_APP", "EMAIL", "SMS"],
+            channels: ["IN_APP", "EMAIL", "SMS", "PUSH"],
           });
           sent += 1;
         }
