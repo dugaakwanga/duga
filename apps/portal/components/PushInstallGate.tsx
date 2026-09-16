@@ -127,16 +127,20 @@ export function PushInstallGate({ role }: { role: string }) {
         padding: 16,
       }}
     >
-      <div style={{ width: "100%", maxWidth: 440 }}>
+      <div style={{ width: "100%", maxWidth: 440, minWidth: 0 }}>
         <Card title="One more step — instant pickup & drop-off alerts">
-          <div style={{ display: "grid", gap: 14 }}>
+          {/* gridTemplateColumns: "minmax(0,1fr)" (not just "grid") on every
+          grid wrapper below — without it, a long line of text can size the
+          column to its full unwrapped width instead of shrinking to fit a
+          phone screen, and gets clipped instead of wrapping. Same fix as
+          the lesson-content overflow bug. */}
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr)", gap: 14 }}>
             <div style={{ fontSize: 13.5, color: "var(--duga-muted)" }}>
-              To tell you the moment your child arrives at or leaves school, this portal needs to be installed on your phone so it can send you alerts —
-              this only takes a minute and only needs doing once.
+              Install this app on your phone so you get instant alerts when your child arrives at or leaves school. Takes a minute, only needs doing once.
             </div>
 
             {!standalone && (
-              <div style={{ display: "grid", gap: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr)", gap: 10 }}>
                 <div style={{ fontWeight: 600, fontSize: 13.5, display: "flex", alignItems: "center", gap: 6 }}>
                   <Icon name="attendance" size={16} /> Step 1: Add to Home Screen
                 </div>
@@ -170,9 +174,13 @@ export function PushInstallGate({ role }: { role: string }) {
                 )}
                 {checkedOnce && !standalone && (
                   <Alert tone="warning">
-                    Still showing as not installed. Tapping this button only re-checks — it can&apos;t detect the icon by itself while you&apos;re
-                    still inside this browser tab. Please <strong>close this browser tab completely</strong>, then find and tap the{" "}
-                    <strong>DUGA Portal icon on your Home Screen</strong> (not this browser) to open it from there.
+                    {/* Alert renders its children in a flex row (icon + text
+                    side by side) — a bare mix of text and a <strong> here
+                    would split into separate flex items instead of flowing
+                    as one paragraph, so it all needs to be ONE child. */}
+                    <span>
+                      Still not detected. Close this tab, then open the app from the <strong>DUGA Portal icon</strong> on your Home Screen.
+                    </span>
                   </Alert>
                 )}
                 <Button
@@ -189,7 +197,7 @@ export function PushInstallGate({ role }: { role: string }) {
             )}
 
             {standalone && permission !== "granted" && (
-              <div style={{ display: "grid", gap: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr)", gap: 10 }}>
                 <div style={{ fontWeight: 600, fontSize: 13.5, display: "flex", alignItems: "center", gap: 6 }}>
                   <Icon name="attendance" size={16} /> Step 2: Turn on alerts
                 </div>
