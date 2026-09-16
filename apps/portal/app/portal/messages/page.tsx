@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { PageHeader, Input, EmptyState, Alert, Spinner, Avatar, Badge, Icon, Modal } from "@duga/ui";
 import { api } from "@/lib/client/api";
@@ -300,7 +300,13 @@ function MessagesPageInner() {
                 const prev = thread[i - 1];
                 const showDay = !prev || new Date(prev.sentAt).toDateString() !== new Date(m.sentAt).toDateString();
                 return (
-                  <div key={m.id}>
+                  // A Fragment, not a wrapping <div> — chat-thread is the flex
+                  // container that chat-bubble--me/--them's align-self relies
+                  // on to sit right/left. A wrapping block div around each
+                  // bubble (needed for the day separator) made the BUBBLE a
+                  // non-flex-item, so align-self stopped doing anything and
+                  // every message — sender or receiver — stacked on the left.
+                  <Fragment key={m.id}>
                     {showDay && (
                       <div className="chat-day-sep">
                         <span>{dayLabel(m.sentAt)}</span>
@@ -311,7 +317,7 @@ function MessagesPageInner() {
                       {m.body}
                       <div className="chat-meta">{new Date(m.sentAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</div>
                     </div>
-                  </div>
+                  </Fragment>
                 );
               })}
               <div ref={bottomRef} />
