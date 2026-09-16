@@ -484,12 +484,64 @@ html, body {
 /* ---------- Score / entry grid ---------- */
 .duga-score-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
 
-/* ---------- Chat ---------- */
-.duga-chat-grid { display: grid; grid-template-columns: 280px 1fr; gap: 16px; align-items: start; }
-@media (max-width: 700px) {
-  .duga-chat-grid { grid-template-columns: 1fr; }
-  .duga-chat-grid .duga-card { height: auto !important; max-height: 40vh; }
+/* ---------- Chat (WhatsApp-style messages page) ---------- */
+.duga-messages-grid {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  height: calc(100vh - 230px);
+  min-height: 460px;
+  border: 1px solid var(--duga-border);
+  border-radius: var(--duga-radius-lg);
+  overflow: hidden;
+  background: var(--duga-bg);
 }
+.duga-messages-list { display: flex; flex-direction: column; min-width: 0; border-right: 1px solid var(--duga-border); }
+.duga-messages-list__header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--duga-border); gap: 10px; }
+.duga-messages-list__scroll { flex: 1; overflow-y: auto; min-height: 0; }
+.duga-messages-row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 12px 16px; border: none; border-bottom: 1px solid var(--duga-border); background: transparent; cursor: pointer; min-width: 0; }
+.duga-messages-row:hover { background: var(--duga-surface); }
+.duga-messages-row[data-active] { background: var(--duga-surface-2); }
+.duga-messages-row__body { flex: 1 1 auto; min-width: 0; }
+.duga-messages-row__top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.duga-messages-row__name { font-weight: 700; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.duga-messages-row__time { font-size: 11.5px; color: var(--duga-muted); flex-shrink: 0; }
+.duga-messages-row__bottom { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 2px; }
+.duga-messages-row__preview { font-size: 13px; color: var(--duga-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.duga-messages-row__dot { width: 10px; height: 10px; border-radius: 999px; background: var(--duga-primary); flex-shrink: 0; }
+
+.duga-messages-thread { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.duga-messages-thread__header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--duga-border); background: var(--duga-surface); }
+/* Only shown on narrow screens (see the ≤700px block below), where the
+   list and the open chat share one screen and need a way back — like
+   WhatsApp's own chat view, not a permanent two-pane split. */
+.duga-messages-thread__back { display: none; flex-shrink: 0; }
+.duga-messages-thread__name { font-weight: 700; font-size: 15px; }
+.duga-messages-thread__role { font-size: 12px; color: var(--duga-muted); text-transform: capitalize; }
+.duga-messages-thread .chat-thread { flex: 1 1 auto; min-height: 0; max-height: none; margin: 0; padding: 16px; background: var(--duga-surface); }
+.duga-messages-composer { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--duga-border); }
+.duga-messages-composer__input { flex: 1 1 auto; min-width: 0; border: 1px solid var(--duga-border-strong); border-radius: 999px; padding: 10px 16px; font-size: 14px; font-family: inherit; background: var(--duga-surface); }
+.duga-messages-composer__input:focus { outline: none; border-color: var(--duga-primary); }
+.duga-messages-composer__send { flex-shrink: 0; width: 40px; height: 40px; border-radius: 999px; border: none; background: var(--duga-primary); color: #fff; display: grid; place-items: center; cursor: pointer; }
+.duga-messages-composer__send:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.chat-day-sep { text-align: center; margin: 10px 0; }
+.chat-day-sep span { display: inline-block; background: var(--duga-surface-2); color: var(--duga-muted); font-size: 11.5px; font-weight: 600; padding: 4px 12px; border-radius: 999px; }
+
+@media (max-width: 700px) {
+  /* Only one pane at a time on a phone, exactly like WhatsApp: the chat
+     list is its own full-height screen, and opening a conversation swaps
+     to a full-height thread with a back button — not both panes squeezed
+     into a capped-height stack. */
+  .duga-messages-grid { grid-template-columns: 1fr; height: calc(100vh - 190px); border-radius: var(--duga-radius); }
+  .duga-messages-grid[data-mobile-view="thread"] .duga-messages-list { display: none; }
+  .duga-messages-grid[data-mobile-view="list"] .duga-messages-thread { display: none; }
+  .duga-messages-thread__back { display: inline-flex; }
+}
+
+/* "New chat" contact picker modal */
+.duga-contact-list { max-height: 50vh; overflow-y: auto; margin-top: 12px; display: flex; flex-direction: column; gap: 2px; }
+.duga-contact-row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 10px 8px; border: none; background: transparent; border-radius: var(--duga-radius); cursor: pointer; }
+.duga-contact-row:hover { background: var(--duga-surface); }
 
 /* Two-column content split (dashboards etc.) — stacks on phones */
 .duga-split-2 { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; align-items: start; }

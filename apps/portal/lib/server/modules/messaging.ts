@@ -106,12 +106,15 @@ export const messagingModule: Module = {
     return {
       items: conversations.map((c) => {
         const lastMessage = c.messages[0] ?? null;
+        const me = c.participants.find((p) => p.userId === ctx.session.user.id);
+        const unread = Boolean(lastMessage && lastMessage.senderId !== ctx.session.user.id && (!me || lastMessage.sentAt > me.lastReadAt));
         return {
           id: c.id,
           title: c.title,
           type: c.type,
           updatedAt: c.updatedAt,
           lastMessage,
+          unread,
           others: c.participants.filter((p) => p.userId !== ctx.session.user.id).map((p) => p.user),
         };
       }),
@@ -175,6 +178,52 @@ export const messagingModule: Module = {
   },
 
   actions: {
+    // People the current user is allowed to start a direct conversation
+    // with — mirrors mayDirectMessage()'s role rules so the picker never
+    // offers someone the send would then reject. Replaces the old raw
+    // "paste a user ID" flow with an actual searchable contact list.
+    contacts: async (ctx) => {
+      can(ctx, "messaging:use");
+      const schoolId = ctx.session.user.schoolId;
+      const role = ctx.session.user.role;
+      const q = str(ctx.query.get("q"))?.trim();
+      let roles: string[];
+      if (role === "OWNER" || role === "ADMIN") {
+        roles = ["OWNER", "ADMIN", "BURSAR", "TEACHER", "STUDENT", "PARENT", "SECURITY"];
+      } else if (role === "STUDENT") {
+        const { allowStudentToStudentChat } = await getRestrictionsConfig(schoolId);
+        roles = allowStudentToStudentChat ? ["TEACHER", "ADMIN", "STUDENT"] : ["TEACHER", "ADMIN"];
+      } else if (role === "TEACHER") {
+        roles = ["ADMIN", "STUDENT", "PARENT"];
+      } else if (role === "PARENT") {
+        roles = ["TEACHER", "ADMIN"];
+      } else {
+        roles = [];
+      }
+      if (!roles.length) return { items: [] };
+      const users = await prisma.user.findMany({
+        where: {
+          schoolId,
+          status: "ACTIVE",
+          role: { in: roles as never },
+          id: { not: ctx.session.user.id },
+          ...(q
+            ? {
+                OR: [
+                  { firstName: { contains: q, mode: "insensitive" } },
+                  { lastName: { contains: q, mode: "insensitive" } },
+                  { email: { contains: q, mode: "insensitive" } },
+                ],
+              }
+            : {}),
+        },
+        select: { id: true, firstName: true, lastName: true, role: true, avatarUrl: true },
+        orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+        take: 50,
+      });
+      return { items: users };
+    },
+
     // Send a message
     send: async (ctx) => {
       can(ctx, "messaging:use");

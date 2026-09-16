@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
-import { PageHeader, Input, Button, EmptyState, Alert, Spinner } from "@duga/ui";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { PageHeader, Input, Button, EmptyState, Alert, Spinner, Avatar, Badge, Icon, Modal } from "@duga/ui";
 import { api } from "@/lib/client/api";
 
 interface Conversation {
@@ -10,6 +10,7 @@ interface Conversation {
   type: string;
   updatedAt: string;
   lastMessage: { id: string; body: string; sentAt: string; senderId: string } | null;
+  unread: boolean;
   others: Array<{ id: string; firstName: string; lastName: string; role: string; avatarUrl: string | null }>;
 }
 
@@ -21,16 +22,60 @@ interface Message {
   sender: { id: string; firstName: string; lastName: string };
 }
 
+interface Contact {
+  id: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+  avatarUrl: string | null;
+}
+
+function convName(c: Conversation): string {
+  return c.others.map((o) => `${o.firstName} ${o.lastName}`).join(", ") || "Group";
+}
+
+function timeLabel(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+  const sameYear = d.getFullYear() === now.getFullYear();
+  return d.toLocaleDateString([], sameYear ? { day: "numeric", month: "short" } : { day: "numeric", month: "short", year: "numeric" });
+}
+
+function dayLabel(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return "Today";
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+  const sameYear = d.getFullYear() === now.getFullYear();
+  return d.toLocaleDateString([], sameYear ? { weekday: "long", day: "numeric", month: "short" } : { day: "numeric", month: "short", year: "numeric" });
+}
+
 export default function MessagesPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [thread, setThread] = useState<Message[]>([]);
+  const [threadLoading, setThreadLoading] = useState(false);
   const [draft, setDraft] = useState("");
-  const [newUserId, setNewUserId] = useState("");
+  const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [myId, setMyId] = useState<string>("");
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [contactQuery, setContactQuery] = useState("");
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [contactsLoading, setContactsLoading] = useState(false);
+  const [contactsError, setContactsError] = useState<string | null>(null);
+
+  const activeConversation = useMemo(() => conversations.find((c) => c.id === active) ?? null, [conversations, active]);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -49,34 +94,171 @@ export default function MessagesPage() {
 
   useEffect(() => {
     if (!active) return;
+    setThreadLoading(true);
     api<{ id: string; messages: Message[] }>(`messages/${active}`)
       .then((c) => {
         setThread(c.messages);
-        setConversations((prev) => prev.map((cv) => ({ ...cv, lastMessage: c.messages[c.messages.length - 1] ?? cv.lastMessage })));
+        setConversations((prev) =>
+          prev.map((cv) => (cv.id === active ? { ...cv, unread: false, lastMessage: c.messages[c.messages.length - 1] ?? cv.lastMessage } : cv)),
+        );
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setThreadLoading(false));
   }, [active]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [thread.length]);
 
+  // Debounced contact search — waits for a pause in typing before hitting
+  // the server, same as any normal "search people" picker.
+  useEffect(() => {
+    if (!pickerOpen) return;
+    setContactsLoading(true);
+    setContactsError(null);
+    const t = setTimeout(() => {
+      api<{ items: Contact[] }>("messages/contacts", { query: { q: contactQuery || undefined }, loading: false })
+        .then((d) => setContacts(d.items))
+        .catch((e) => setContactsError(e.message))
+        .finally(() => setContactsLoading(false));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [pickerOpen, contactQuery]);
+
   async function send() {
-    if (!active || !draft.trim()) return;
-    await api(`messages/${active}/send`, { method: "POST", body: { body: draft } });
+    const body = draft.trim();
+    if (!active || !body || sending) return;
     setDraft("");
-    const c = await api<{ id: string; messages: Message[] }>(`messages/${active}`);
-    setThread(c.messages);
+    setSending(true);
+    try {
+      await api(`messages/${active}/send`, { method: "POST", body: { body } });
+      const c = await api<{ id: string; messages: Message[] }>(`messages/${active}`);
+      setThread(c.messages);
+      setConversations((prev) => {
+        const last = c.messages[c.messages.length - 1] ?? null;
+        const next = prev.map((cv) => (cv.id === active ? { ...cv, lastMessage: last, updatedAt: new Date().toISOString() } : cv));
+        return next.sort((a, b) => (a.id === active ? -1 : b.id === active ? 1 : 0));
+      });
+    } finally {
+      setSending(false);
+    }
   }
 
-  async function startConversation() {
-    if (!newUserId.trim()) return;
-    const conv = await api<{ id: string }>("messages", { method: "POST", body: { userId: newUserId } });
-    setNewUserId("");
+  async function startConversation(userId: string) {
+    const conv = await api<{ id: string }>("messages", { method: "POST", body: { userId } });
+    setPickerOpen(false);
+    setContactQuery("");
     setActive(conv.id);
     const d = await api<{ items: Conversation[] }>("messages");
     setConversations(d.items);
   }
+
+  const list = (
+    <div className="duga-messages-list">
+      <div className="duga-messages-list__header">
+        <div className="duga-card__title" style={{ padding: 0 }}>Chats</div>
+        <button className="duga-btn duga-btn--accent duga-btn--sm" onClick={() => setPickerOpen(true)} aria-label="New chat">
+          <Icon name="plus" size={16} /> New chat
+        </button>
+      </div>
+      <div className="duga-messages-list__scroll">
+        {conversations.length === 0 && (
+          <div style={{ padding: 24 }}>
+            <EmptyState title="No conversations yet" hint="Tap “New chat” to message someone." />
+          </div>
+        )}
+        {conversations.map((c) => {
+          const other = c.others[0];
+          const preview = c.lastMessage
+            ? `${c.lastMessage.senderId === myId ? "You: " : ""}${c.lastMessage.body}`
+            : "No messages yet";
+          return (
+            <button
+              key={c.id}
+              onClick={() => setActive(c.id)}
+              className="duga-messages-row"
+              data-active={active === c.id || undefined}
+            >
+              <Avatar name={other ? `${other.firstName} ${other.lastName}` : convName(c)} src={other?.avatarUrl} size={46} />
+              <div className="duga-messages-row__body">
+                <div className="duga-messages-row__top">
+                  <span className="duga-messages-row__name">{convName(c)}</span>
+                  {c.lastMessage && <span className="duga-messages-row__time">{timeLabel(c.lastMessage.sentAt)}</span>}
+                </div>
+                <div className="duga-messages-row__bottom">
+                  <span className="duga-messages-row__preview">{preview}</span>
+                  {c.unread && <span className="duga-messages-row__dot" />}
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  const thread_ = (
+    <div className="duga-messages-thread">
+      {!activeConversation ? (
+        <EmptyState title="Select a conversation" hint="Choose a chat on the left, or start a new one." />
+      ) : (
+        <>
+          <div className="duga-messages-thread__header">
+            <button className="duga-btn duga-btn--ghost duga-btn--sm duga-messages-thread__back" onClick={() => setActive(null)} aria-label="Back to chats">
+              <Icon name="back" size={18} />
+            </button>
+            <Avatar name={convName(activeConversation)} src={activeConversation.others[0]?.avatarUrl} size={38} />
+            <div>
+              <div className="duga-messages-thread__name">{convName(activeConversation)}</div>
+              {activeConversation.others[0] && <div className="duga-messages-thread__role">{activeConversation.others[0].role.toLowerCase()}</div>}
+            </div>
+          </div>
+
+          {threadLoading ? (
+            <div style={{ flex: 1, display: "grid", placeItems: "center" }}>
+              <Spinner size={26} />
+            </div>
+          ) : (
+            <div className="chat-thread">
+              {thread.map((m, i) => {
+                const me = m.sender.id === myId;
+                const prev = thread[i - 1];
+                const showDay = !prev || new Date(prev.sentAt).toDateString() !== new Date(m.sentAt).toDateString();
+                return (
+                  <div key={m.id}>
+                    {showDay && (
+                      <div className="chat-day-sep">
+                        <span>{dayLabel(m.sentAt)}</span>
+                      </div>
+                    )}
+                    <div className={`chat-bubble ${me ? "chat-bubble--me" : "chat-bubble--them"}`}>
+                      {!me && <div style={{ fontWeight: 600, fontSize: 12, opacity: 0.85 }}>{m.sender.firstName} {m.sender.lastName}</div>}
+                      {m.body}
+                      <div className="chat-meta">{new Date(m.sentAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</div>
+                    </div>
+                  </div>
+                );
+              })}
+              <div ref={bottomRef} />
+            </div>
+          )}
+
+          <div className="duga-messages-composer">
+            <input
+              className="duga-messages-composer__input"
+              placeholder="Type a message…"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
+            />
+            <button className="duga-messages-composer__send" onClick={send} disabled={!draft.trim() || sending} aria-label="Send">
+              <Icon name="send" size={18} />
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
 
   return (
     <div>
@@ -85,61 +267,41 @@ export default function MessagesPage() {
       {loading ? (
         <Spinner size={28} />
       ) : (
-        <div className="duga-chat-grid">
-          <div className="duga-card" style={{ padding: 0, height: 520, overflowY: "auto" }}>
-            <div style={{ padding: 12, borderBottom: "1px solid var(--duga-border)" }}>
-              <Input placeholder="Other user's ID…" value={newUserId} onChange={(e) => setNewUserId(e.target.value)} />
-              <Button variant="outline" size="sm" onClick={startConversation} style={{ marginTop: 8 }}>Start conversation</Button>
-            </div>
-            {conversations.length === 0 && <EmptyState title="No conversations" />}
-            {conversations.map((c) => (
-              <div
-                key={c.id}
-                onClick={() => setActive(c.id)}
-                style={{
-                  padding: 12,
-                  cursor: "pointer",
-                  borderBottom: "1px solid var(--duga-border)",
-                  background: active === c.id ? "var(--duga-surface-2)" : "transparent",
-                }}
-              >
-                <div style={{ fontWeight: 600, fontSize: 14 }}>
-                  {c.others.map((o) => `${o.firstName} ${o.lastName}`).join(", ") || "Group"}
-                </div>
-                <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginTop: 2 }}>
-                  {c.lastMessage ? c.lastMessage.body.slice(0, 60) : "No messages yet"}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="duga-card" style={{ height: 520, display: "flex", flexDirection: "column" }}>
-            {!active ? (
-              <EmptyState title="Select a conversation" hint="Choose a thread on the left to start chatting." />
-            ) : (
-              <>
-                <div className="chat-thread">
-                  {thread.map((m) => {
-                    const me = m.sender.id === myId;
-                    return (
-                      <div key={m.id} className={`chat-bubble ${me ? "chat-bubble--me" : "chat-bubble--them"}`}>
-                        {!me && <div style={{ fontWeight: 600, fontSize: 12, opacity: 0.85 }}>{m.sender.firstName} {m.sender.lastName}</div>}
-                        {m.body}
-                        <div className="chat-meta">{new Date(m.sentAt).toLocaleTimeString()}</div>
-                      </div>
-                    );
-                  })}
-                  <div ref={bottomRef} />
-                </div>
-                <div style={{ display: "flex", gap: 10, marginTop: 12, borderTop: "1px solid var(--duga-border)", paddingTop: 12 }}>
-                  <Input placeholder="Type a message…" value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} />
-                  <Button onClick={send}>Send</Button>
-                </div>
-              </>
-            )}
-          </div>
+        <div className="duga-messages-grid" data-mobile-view={active ? "thread" : "list"}>
+          {list}
+          {thread_}
         </div>
       )}
+
+      <Modal open={pickerOpen} onClose={() => setPickerOpen(false)} title="New chat">
+        <Input
+          placeholder="Search by name or email…"
+          value={contactQuery}
+          onChange={(e) => setContactQuery(e.target.value)}
+          autoFocus
+        />
+        <div className="duga-contact-list">
+          {contactsLoading ? (
+            <div style={{ padding: 20, textAlign: "center" }}>
+              <Spinner size={22} />
+            </div>
+          ) : contactsError ? (
+            <Alert tone="danger">{contactsError}</Alert>
+          ) : contacts.length === 0 ? (
+            <EmptyState title="No matches" hint="Try a different name." />
+          ) : (
+            contacts.map((c) => (
+              <button key={c.id} className="duga-contact-row" onClick={() => startConversation(c.id)}>
+                <Avatar name={`${c.firstName} ${c.lastName}`} src={c.avatarUrl} size={40} />
+                <div style={{ textAlign: "left" }}>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>{c.firstName} {c.lastName}</div>
+                  <Badge tone="neutral">{c.role.toLowerCase()}</Badge>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }
