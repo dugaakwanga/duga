@@ -59,10 +59,10 @@ export async function POST(request: NextRequest) {
     } else if (purpose === "school-logo") {
       assertPermission(session.user.role, "settings:manage");
     } else if (purpose === "avatar") {
-      // Only staff may set their own profile picture. Students and parents keep
-      // the photo the school assigns them.
-      if (session.user.role === "STUDENT" || session.user.role === "PARENT") {
-        throw new ForbiddenError("Students and parents cannot change their profile photo");
+      // Students keep the photo the school (admin) assigns them — everyone
+      // else, including parents, may set their own profile picture.
+      if (session.user.role === "STUDENT") {
+        throw new ForbiddenError("Students cannot change their profile photo");
       }
     } else if (purpose === "clock-photo") {
       assertPermission(session.user.role, "staff:clock");

@@ -32,7 +32,7 @@ export default function ProfilePage() {
   const [pw, setPw] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
   const [pwMsg, setPwMsg] = useState<string | null>(null);
 
-  const canEditPhoto = me ? me.role !== "STUDENT" && me.role !== "PARENT" : false;
+  const canEditPhoto = me ? me.role !== "STUDENT" : false;
   const photo = canEditPhoto ? avatarUrl : (me?.photoUrl ?? me?.avatarUrl ?? "");
 
   useEffect(() => {

@@ -337,8 +337,14 @@ export const messagingModule: Module = {
         orderBy: { createdAt: "desc" },
         take: 60,
       });
+      // The client (PortalShell's bell dropdown) reads `read`, not the raw
+      // Prisma field `isRead` — without this mapping every notification
+      // comes back with `read` simply absent (always falsy), so it looks
+      // unread forever no matter what notificationsRead actually set in
+      // the database.
+      const items = notifications.map((n) => ({ ...n, read: n.isRead }));
       const unread = notifications.filter((n) => !n.isRead).length;
-      return { items: notifications, unread };
+      return { items, unread };
     },
 
     notificationsRead: async (ctx) => {

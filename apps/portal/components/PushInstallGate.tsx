@@ -10,13 +10,15 @@ interface InstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
-// Forces a parent through "install to Home Screen" + "turn on notifications"
-// before they can use the portal, so gate clock-in/out alerts (the whole
-// reason push exists — see notifyParents() in security.ts) actually reach
-// their phone. Re-checks on every mount/focus, so if the icon gets deleted,
-// the next open (necessarily back in a plain browser tab) fails the
-// standalone check and this reappears on its own — no separate "detect
-// uninstall" logic needed.
+// Roles forced through "install to Home Screen" + "turn on notifications" —
+// parents (gate clock-in/out alerts, the original reason push exists — see
+// notifyParents() in security.ts) and teachers. Students and staff who
+// manage the school (owner/admin/bursar) are exempt.
+const FORCED_ROLES = ["PARENT", "TEACHER"];
+
+// Re-checks on every mount/focus, so if the icon gets deleted, the next open
+// (necessarily back in a plain browser tab) fails the standalone check and
+// this reappears on its own — no separate "detect uninstall" logic needed.
 export function PushInstallGate({ role }: { role: string }) {
   const pathname = usePathname();
   const [standalone, setStandalone] = useState(false);
@@ -29,10 +31,10 @@ export function PushInstallGate({ role }: { role: string }) {
   const registeredRef = useRef(false);
   const foregroundListenerRef = useRef(false);
 
-  // Don't gate: anyone but a parent, the set-password form itself (so it
-  // isn't blocked before they can even set a password), or a school that
+  // Don't gate: anyone not in FORCED_ROLES, the set-password form itself (so
+  // it isn't blocked before they can even set a password), or a school that
   // hasn't configured Firebase yet — nothing here would work anyway.
-  const skip = role !== "PARENT" || pathname.startsWith("/portal/set-password") || !pushConfigured();
+  const skip = !FORCED_ROLES.includes(role) || pathname.startsWith("/portal/set-password") || !pushConfigured();
 
   const check = useCallback(() => {
     setStandalone(isStandalone());
@@ -128,7 +130,7 @@ export function PushInstallGate({ role }: { role: string }) {
       }}
     >
       <div style={{ width: "100%", maxWidth: 440, minWidth: 0 }}>
-        <Card title="One more step — instant pickup & drop-off alerts">
+        <Card title="One more step — instant alerts">
           {/* gridTemplateColumns: "minmax(0,1fr)" (not just "grid") on every
           grid wrapper below — without it, a long line of text can size the
           column to its full unwrapped width instead of shrinking to fit a
@@ -136,7 +138,10 @@ export function PushInstallGate({ role }: { role: string }) {
           the lesson-content overflow bug. */}
           <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr)", gap: 14 }}>
             <div style={{ fontSize: 13.5, color: "var(--duga-muted)" }}>
-              Install this app on your phone so you get instant alerts when your child arrives at or leaves school. Takes a minute, only needs doing once.
+              {role === "PARENT"
+                ? "Install this app on your phone so you get instant alerts when your child arrives at or leaves school."
+                : "Install this app on your phone so you get instant alerts from the school."}{" "}
+              Takes a minute, only needs doing once.
             </div>
 
             {!standalone && (
