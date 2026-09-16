@@ -1,8 +1,40 @@
 import { prisma } from "@duga/core/server";
 import { dispatchNotification, logAudit } from "@duga/core/server";
 import type { Module } from ".";
-import { can, str } from "../helpers";
+import { can, str, sectionArray, sectionsOfTeacher, schoolSections } from "../helpers";
 import { getRestrictionsConfig } from "./settings";
+
+// Merges school-specific section names into two coarse messaging scopes —
+// "primary" (catches both "Primary" and "Pre-Primary") and "secondary"
+// (catches "Secondary", "Junior Secondary", "Senior Secondary", ...) — so a
+// Primary teacher can also reach Pre-Primary contacts and any Secondary
+// teacher (junior or senior) can reach the whole Secondary section, without
+// hardcoding a specific school's exact section names.
+function sectionGroupOf(name: string): string {
+  const n = name.trim().toLowerCase();
+  if (n.includes("secondary")) return "secondary";
+  if (n.includes("primary")) return "primary";
+  return n;
+}
+
+const CONTACT_ROLE_LABELS: Record<string, string> = {
+  OWNER: "Owner",
+  ADMIN: "Admins",
+  BURSAR: "Bursars",
+  TEACHER: "Teachers",
+  SECURITY: "Security",
+  PARENT: "Parents",
+  STUDENT: "Students",
+};
+const CONTACT_ROLE_ORDER = ["OWNER", "ADMIN", "TEACHER", "BURSAR", "SECURITY", "PARENT", "STUDENT"];
+
+interface ContactUser {
+  id: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+  avatarUrl: string | null;
+}
 
 // Student-to-parent messaging is never allowed, in either direction,
 // regardless of any setting — only student<->student is admin-toggleable
@@ -200,28 +232,126 @@ export const messagingModule: Module = {
       } else {
         roles = [];
       }
-      if (!roles.length) return { items: [] };
-      const users = await prisma.user.findMany({
-        where: {
-          schoolId,
-          status: "ACTIVE",
-          role: { in: roles as never },
-          id: { not: ctx.session.user.id },
-          ...(q
-            ? {
-                OR: [
-                  { firstName: { contains: q, mode: "insensitive" } },
-                  { lastName: { contains: q, mode: "insensitive" } },
-                  { email: { contains: q, mode: "insensitive" } },
-                ],
-              }
-            : {}),
-        },
-        select: { id: true, firstName: true, lastName: true, role: true, avatarUrl: true },
-        orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
-        take: 50,
+      if (!roles.length) return { groups: [] };
+
+      // A teacher only reaches people tied to their own section(s) — see
+      // sectionGroupOf() above for how Pre-Primary/Primary and every
+      // Secondary sub-level are merged into one shared scope each.
+      let allowedSectionNames: string[] | null = null;
+      if (role === "TEACHER" && ctx.session.user.teacher) {
+        const [own, all] = await Promise.all([sectionsOfTeacher(ctx.session.user.teacher.id), schoolSections(schoolId)]);
+        const wanted = new Set(own.map(sectionGroupOf));
+        allowedSectionNames = all.filter((s) => wanted.has(sectionGroupOf(s)));
+      }
+      const teacherGroups = role === "TEACHER" && allowedSectionNames ? new Set(allowedSectionNames.map(sectionGroupOf)) : null;
+
+      const search = q
+        ? {
+            OR: [
+              { firstName: { contains: q, mode: "insensitive" as const } },
+              { lastName: { contains: q, mode: "insensitive" as const } },
+              { email: { contains: q, mode: "insensitive" as const } },
+            ],
+          }
+        : {};
+      const toContact = (u: { id: string; firstName: string; lastName: string; role: string; avatarUrl: string | null }): ContactUser => ({
+        id: u.id,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        role: u.role,
+        avatarUrl: u.avatarUrl,
       });
-      return { items: users };
+
+      const groups: Array<{ key: string; label: string; contacts?: ContactUser[]; subgroups?: { key: string; label: string; contacts: ContactUser[] }[] }> = [];
+
+      for (const r of roles) {
+        if (r === "STUDENT") {
+          const students = await prisma.user.findMany({
+            where: {
+              schoolId,
+              status: "ACTIVE",
+              role: "STUDENT",
+              id: { not: ctx.session.user.id },
+              ...(allowedSectionNames ? { student: { section: { in: allowedSectionNames } } } : {}),
+              ...search,
+            },
+            select: {
+              id: true, firstName: true, lastName: true, role: true, avatarUrl: true,
+              student: { select: { currentClassGroupId: true, classGroup: { select: { name: true, level: { select: { name: true } } } } } },
+            },
+            orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+            take: 500,
+          });
+          if (!students.length) continue;
+          const byClass = new Map<string, { key: string; label: string; contacts: ContactUser[] }>();
+          for (const u of students) {
+            const classId = u.student?.currentClassGroupId ?? "none";
+            // A class's own name is often just a bare arm letter (e.g. "A"),
+            // distinct only alongside its level (e.g. "JSS1") — group labels
+            // need both, or every arm-A class across every level looks the same.
+            const group = u.student?.classGroup;
+            const label = group ? `${group.level.name} ${group.name}`.trim() : "Unassigned";
+            if (!byClass.has(classId)) byClass.set(classId, { key: classId, label, contacts: [] });
+            byClass.get(classId)!.contacts.push(toContact(u));
+          }
+          const subgroups = [...byClass.values()].sort((a, b) => a.label.localeCompare(b.label));
+          groups.push({ key: "STUDENT", label: "Students", subgroups });
+          continue;
+        }
+
+        if (r === "PARENT") {
+          const parents = await prisma.user.findMany({
+            where: {
+              schoolId,
+              status: "ACTIVE",
+              role: "PARENT",
+              id: { not: ctx.session.user.id },
+              ...(allowedSectionNames ? { parent: { students: { some: { student: { section: { in: allowedSectionNames } } } } } } : {}),
+              ...search,
+            },
+            select: { id: true, firstName: true, lastName: true, role: true, avatarUrl: true },
+            orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+            take: 500,
+          });
+          if (!parents.length) continue;
+          groups.push({ key: "PARENT", label: "Parents", contacts: parents.map(toContact) });
+          continue;
+        }
+
+        if (r === "ADMIN" && teacherGroups) {
+          const admins = await prisma.user.findMany({
+            where: { schoolId, status: "ACTIVE", role: "ADMIN", id: { not: ctx.session.user.id }, ...search },
+            select: {
+              id: true, firstName: true, lastName: true, role: true, avatarUrl: true,
+              admin: { select: { sections: true } },
+            },
+            orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+            take: 300,
+          });
+          // An admin with no explicit section assignment has whole-school
+          // access (see Admin.sections in schema.prisma), so every teacher
+          // can still reach them regardless of the teacher's own section.
+          const scoped = admins.filter((u) => {
+            const assigned = sectionArray(u.admin?.sections);
+            return assigned.length === 0 || assigned.some((s) => teacherGroups.has(sectionGroupOf(s)));
+          });
+          if (!scoped.length) continue;
+          groups.push({ key: "ADMIN", label: "Admins", contacts: scoped.map(toContact) });
+          continue;
+        }
+
+        const plain = await prisma.user.findMany({
+          where: { schoolId, status: "ACTIVE", role: r as never, id: { not: ctx.session.user.id }, ...search },
+          select: { id: true, firstName: true, lastName: true, role: true, avatarUrl: true },
+          orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+          take: 300,
+        });
+        if (!plain.length) continue;
+        groups.push({ key: r, label: CONTACT_ROLE_LABELS[r] ?? r, contacts: plain });
+      }
+
+      groups.sort((a, b) => CONTACT_ROLE_ORDER.indexOf(a.key) - CONTACT_ROLE_ORDER.indexOf(b.key));
+      return { groups };
     },
 
     // Send a message

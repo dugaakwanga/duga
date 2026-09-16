@@ -536,11 +536,33 @@ html, body {
   .duga-messages-grid[data-mobile-view="thread"] .duga-messages-list { display: none; }
   .duga-messages-grid[data-mobile-view="list"] .duga-messages-thread { display: none; }
   .duga-messages-thread__back { display: inline-flex; }
+  /* The floating AI assistant button (.duga-ai__fab, PortalShell.tsx) is
+     fixed to the bottom-right corner of the viewport on every page. Most
+     pages have enough scroll room that it never overlaps anything, but the
+     composer here is deliberately pinned near the bottom of a full-height
+     chat pane, so its send button was ending up directly underneath the
+     button — reserve that corner instead of fighting over it. */
+  .duga-messages-composer { padding-right: 96px; }
 }
 
-/* "New chat" contact picker modal */
-.duga-contact-list { max-height: 50vh; overflow-y: auto; margin-top: 12px; display: flex; flex-direction: column; gap: 2px; }
-.duga-contact-row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 10px 8px; border: none; background: transparent; border-radius: var(--duga-radius); cursor: pointer; }
+/* "New chat" contact picker modal — categorized instead of one long list:
+   role groups (Owner, Teachers, Bursars, Security, Parents), with Students
+   nested one level further by class. Collapsed by default; searching
+   force-opens everything so matches are never hidden behind a click. */
+.duga-contact-list { max-height: 55vh; overflow-y: auto; margin-top: 12px; display: flex; flex-direction: column; gap: 2px; }
+.duga-contact-group { border-bottom: 1px solid var(--duga-border); }
+.duga-contact-group__head, .duga-contact-subgroup__head {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  padding: 10px 6px; border: none; background: transparent; cursor: pointer; font-weight: 700; font-size: 13.5px;
+}
+.duga-contact-subgroup__head { padding-left: 22px; font-weight: 600; font-size: 13px; color: var(--duga-ink-2); }
+.duga-contact-group__chevron { display: inline-block; font-size: 11px; color: var(--duga-muted); transition: transform 0.15s ease; flex-shrink: 0; }
+.duga-contact-group__chevron[data-open] { transform: rotate(90deg); }
+.duga-contact-group__label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.duga-contact-group__count { font-size: 12px; font-weight: 600; color: var(--duga-muted); background: var(--duga-surface-2); border-radius: 999px; padding: 1px 8px; flex-shrink: 0; }
+.duga-contact-group__body { display: flex; flex-direction: column; gap: 2px; padding-bottom: 4px; }
+.duga-contact-subgroup__body { display: flex; flex-direction: column; gap: 2px; padding-bottom: 4px; padding-left: 14px; }
+.duga-contact-row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 8px; border: none; background: transparent; border-radius: var(--duga-radius); cursor: pointer; }
 .duga-contact-row:hover { background: var(--duga-surface); }
 
 /* Two-column content split (dashboards etc.) — stacks on phones */

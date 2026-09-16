@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { PageHeader, Input, Button, EmptyState, Alert, Spinner, Avatar, Badge, Icon, Modal } from "@duga/ui";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { PageHeader, Input, EmptyState, Alert, Spinner, Avatar, Badge, Icon, Modal } from "@duga/ui";
 import { api } from "@/lib/client/api";
 
 interface Conversation {
@@ -22,12 +23,25 @@ interface Message {
   sender: { id: string; firstName: string; lastName: string };
 }
 
-interface Contact {
+interface ContactUser {
   id: string;
   firstName: string;
   lastName: string;
   role: string;
   avatarUrl: string | null;
+}
+
+interface ContactSubgroup {
+  key: string;
+  label: string;
+  contacts: ContactUser[];
+}
+
+interface ContactGroup {
+  key: string;
+  label: string;
+  contacts?: ContactUser[];
+  subgroups?: ContactSubgroup[];
 }
 
 function convName(c: Conversation): string {
@@ -57,7 +71,29 @@ function dayLabel(iso: string): string {
   return d.toLocaleDateString([], sameYear ? { weekday: "long", day: "numeric", month: "short" } : { day: "numeric", month: "short", year: "numeric" });
 }
 
+function ContactRow({ contact, onPick }: { contact: ContactUser; onPick: (id: string) => void }) {
+  return (
+    <button className="duga-contact-row" onClick={() => onPick(contact.id)}>
+      <Avatar name={`${contact.firstName} ${contact.lastName}`} src={contact.avatarUrl} size={40} />
+      <div style={{ textAlign: "left" }}>
+        <div style={{ fontWeight: 600, fontSize: 14 }}>{contact.firstName} {contact.lastName}</div>
+        <Badge tone="neutral">{contact.role.toLowerCase()}</Badge>
+      </div>
+    </button>
+  );
+}
+
 export default function MessagesPage() {
+  return (
+    <Suspense>
+      <MessagesPageInner />
+    </Suspense>
+  );
+}
+
+function MessagesPageInner() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [thread, setThread] = useState<Message[]>([]);
@@ -71,11 +107,14 @@ export default function MessagesPage() {
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [contactQuery, setContactQuery] = useState("");
-  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [groups, setGroups] = useState<ContactGroup[]>([]);
   const [contactsLoading, setContactsLoading] = useState(false);
   const [contactsError, setContactsError] = useState<string | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [expandedSubgroups, setExpandedSubgroups] = useState<Set<string>>(new Set());
 
   const activeConversation = useMemo(() => conversations.find((c) => c.id === active) ?? null, [conversations, active]);
+  const searching = contactQuery.trim().length > 0;
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -91,6 +130,17 @@ export default function MessagesPage() {
         setLoading(false);
       });
   }, []);
+
+  // A "new message" notification links to /portal/messages/<id>, which
+  // redirects here with ?conversation=<id> (see app/portal/messages/[id])
+  // — open straight into that chat instead of leaving the visitor stuck on
+  // an empty list.
+  useEffect(() => {
+    const fromLink = searchParams.get("conversation");
+    if (!fromLink) return;
+    setActive(fromLink);
+    router.replace("/portal/messages");
+  }, [searchParams, router]);
 
   useEffect(() => {
     if (!active) return;
@@ -117,13 +167,31 @@ export default function MessagesPage() {
     setContactsLoading(true);
     setContactsError(null);
     const t = setTimeout(() => {
-      api<{ items: Contact[] }>("messages/contacts", { query: { q: contactQuery || undefined }, loading: false })
-        .then((d) => setContacts(d.items))
+      api<{ groups: ContactGroup[] }>("messages/contacts", { query: { q: contactQuery || undefined }, loading: false })
+        .then((d) => setGroups(d.groups))
         .catch((e) => setContactsError(e.message))
         .finally(() => setContactsLoading(false));
     }, 250);
     return () => clearTimeout(t);
   }, [pickerOpen, contactQuery]);
+
+  function toggleGroup(key: string) {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function toggleSubgroup(key: string) {
+    setExpandedSubgroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
   async function send() {
     const body = draft.trim();
@@ -287,18 +355,53 @@ export default function MessagesPage() {
             </div>
           ) : contactsError ? (
             <Alert tone="danger">{contactsError}</Alert>
-          ) : contacts.length === 0 ? (
+          ) : groups.length === 0 ? (
             <EmptyState title="No matches" hint="Try a different name." />
           ) : (
-            contacts.map((c) => (
-              <button key={c.id} className="duga-contact-row" onClick={() => startConversation(c.id)}>
-                <Avatar name={`${c.firstName} ${c.lastName}`} src={c.avatarUrl} size={40} />
-                <div style={{ textAlign: "left" }}>
-                  <div style={{ fontWeight: 600, fontSize: 14 }}>{c.firstName} {c.lastName}</div>
-                  <Badge tone="neutral">{c.role.toLowerCase()}</Badge>
+            groups.map((g) => {
+              const count = g.contacts ? g.contacts.length : (g.subgroups ?? []).reduce((n, s) => n + s.contacts.length, 0);
+              const open = searching || expandedGroups.has(g.key);
+              return (
+                <div key={g.key} className="duga-contact-group">
+                  <button className="duga-contact-group__head" onClick={() => toggleGroup(g.key)}>
+                    <span className="duga-contact-group__chevron" data-open={open || undefined}>▸</span>
+                    <span className="duga-contact-group__label">{g.label}</span>
+                    <span className="duga-contact-group__count">{count}</span>
+                  </button>
+                  {open && g.contacts && (
+                    <div className="duga-contact-group__body">
+                      {g.contacts.map((c) => (
+                        <ContactRow key={c.id} contact={c} onPick={startConversation} />
+                      ))}
+                    </div>
+                  )}
+                  {open && g.subgroups && (
+                    <div className="duga-contact-group__body">
+                      {g.subgroups.map((sg) => {
+                        const subKey = `${g.key}:${sg.key}`;
+                        const subOpen = searching || expandedSubgroups.has(subKey);
+                        return (
+                          <div key={sg.key} className="duga-contact-subgroup">
+                            <button className="duga-contact-subgroup__head" onClick={() => toggleSubgroup(subKey)}>
+                              <span className="duga-contact-group__chevron" data-open={subOpen || undefined}>▸</span>
+                              <span className="duga-contact-group__label">{sg.label}</span>
+                              <span className="duga-contact-group__count">{sg.contacts.length}</span>
+                            </button>
+                            {subOpen && (
+                              <div className="duga-contact-subgroup__body">
+                                {sg.contacts.map((c) => (
+                                  <ContactRow key={c.id} contact={c} onPick={startConversation} />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              </button>
-            ))
+              );
+            })
           )}
         </div>
       </Modal>
