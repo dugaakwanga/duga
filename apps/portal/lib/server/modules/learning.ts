@@ -510,6 +510,15 @@ export const learningModule: Module = {
         attempts.map((a) => a.student.userId),
         { schoolId, type: "result", title: `Test result ready: ${test.title}`, body: "Your CBT result has been shared. Check your learning page.", link: "/portal/learning?kind=tests" },
       );
+      // A CBT result is a "results" notification like a report card — parents
+      // get it too, not just the student who sat the test.
+      const parentLinks = await prisma.studentParent.findMany({ where: { studentId: { in: attempts.map((a) => a.studentId) } }, include: { parent: true } });
+      if (parentLinks.length) {
+        await dispatchToMany(
+          parentLinks.map((p) => p.parent.userId),
+          { schoolId, type: "result", title: `Test result ready: ${test.title}`, body: "A CBT result has been shared for your child. Check the results page.", link: "/portal/learning?kind=tests" },
+        );
+      }
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "test.shareResults", entityType: "Test", entityId: ctx.id, meta: { count: attempts.length } });
       return { ok: true };
     },

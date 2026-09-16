@@ -642,11 +642,16 @@ export const resultsModule: Module = {
       if (!termId || !classGroupId) throw new Error("termId and classGroupId required");
       const result = await collateReportCards({ schoolId: ctx.session.user.schoolId, termId, classGroupId, publishedBy: ctx.session.user.id, publish: true });
 
-      // Notify parents/students
+      // Notify parents and students — the comment above the old code already
+      // said "parents/students" but only parents were ever actually notified.
       const studentIds = result.reportCards.map((rc) => rc.studentId);
-      const parentLinks = await prisma.studentParent.findMany({ where: { studentId: { in: studentIds } }, include: { parent: true } });
+      const [parentLinks, students] = await Promise.all([
+        prisma.studentParent.findMany({ where: { studentId: { in: studentIds } }, include: { parent: true } }),
+        prisma.student.findMany({ where: { id: { in: studentIds } }, select: { userId: true } }),
+      ]);
       const parentUserIds = parentLinks.map((p) => p.parent.userId);
       await dispatchToMany(parentUserIds, { schoolId: ctx.session.user.schoolId, type: "results", title: "Report cards published", body: "Your child's report card is now available on the portal.", link: "/portal/results" });
+      await dispatchToMany(students.map((s) => s.userId), { schoolId: ctx.session.user.schoolId, type: "results", title: "Report card published", body: "Your report card is now available on the portal.", link: "/portal/results" });
 
       await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "results.published", entityType: "ReportCard", meta: { termId, classGroupId, count: result.reportCards.length } });
       return { count: result.reportCards.length };

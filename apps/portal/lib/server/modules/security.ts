@@ -204,13 +204,16 @@ export const securityModule: Module = {
       });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "visitor.logged", entityType: "VisitorLog", entityId: visitor.id });
       if (host && hostUserId) {
+        // Not a fee/result/admission notice — push (+ in-app), not email, per
+        // the school's channel policy: email is reserved for money, grades,
+        // and admissions, everything else is push so it's seen in real time.
         await dispatchNotification({
           schoolId,
           userId: hostUserId,
           type: "visitor",
           title: "You have a visitor",
           body: `${name} is at the gate to see you${visitor.purpose ? ` — ${visitor.purpose}` : ""}.`,
-          channels: ["IN_APP", "EMAIL", "PUSH"],
+          channels: ["IN_APP", "PUSH"],
         }).catch(() => undefined);
       }
       return visitor;

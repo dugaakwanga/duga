@@ -50,6 +50,49 @@ async function notifyParentsOfBalance(schoolId: string, studentId: string, invoi
   return links.length;
 }
 
+// Every fee-related notification is routed to the parent's email (not just
+// in-app/push) — money matters need a channel a parent actually checks and
+// can find again later, unlike a push that scrolls away.
+async function notifyParentsOfPayment(schoolId: string, studentId: string, title: string, body: string) {
+  const links = await prisma.studentParent.findMany({ where: { schoolId, studentId }, include: { parent: true } });
+  await Promise.all(links.map((link) => dispatchNotification({
+    schoolId,
+    userId: link.parent.userId,
+    type: "payment",
+    title,
+    body,
+    link: "/portal/fees",
+    channels: ["IN_APP", "EMAIL", "PUSH"],
+  })));
+}
+
+// Shared by the manual "Send reminders" button (fees/remind) and the
+// automatic Mon/Wed/Fri cron job (app/api/cron/fee-reminders) — one place
+// for what a fee reminder actually says and who it goes to.
+export async function sendFeeReminders(schoolId: string): Promise<number> {
+  const unpaid = await prisma.invoice.findMany({
+    where: { schoolId, status: { in: ["UNPAID", "PARTIAL"] } },
+    include: { student: true },
+  });
+  let sent = 0;
+  for (const inv of unpaid) {
+    const parentLinks = await prisma.studentParent.findMany({ where: { studentId: inv.studentId }, include: { parent: true } });
+    for (const link of parentLinks) {
+      await dispatchNotification({
+        schoolId,
+        userId: link.parent.userId,
+        type: "fee_reminder",
+        title: "Fee payment reminder",
+        body: `Outstanding balance: ${formatNaira(Number(inv.balance))} for ${inv.invoiceNumber}.`,
+        link: "/portal/fees",
+        channels: ["IN_APP", "EMAIL", "SMS", "PUSH"],
+      });
+      sent += 1;
+    }
+  }
+  return sent;
+}
+
 async function paystackConfigured(): Promise<boolean> {
   const key = process.env.PAYSTACK_SECRET_KEY;
   return Boolean(key && !key.startsWith("sk_test_xxx"));
@@ -512,7 +555,9 @@ export const feesModule: Module = {
         if (Number(updated?.balance ?? 0) > 0 && updated) await notifyParentsOfBalance(schoolId, invoice.studentId, updated);
         const student = await prisma.student.findUnique({ where: { id: invoice.studentId }, include: { user: true } });
         if (student) {
-          await dispatchNotification({ schoolId, userId: student.userId, type: "payment", title: "Payment received", body: `₦${payAmount.toLocaleString()} received. Balance: ₦${(updated?.balance ?? 0).toLocaleString()}`, link: "/portal/fees" });
+          const body = `₦${payAmount.toLocaleString()} received. Balance: ₦${(updated?.balance ?? 0).toLocaleString()}`;
+          await dispatchNotification({ schoolId, userId: student.userId, type: "payment", title: "Payment received", body, link: "/portal/fees" });
+          await notifyParentsOfPayment(schoolId, invoice.studentId, "Payment received", body);
         }
         return { mock: true, reference, authorization_url: "/portal/fees", status: "SUCCESS", access };
       }
@@ -561,35 +606,19 @@ export const feesModule: Module = {
       await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "fees.paymentVerified", entityType: "Payment", entityId: payment.id, meta: { reference } });
       const student = await prisma.student.findUnique({ where: { id: payment.studentId }, include: { user: true } });
       if (student) {
-        await dispatchNotification({ schoolId: ctx.session.user.schoolId, userId: student.userId, type: "payment", title: "Payment confirmed", body: `₦${Number(payment.amount).toLocaleString()} confirmed. Balance: ₦${(invoice?.balance ?? 0).toLocaleString()}`, link: "/portal/fees" });
+        const body = `₦${Number(payment.amount).toLocaleString()} confirmed. Balance: ₦${(invoice?.balance ?? 0).toLocaleString()}`;
+        await dispatchNotification({ schoolId: ctx.session.user.schoolId, userId: student.userId, type: "payment", title: "Payment confirmed", body, link: "/portal/fees" });
+        await notifyParentsOfPayment(ctx.session.user.schoolId, payment.studentId, "Payment confirmed", body);
       }
       return { status: "SUCCESS", payment, invoice, access };
     },
 
-    // Send fee reminders to parents with unpaid/partial invoices
+    // Send fee reminders to parents with unpaid/partial invoices. Also runs
+    // automatically Mon/Wed/Fri via app/api/cron/fee-reminders — this stays
+    // as a manual "send now" option on top of that, not a replacement for it.
     remind: async (ctx) => {
       await assertFinanceManager(ctx);
-      const schoolId = ctx.session.user.schoolId;
-      const unpaid = await prisma.invoice.findMany({
-        where: { schoolId, status: { in: ["UNPAID", "PARTIAL"] } },
-        include: { student: true },
-      });
-      let sent = 0;
-      for (const inv of unpaid) {
-        const parentLinks = await prisma.studentParent.findMany({ where: { studentId: inv.studentId }, include: { parent: true } });
-        for (const link of parentLinks) {
-          await dispatchNotification({
-            schoolId,
-            userId: link.parent.userId,
-            type: "fee_reminder",
-            title: "Fee payment reminder",
-            body: `Outstanding balance: ${formatNaira(Number(inv.balance))} for ${inv.invoiceNumber}.`,
-            link: "/portal/fees",
-            channels: ["IN_APP", "EMAIL", "SMS", "PUSH"],
-          });
-          sent += 1;
-        }
-      }
+      const sent = await sendFeeReminders(ctx.session.user.schoolId);
       return { sent };
     },
 
