@@ -189,18 +189,31 @@ html, body {
 .portal-topbar__signout:hover { color: var(--duga-danger, #c0392b); opacity: 0.8; }
 @media (max-width: 560px) {
   .portal-topbar { padding: 0 14px; gap: 10px; height: 58px; }
+  .portal-topbar__actions { gap: 6px; }
   .portal-topbar__signout span { display: none; }
   .portal-topbar__title { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* The section switcher's label ("Section") is redundant with the select's
      own "All sections" option and was pushing the select itself below a
      usable width, truncating it mid-word (e.g. "All secti…"). */
   .duga-section-switcher__label { display: none; }
+  /* .portal-topbar__actions never shrinks (flex-shrink: 0 — its own icons
+     and avatar need to stay a legible tap-target size, not get squeezed),
+     so on a narrow phone every px it claims is a px the title can't have.
+     The "add section" button is the one piece of it that's a rare, non-
+     essential action — hiding it here (owners can still add a section from
+     a wider screen) hands back real room to the page title instead. */
+  .duga-section-switcher__add { display: none; }
   /* The actual max-width override for the select lives further down, right
      after .duga-section-switcher__select's base rule — CSS cascade order
      (not specificity) decides between two equal-specificity rules, and a
      narrower max-width declared HERE was silently losing to the base
      rule's wider 150px simply because that base rule comes later in the
      file. Keeping the two in one place avoids that trap recurring. */
+}
+@media (max-width: 400px) {
+  /* Very narrow phones (iPhone SE and similar): the section switcher select
+     itself is the next-biggest claim on space after the add button is gone. */
+  .duga-section-switcher__select { max-width: 68px; min-width: 56px; }
 }
 
 .portal-sidebar-scrim {
