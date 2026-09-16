@@ -106,6 +106,15 @@ export function PushInstallGate({ role }: { role: string }) {
     setError(null);
     try {
       const result = await requestPermissionAndRegister();
+      // Claim the "already registered" guard here too — otherwise, once
+      // check() below flips `permission` to "granted", the auto-registration
+      // effect above (meant only for a return visit where permission was
+      // already granted) sees the same transition and calls
+      // requestPermissionAndRegister() a SECOND time moments later. Two
+      // getToken() calls in quick succession on the same device were minting
+      // two different FCM tokens back to back — and on Android, that left
+      // both dead (NotRegistered) rather than one clean live subscription.
+      registeredRef.current = true;
       if (result === "denied") {
         setError("Notifications are blocked for this app. Open your phone's Settings → Notifications → DUGA Portal, and turn them on.");
       }
