@@ -145,7 +145,10 @@ function MessagesPageInner() {
   useEffect(() => {
     if (!active) return;
     setThreadLoading(true);
-    api<{ id: string; messages: Message[] }>(`messages/${active}`)
+    // loading: false — opening a chat already shows its own spinner inside
+    // the thread pane (see threadLoading below); it doesn't need the
+    // app-wide overlay blocking the rest of the page too.
+    api<{ id: string; messages: Message[] }>(`messages/${active}`, { loading: false })
       .then((c) => {
         setThread(c.messages);
         setConversations((prev) =>
@@ -199,8 +202,12 @@ function MessagesPageInner() {
     setDraft("");
     setSending(true);
     try {
-      await api(`messages/${active}/send`, { method: "POST", body: { body } });
-      const c = await api<{ id: string; messages: Message[] }>(`messages/${active}`);
+      // loading: false — sending a chat message is scoped to the chat pane
+      // itself (the send button already shows its own spinner below); the
+      // app-wide loading overlay blocking the whole screen for a one-line
+      // message felt heavy and out of place.
+      await api(`messages/${active}/send`, { method: "POST", body: { body }, loading: false });
+      const c = await api<{ id: string; messages: Message[] }>(`messages/${active}`, { loading: false });
       setThread(c.messages);
       setConversations((prev) => {
         const last = c.messages[c.messages.length - 1] ?? null;
@@ -320,7 +327,7 @@ function MessagesPageInner() {
               onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
             />
             <button className="duga-messages-composer__send" onClick={send} disabled={!draft.trim() || sending} aria-label="Send">
-              <Icon name="send" size={18} />
+              {sending ? <span className="duga-spinner" style={{ borderTopColor: "#fff" }} /> : <Icon name="send" size={18} />}
             </button>
           </div>
         </>

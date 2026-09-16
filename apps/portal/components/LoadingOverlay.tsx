@@ -28,9 +28,14 @@ export function LoadingOverlay() {
   );
 }
 
-// Shows the overlay while a client-side route change is in flight. The timeout
-// guarantees a visible minimum; any in-flight API call keeps the overlay up
-// until it actually finishes.
+// Briefly shows the overlay right after a client-side route change starts, as
+// a flash guard for the gap before the new page's own content (or its own
+// loading state) paints. Any in-flight API call the new page kicks off keeps
+// the overlay up on its own via the shared counter — this timeout used to be
+// a fixed 700ms *minimum* on every single navigation, which is what made
+// every click across the app feel slow even when the destination page had
+// nothing left to load. 150ms is enough to prevent a flash of empty content
+// without being felt as a deliberate delay.
 export function RouteLoader() {
   const pathname = usePathname();
   const first = useRef(true);
@@ -41,7 +46,7 @@ export function RouteLoader() {
       return;
     }
     beginLoading();
-    const t = window.setTimeout(endLoading, 700);
+    const t = window.setTimeout(endLoading, 150);
     return () => window.clearTimeout(t);
   }, [pathname]);
 
