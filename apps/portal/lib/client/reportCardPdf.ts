@@ -1,10 +1,10 @@
-﻿// Builds a printable, single-page A4 report card PDF on the client, laid out
-// to match the school's real paper sheet (header/motto/section, town/state,
-// class/term/session, name/age/adm no, attendance, a subjects grid with one
-// column per CA/EXAM component from ResultConfig, a behavioral-assessment
-// grid, a grading key, comments, signatures and fees) — honoring the
-// school's ReportCardConfig for which parts print. Mirrors idCards.ts's
-// client-PDF pattern.
+// Builds a printable, single-page A4 report card PDF on the client, styled to
+// match the school's printed termly result sheet: navy/serif header with a
+// circular crest and passport photo, dotted-underline id fields, a grouped
+// (Continuous Assessment / Exams) subjects table, a performance chart, color-
+// coded domain grids (Psychomotor & Affective in green, Behavioural in
+// orange) and a colored grading key — honoring the school's ReportCardConfig
+// for which parts print. Mirrors idCards.ts's client-PDF pattern.
 
 import type { jsPDF as JsPDFType } from "jspdf";
 
@@ -82,10 +82,17 @@ export interface ReportCardPdfData {
   principalName?: string | null;
 }
 
-const INK = "#111827";
-const MUTED = "#6b7280";
-const PRIMARY = "#1e3a5f";
-const BORDER = "#9ca3af";
+const INK = "#000000";
+const MUTED = "#555555";
+const NAVY = "#1f3a5f";
+const HEADER_BG = "#eaf0f6";
+const DOMAIN_GREEN_BG = "#e6f2ea";
+const DOMAIN_GREEN_TEXT = "#2c6e49";
+const DOMAIN_ORANGE_BG = "#fdf1de";
+const DOMAIN_ORANGE_TEXT = "#a1651a";
+const GRADE_GREEN = "#e5f3e8";
+const GRADE_YELLOW = "#fbf3d9";
+const GRADE_RED = "#f9e2e0";
 
 async function toDataUrl(url: string | null): Promise<string | null> {
   if (!url) return null;
@@ -153,6 +160,35 @@ function dashedHLine(doc: JsPDFType, x1: number, x2: number, y: number) {
   }
 }
 
+// A bold-labeled field whose value sits on a dotted underline, matching the
+// printed sheet's ".field { border-bottom: 1px dotted #000 }" styling.
+function dottedField(doc: JsPDFType, x: number, y: number, w: number, label: string, value: string) {
+  doc.setFont("times", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(INK);
+  doc.text(`${label}:`, x, y);
+  const labelW = doc.getTextWidth(`${label}: `);
+  doc.setFont("times", "normal");
+  doc.text(value || "", x + labelW, y);
+  doc.setDrawColor(INK);
+  doc.setLineWidth(0.15);
+  dashedHLine(doc, x, x + w - 2, y + 1.3);
+}
+
+// Centered section title, underlined in navy — "ACADEMIC REPORT", the domain
+// grid headings, etc. Returns the y position just below the underline.
+function sectionTitle(doc: JsPDFType, text: string, centerX: number, y: number, size = 12.5): number {
+  doc.setFont("times", "bold");
+  doc.setFontSize(size);
+  doc.setTextColor(NAVY);
+  doc.text(text, centerX, y, { align: "center" });
+  const w = doc.getTextWidth(text);
+  doc.setDrawColor(NAVY);
+  doc.setLineWidth(0.25);
+  doc.line(centerX - w / 2, y + 1, centerX + w / 2, y + 1);
+  return y + 1;
+}
+
 // One bar per subject showing its Total score (0-100), color-banded the
 // same as the grading key (green/yellow/red), with a dashed pass-mark line
 // at 50 — the "strengths & weaknesses at a glance" chart from the printed
@@ -176,6 +212,7 @@ function drawPerformanceChart(doc: JsPDFType, items: ReportCardPdfItem[], x: num
   doc.line(x + padL, y + padT, x + padL, y + padT + chartH);
   doc.line(x + padL, y + padT + chartH, x + width - padR, y + padT + chartH);
 
+  doc.setFont("times", "normal");
   doc.setFontSize(5.5);
   doc.setTextColor(MUTED);
   for (let v = 0; v <= 100; v += 20) {
@@ -201,7 +238,7 @@ function drawPerformanceChart(doc: JsPDFType, items: ReportCardPdfItem[], x: num
     doc.setLineWidth(0.15);
     doc.rect(bx, by, barW, Math.max(barH, 0.3), val > 0 ? "FD" : "D");
     if (val > 0) {
-      doc.setFont("helvetica", "normal");
+      doc.setFont("times", "normal");
       doc.setFontSize(5.2);
       doc.setTextColor(INK);
       doc.text(String(Math.round(val)), bx + barW / 2, by - 1, { align: "center" });
@@ -261,6 +298,34 @@ export const SAMPLE_REPORT_CARD: ReportCardPdfData = {
   principalName: "Mr. Emmanuel Okafor",
 };
 
+// Strips a trailing ordinal number ("Assignment 1" -> "Assignment") so
+// same-family components (Assignment 1/2, Test 1/2, ...) group together
+// under one spanning header cell, the way the printed sheet does — while
+// still working for a school with only one CA or EXAM component (no group
+// to strip, it just becomes its own group of one).
+function componentBaseName(name: string): string {
+  return name.replace(/\s*\d+\s*$/, "").trim() || name;
+}
+
+function componentOrdinal(name: string): string {
+  const m = name.match(/(\d+)\s*$/);
+  if (!m) return name;
+  const n = parseInt(m[1]!, 10);
+  const suffix = n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th";
+  return `${n}${suffix}`;
+}
+
+function groupComponents(comps: ReportCardPdfComponent[]): Array<{ label: string; comps: ReportCardPdfComponent[] }> {
+  const groups: Array<{ label: string; comps: ReportCardPdfComponent[] }> = [];
+  for (const c of comps) {
+    const label = componentBaseName(c.name).toUpperCase();
+    const existing = groups.find((g) => g.label === label);
+    if (existing) existing.comps.push(c);
+    else groups.push({ label, comps: [c] });
+  }
+  return groups;
+}
+
 async function buildReportCardDoc(
   school: ReportCardPdfSchool,
   config: ReportCardPdfConfig,
@@ -277,8 +342,8 @@ async function buildReportCardDoc(
   if (config.showWatermark) {
     doc.saveGraphicsState();
     doc.setGState(new (doc as unknown as { GState: new (o: object) => unknown }).GState({ opacity: 0.06 }) as never);
-    doc.setTextColor(PRIMARY);
-    doc.setFont("helvetica", "bold");
+    doc.setTextColor(NAVY);
+    doc.setFont("times", "bold");
     doc.setFontSize(70);
     doc.text((school.shortName || school.name).toUpperCase(), W / 2, 180, { align: "center", angle: 45 });
     doc.restoreGraphicsState();
@@ -286,17 +351,30 @@ async function buildReportCardDoc(
 
   // Outer border, like the printed sheet's ruled page.
   doc.setDrawColor(INK);
-  doc.setLineWidth(0.4);
+  doc.setLineWidth(0.6);
   doc.rect(M, M, contentW, 277 - M);
 
   let y = M + 6;
   const headerLeft = M + 4;
+  const logoSize = 20;
   const logoDataUrl = config.showLogo ? await toDataUrl(school.logoUrl) : null;
   if (logoDataUrl) {
+    const cx = headerLeft + logoSize / 2;
+    const cy = y - 2 + logoSize / 2;
+    // A round crest, matching the printed sheet — but drawn as a navy ring
+    // around a plain (inset) square image rather than a true pixel clip:
+    // jsPDF's context2d rasterizes the whole clipped region at a much higher
+    // internal resolution than addImage, which ballooned a single-page PDF
+    // from ~85KB to ~6.8MB for a 500KB source logo. addImage stays cheap
+    // regardless of the source image's resolution.
+    const inset = logoSize * 0.8;
     try {
       // jsPDF embeds images uncompressed by default — a few-hundred-KB PNG
       // logo can balloon a single-page PDF to several MB without this.
-      doc.addImage(logoDataUrl, imageFormat(logoDataUrl), headerLeft, y - 2, 20, 20, undefined, "FAST");
+      doc.addImage(logoDataUrl, imageFormat(logoDataUrl), cx - inset / 2, cy - inset / 2, inset, inset, undefined, "FAST");
+      doc.setDrawColor(NAVY);
+      doc.setLineWidth(0.3);
+      doc.circle(cx, cy, logoSize / 2, "S");
     } catch {
       /* skip a logo image jsPDF can't decode */
     }
@@ -307,55 +385,55 @@ async function buildReportCardDoc(
   if (photoDataUrl) {
     try {
       doc.addImage(photoDataUrl, imageFormat(photoDataUrl), W - M - 24, y - 2, 20, 24, undefined, "FAST");
+      doc.setDrawColor(NAVY);
+      doc.setLineWidth(0.3);
+      doc.rect(W - M - 24, y - 2, 20, 24);
     } catch {
       /* skip a photo jsPDF can't decode */
     }
   } else {
-    doc.setDrawColor(BORDER);
+    doc.setDrawColor(NAVY);
     doc.setLineWidth(0.2);
     doc.rect(W - M - 24, y - 2, 20, 24);
-    doc.setFont("helvetica", "normal");
+    doc.setFont("times", "normal");
     doc.setFontSize(6);
     doc.setTextColor(MUTED);
     doc.text("PASSPORT", W - M - 14, y + 9, { align: "center" });
   }
-  doc.setTextColor(INK);
-  doc.setFont("helvetica", "bold");
+  doc.setTextColor(NAVY);
+  doc.setFont("times", "bold");
   doc.setFontSize(19);
-  doc.text(school.name.toUpperCase(), W / 2, y + 4, { align: "center" });
+  doc.text(school.name.toUpperCase(), W / 2, y + 4, { align: "center", charSpace: 0.3 });
   y += 6;
   if (config.motto) {
-    doc.setFont("helvetica", "italic");
+    doc.setFont("times", "italic");
     doc.setFontSize(10.5);
     doc.setTextColor(MUTED);
     doc.text(config.motto, W / 2, y, { align: "center" });
     y += 5;
   }
   if (config.sectionLabel) {
-    doc.setFont("helvetica", "bold");
+    doc.setFont("times", "bold");
     doc.setFontSize(13);
     doc.setTextColor(INK);
-    doc.text(config.sectionLabel.toUpperCase(), W / 2, y + 2, { align: "center" });
+    doc.text(config.sectionLabel.toUpperCase(), W / 2, y + 2, { align: "center", charSpace: 0.5 });
     y += 7;
   }
   y = Math.max(y, M + 22);
-  doc.setDrawColor(INK);
-  doc.setLineWidth(0.3);
+  doc.setDrawColor(NAVY);
+  doc.setLineWidth(0.6);
   doc.line(M + 3, y, W - M - 3, y);
   y += 6;
 
-  // Info rows, matching the printed sheet's dotted-line fields.
-  doc.setFontSize(9.5);
+  // Info rows, matching the printed sheet's bold-label/dotted-underline
+  // fields.
   function infoRow(pairs: Array<[string, string]>) {
     const slotW = contentW / pairs.length;
-    doc.setFont("helvetica", "italic");
-    doc.setTextColor(INK);
     pairs.forEach(([label, value], i) => {
       const x = M + 4 + slotW * i;
-      const text = `${label}: ${value || "—"}`;
-      doc.text(text, x, y);
+      dottedField(doc, x, y, slotW - 4, label, value || "—");
     });
-    y += 6;
+    y += 6.5;
   }
   const name = `${card.student.firstName} ${card.student.lastName}`;
   infoRow([
@@ -371,6 +449,10 @@ async function buildReportCardDoc(
     ["Name of Student", name],
     ["Age", card.studentAge !== null && card.studentAge !== undefined ? String(card.studentAge) : ""],
     ["Adm No", card.student.admissionNumber ?? ""],
+  ]);
+  infoRow([
+    ["No. in Class", card.classSize !== null && card.classSize !== undefined ? String(card.classSize) : ""],
+    ["Position in Class", card.position !== null && card.position !== undefined ? String(card.position) : ""],
   ]);
   if (config.showAttendance) {
     infoRow([
@@ -388,15 +470,13 @@ async function buildReportCardDoc(
     // the school's standard fee policy.
     ["Next Term Begins On", fmtDate(card.feesPayableBy)],
   ]);
-  y += 1;
+  y += 2;
 
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12.5);
-  doc.setTextColor(PRIMARY);
-  doc.text("ACADEMIC REPORT", W / 2, y + 4, { align: "center" });
-  y += 9;
+  y = sectionTitle(doc, "ACADEMIC REPORT", W / 2, y + 4) + 5;
 
-  // Subjects grid: one column per configured CA/EXAM component, then Total,
+  // Subjects grid: one column per configured CA/EXAM component (grouped
+  // under CONTINUOUS ASSESSMENT / EXAMS bands, the way the printed sheet
+  // groups Assignment 1/2 and Test 1/2 under one heading), then Total,
   // Class Average, Grade, Remark, Signature.
   if (config.showCognitive && card.items?.length) {
     const caComponents = components.filter((c) => c.category === "CA").sort((a, b) => a.order - b.order);
@@ -405,104 +485,197 @@ async function buildReportCardDoc(
     const fixedColsW = 15 + 15 + 12 + 22 + 12; // Total, ClassAvg, Grade, Remark, Sign
     const subjectColW = 34;
     const compColW = Math.max(9, (contentW - subjectColW - fixedColsW) / Math.max(1, compCols.length));
-    const cols: Array<{ label: string; sub?: string; w: number }> = [
-      { label: "SUBJECTS", w: subjectColW },
-      ...compCols.map((c) => ({ label: c.name, sub: `(${c.max})`, w: compColW })),
-      { label: "TOTAL", w: 15 },
-      { label: "CLASS AVG", w: 15 },
+    const fixedCols: Array<{ label: string; w: number }> = [
+      { label: "TOTAL\nSCORE", w: 15 },
+      { label: "CLASS\nAVERAGE", w: 15 },
       { label: "GRADE", w: 12 },
       { label: "REMARK", w: 22 },
-      { label: "SIGN", w: 12 },
+      { label: "SIGNATURE", w: 12 },
     ];
     // Scale columns down proportionally if they overflow the page width.
-    const totalW = cols.reduce((a, c) => a + c.w, 0);
-    if (totalW > contentW - 8) {
-      const scale = (contentW - 8) / totalW;
-      for (const c of cols) c.w *= scale;
-    }
+    const rawTotalW = subjectColW + compColW * compCols.length + fixedCols.reduce((a, c) => a + c.w, 0);
+    const scale = rawTotalW > contentW - 8 ? (contentW - 8) / rawTotalW : 1;
+    const scaledSubjectColW = subjectColW * scale;
+    const scaledCompColW = compColW * scale;
+    for (const c of fixedCols) c.w *= scale;
 
-    const headerH = 9;
-    let x = M + 4;
+    const headerH = 10.5;
+    const row1H = 3.5;
+    const row2H = 2.8;
+    const tableLeft = M + 4;
+    const tableRight = W - M - 4;
+
     doc.setDrawColor(INK);
     doc.setLineWidth(0.25);
-    doc.setFillColor("#eef2f7");
-    doc.rect(M + 4, y, contentW - 8, headerH, "FD");
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(INK);
-    for (const c of cols) {
-      const label = fitSingleLine(doc, c.label, c.w - 1.5, 7.2);
-      doc.text(label, x + c.w / 2, y + 4, { align: "center" });
-      if (c.sub) {
-        doc.setFontSize(6.4);
-        doc.text(c.sub, x + c.w / 2, y + 7.5, { align: "center" });
-      }
-      doc.line(x, y, x, y + headerH);
-      x += c.w;
-    }
+    doc.setFillColor(HEADER_BG);
+    doc.rect(tableLeft, y, tableRight - tableLeft, headerH, "FD");
+    doc.setTextColor(NAVY);
+
+    // SUBJECTS — full header height.
+    doc.setFont("times", "bold");
+    doc.setFontSize(7.5);
+    doc.text("SUBJECTS", tableLeft + scaledSubjectColW / 2, y + headerH / 2 + 1.5, { align: "center" });
+    let x = tableLeft + scaledSubjectColW;
     doc.line(x, y, x, y + headerH);
+
+    // One category band (CONTINUOUS ASSESSMENT / EXAMS) per CA/EXAM group of
+    // components, each subdivided into named sub-groups (Assignment, Test, ...)
+    // and finally individual component columns (1st/10, 2nd/10, ...).
+    function drawCategoryBand(comps: ReportCardPdfComponent[], bandLabel: string) {
+      if (!comps.length) return;
+      const bandW = scaledCompColW * comps.length;
+      if (comps.length === 1) {
+        // Nothing to subdivide — one cell spanning the full header height,
+        // same treatment as the fixed columns (label + max, centered).
+        const comp = comps[0]!;
+        doc.setFont("times", "bold");
+        const label = fitSingleLine(doc, bandLabel, bandW - 1.5, 7.2);
+        doc.text(label, x + bandW / 2, y + headerH / 2 - 0.5, { align: "center" });
+        doc.setFont("times", "normal");
+        doc.setFontSize(6.4);
+        doc.text(`(${comp.max})`, x + bandW / 2, y + headerH / 2 + 3.5, { align: "center" });
+        x += bandW;
+        doc.line(x, y, x, y + headerH);
+        return;
+      }
+      doc.setFont("times", "bold");
+      doc.setFontSize(7.2);
+      doc.text(bandLabel, x + bandW / 2, y + row1H / 2 + 1.3, { align: "center" });
+      doc.setLineWidth(0.2);
+      doc.line(x, y + row1H, x + bandW, y + row1H);
+
+      const groups = groupComponents(comps);
+      let gx = x;
+      groups.forEach((g, gi) => {
+        const gw = scaledCompColW * g.comps.length;
+        if (g.comps.length === 1) {
+          const comp = g.comps[0]!;
+          doc.setFont("times", "bold");
+          const label = fitSingleLine(doc, g.label, gw - 1, 6.6);
+          doc.text(label, gx + gw / 2, y + row1H + (headerH - row1H) / 2 - 0.3, { align: "center" });
+          doc.setFont("times", "normal");
+          doc.setFontSize(6);
+          doc.text(`(${comp.max})`, gx + gw / 2, y + row1H + (headerH - row1H) / 2 + 3, { align: "center" });
+        } else {
+          doc.setFont("times", "bold");
+          doc.setFontSize(6.6);
+          doc.text(g.label, gx + gw / 2, y + row1H + row2H / 2 + 1, { align: "center" });
+          doc.setLineWidth(0.15);
+          doc.line(gx, y + row1H + row2H, gx + gw, y + row1H + row2H);
+          let cx = gx;
+          g.comps.forEach((comp) => {
+            doc.setFont("times", "normal");
+            doc.setFontSize(6.2);
+            doc.text(componentOrdinal(comp.name), cx + scaledCompColW / 2, y + row1H + row2H + 2.1, { align: "center" });
+            doc.setFontSize(5.8);
+            doc.text(`(${comp.max})`, cx + scaledCompColW / 2, y + headerH - 0.8, { align: "center" });
+            cx += scaledCompColW;
+            if (cx < gx + gw - 0.01) {
+              doc.setDrawColor(INK);
+              doc.setLineWidth(0.1);
+              doc.line(cx, y + row1H + row2H, cx, y + headerH);
+            }
+          });
+        }
+        gx += gw;
+        if (gi < groups.length - 1) {
+          doc.setDrawColor(INK);
+          doc.setLineWidth(0.15);
+          doc.line(gx, y + row1H, gx, y + headerH);
+        }
+      });
+      x += bandW;
+      doc.setDrawColor(INK);
+      doc.setLineWidth(0.25);
+      doc.line(x, y, x, y + headerH);
+    }
+
+    drawCategoryBand(caComponents, "CONTINUOUS ASSESSMENT");
+    drawCategoryBand(examComponents, "EXAMS");
+
+    // Fixed trailing columns — Total, Class Average, Grade, Remark, Signature.
+    doc.setTextColor(NAVY);
+    for (const c of fixedCols) {
+      const lines = c.label.split("\n");
+      doc.setFont("times", "bold");
+      const label0 = fitSingleLine(doc, lines[0]!, c.w - 1.5, 7.2);
+      doc.text(label0, x + c.w / 2, y + headerH / 2 - (lines.length > 1 ? 1.5 : -1.5), { align: "center" });
+      if (lines[1]) {
+        doc.setFontSize(6.4);
+        const label1 = fitSingleLine(doc, lines[1], c.w - 1.5, 6.4);
+        doc.text(label1, x + c.w / 2, y + headerH / 2 + 3, { align: "center" });
+      }
+      x += c.w;
+      doc.line(x, y, x, y + headerH);
+    }
     y += headerH;
 
-    doc.setFont("helvetica", "normal");
+    doc.setFont("times", "normal");
     doc.setFontSize(8);
+    doc.setTextColor(INK);
     const rowH = 7;
-    const compTotals: number[] = compCols.map(() => 0);
-    let studentTotalSum = 0;
+    const bodyCols = [
+      { w: scaledSubjectColW },
+      ...compCols.map(() => ({ w: scaledCompColW })),
+      ...fixedCols,
+    ];
     for (const item of card.items) {
       if (y > 265) {
         doc.addPage();
         y = M + 6;
       }
-      x = M + 4;
-      doc.rect(M + 4, y, contentW - 8, rowH);
-      let cx = x;
-      doc.setFont("helvetica", "bold");
-      const subjectLabel = fitSingleLine(doc, item.subject.name, cols[0]!.w - 3, 8, 6);
+      doc.setDrawColor(INK);
+      doc.rect(tableLeft, y, tableRight - tableLeft, rowH);
+      let cx = tableLeft;
+      doc.setFont("times", "bold");
+      const subjectLabel = fitSingleLine(doc, item.subject.name, bodyCols[0]!.w - 3, 8, 6);
       doc.text(subjectLabel, cx + 1.5, y + 4.8);
       doc.setFontSize(8);
-      doc.line(cx + cols[0]!.w, y, cx + cols[0]!.w, y + rowH);
-      cx += cols[0]!.w;
-      doc.setFont("helvetica", "normal");
+      doc.line(cx + bodyCols[0]!.w, y, cx + bodyCols[0]!.w, y + rowH);
+      cx += bodyCols[0]!.w;
+      doc.setFont("times", "normal");
       compCols.forEach((c, i) => {
         const v = item.componentScores?.[c.name];
-        doc.text(v === undefined || v === null ? "—" : String(v), cx + cols[i + 1]!.w / 2, y + 4.8, { align: "center" });
-        if (typeof v === "number") compTotals[i] = (compTotals[i] ?? 0) + v;
-        doc.line(cx + cols[i + 1]!.w, y, cx + cols[i + 1]!.w, y + rowH);
-        cx += cols[i + 1]!.w;
+        doc.text(v === undefined || v === null ? "—" : String(v), cx + bodyCols[i + 1]!.w / 2, y + 4.8, { align: "center" });
+        doc.line(cx + bodyCols[i + 1]!.w, y, cx + bodyCols[i + 1]!.w, y + rowH);
+        cx += bodyCols[i + 1]!.w;
       });
       const totalIdx = compCols.length + 1;
-      doc.setFont("helvetica", "bold");
-      doc.text(String(item.total ?? "—"), cx + cols[totalIdx]!.w / 2, y + 4.8, { align: "center" });
-      studentTotalSum += item.total ?? 0;
-      doc.line(cx + cols[totalIdx]!.w, y, cx + cols[totalIdx]!.w, y + rowH);
-      cx += cols[totalIdx]!.w;
-      doc.setFont("helvetica", "normal");
+      doc.setFont("times", "bold");
+      doc.text(String(item.total ?? "—"), cx + bodyCols[totalIdx]!.w / 2, y + 4.8, { align: "center" });
+      doc.line(cx + bodyCols[totalIdx]!.w, y, cx + bodyCols[totalIdx]!.w, y + rowH);
+      cx += bodyCols[totalIdx]!.w;
+      doc.setFont("times", "normal");
       const classAvgIdx = totalIdx + 1;
-      doc.text(item.classAverage !== null && item.classAverage !== undefined ? item.classAverage.toFixed(1) : "—", cx + cols[classAvgIdx]!.w / 2, y + 4.8, { align: "center" });
-      doc.line(cx + cols[classAvgIdx]!.w, y, cx + cols[classAvgIdx]!.w, y + rowH);
-      cx += cols[classAvgIdx]!.w;
+      doc.text(item.classAverage !== null && item.classAverage !== undefined ? item.classAverage.toFixed(1) : "—", cx + bodyCols[classAvgIdx]!.w / 2, y + 4.8, { align: "center" });
+      doc.line(cx + bodyCols[classAvgIdx]!.w, y, cx + bodyCols[classAvgIdx]!.w, y + rowH);
+      cx += bodyCols[classAvgIdx]!.w;
       const gradeIdx = classAvgIdx + 1;
-      const gradeLabel = fitSingleLine(doc, item.grade ?? "—", cols[gradeIdx]!.w - 1, 8, 5.5);
-      doc.text(gradeLabel, cx + cols[gradeIdx]!.w / 2, y + 4.8, { align: "center" });
+      const gradeLabel = fitSingleLine(doc, item.grade ?? "—", bodyCols[gradeIdx]!.w - 1, 8, 5.5);
+      doc.text(gradeLabel, cx + bodyCols[gradeIdx]!.w / 2, y + 4.8, { align: "center" });
       doc.setFontSize(8);
-      doc.line(cx + cols[gradeIdx]!.w, y, cx + cols[gradeIdx]!.w, y + rowH);
-      cx += cols[gradeIdx]!.w;
+      doc.line(cx + bodyCols[gradeIdx]!.w, y, cx + bodyCols[gradeIdx]!.w, y + rowH);
+      cx += bodyCols[gradeIdx]!.w;
       const remarkIdx = gradeIdx + 1;
-      const remarkLabel = fitSingleLine(doc, item.remark ?? "—", cols[remarkIdx]!.w - 1, 7, 5.5);
-      doc.text(remarkLabel, cx + cols[remarkIdx]!.w / 2, y + 4.8, { align: "center" });
+      const remarkLabel = fitSingleLine(doc, item.remark ?? "—", bodyCols[remarkIdx]!.w - 1, 7, 5.5);
+      doc.text(remarkLabel, cx + bodyCols[remarkIdx]!.w / 2, y + 4.8, { align: "center" });
       doc.setFontSize(8);
-      doc.line(cx + cols[remarkIdx]!.w, y, cx + cols[remarkIdx]!.w, y + rowH);
-      cx += cols[remarkIdx]!.w;
+      doc.line(cx + bodyCols[remarkIdx]!.w, y, cx + bodyCols[remarkIdx]!.w, y + rowH);
+      cx += bodyCols[remarkIdx]!.w;
       y += rowH;
     }
 
     // Total / Average summary row.
     y += 3;
-    doc.setFont("helvetica", "bold");
+    doc.setFont("times", "bold");
     doc.setFontSize(9);
     doc.setTextColor(INK);
+    const studentTotalSum = card.items.reduce((a, i) => a + (i.total ?? 0), 0);
     const avgVal = card.items.length ? Math.round((studentTotalSum / card.items.length) * 10) / 10 : 0;
-    doc.rect(M + 4, y, 30, 9);
-    doc.rect(M + 34, y, 30, 9);
+    doc.setFillColor(HEADER_BG);
+    doc.setDrawColor(INK);
+    doc.rect(M + 4, y, 30, 9, "FD");
+    doc.rect(M + 34, y, 30, 9, "FD");
     doc.setFontSize(7.5);
     doc.text("TOTAL", M + 4 + 15, y + 3.5, { align: "center" });
     doc.text("AVERAGE", M + 34 + 15, y + 3.5, { align: "center" });
@@ -514,15 +687,11 @@ async function buildReportCardDoc(
     // Performance chart — one bar per subject's Total score, so a strength
     // or a weak spot shows at a glance instead of only as numbers in a row.
     if (card.items.length > 0) {
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(9);
-      doc.setTextColor(PRIMARY);
-      doc.text("Performance Chart — Strengths & Weaknesses", M + 4, y + 3);
-      y += 6;
+      y = sectionTitle(doc, "PERFORMANCE CHART — STRENGTHS & WEAKNESSES", W / 2, y + 3, 9) + 4;
       const chartH = 34;
       drawPerformanceChart(doc, card.items, M + 4, y, contentW - 8, chartH);
       y += chartH + 3;
-      doc.setFont("helvetica", "italic");
+      doc.setFont("times", "italic");
       doc.setFontSize(6.5);
       doc.setTextColor(MUTED);
       doc.text("Each bar is the subject's Total Score out of 100. The dashed line marks the pass mark (50).", M + 4, y);
@@ -530,36 +699,38 @@ async function buildReportCardDoc(
     }
   }
 
-  // Domain grids (Psychomotor & Affective, Behavioral Assessment) and
-  // grading key, side by side.
+  // Domain grids (Psychomotor & Affective in green, Behavioural in orange)
+  // and a colored grading key, side by side.
   const gridTop = y;
   const leftW = contentW * 0.56;
   const gradeLetters = ["A", "B", "C", "D", "E"];
 
-  function drawTraitGrid(title: string, traits: Array<[string, string]>, top: number): number {
+  function drawTraitGrid(title: string, traits: Array<[string, string]>, top: number, headerBg: string, headerText: string): number {
     const traitColW = leftW * 0.5;
     const letterColW = (leftW - traitColW) / gradeLetters.length;
     let ly = top;
     doc.setDrawColor(INK);
     doc.setLineWidth(0.25);
-    doc.setFillColor("#eef2f7");
+    doc.setFillColor(headerBg);
     doc.rect(M + 4, ly, leftW, 6, "FD");
-    doc.setFont("helvetica", "bold");
+    doc.setFont("times", "bold");
     doc.setFontSize(7.5);
-    doc.setTextColor(INK);
+    doc.setTextColor(headerText);
     doc.text(title, M + 4 + 2, ly + 4);
     gradeLetters.forEach((l, i) => {
       doc.text(l, M + 4 + traitColW + letterColW * i + letterColW / 2, ly + 4, { align: "center" });
     });
     ly += 6;
-    doc.setFont("helvetica", "normal");
+    doc.setFont("times", "normal");
     doc.setFontSize(7.5);
+    doc.setTextColor(INK);
     for (const [trait, grade] of traits) {
+      doc.setDrawColor(INK);
       doc.rect(M + 4, ly, leftW, 5.5);
       doc.text(trait, M + 4 + 1.5, ly + 3.8, { maxWidth: traitColW - 3 });
       gradeLetters.forEach((l, i) => {
         const cx = M + 4 + traitColW + letterColW * i + letterColW / 2;
-        if (grade === l) doc.text("âœ“", cx, ly + 3.8, { align: "center" });
+        if (grade === l) doc.text("✓", cx, ly + 3.8, { align: "center" });
       });
       ly += 5.5;
     }
@@ -570,11 +741,11 @@ async function buildReportCardDoc(
   let rightBottom = gridTop;
   if (config.showPsychomotor) {
     if (card.coCurricular && Object.keys(card.coCurricular).length) {
-      leftBottom = drawTraitGrid("Psychomotor & Affective Domain", Object.entries(card.coCurricular), leftBottom);
+      leftBottom = drawTraitGrid("PSYCHOMOTOR & AFFECTIVE DOMAIN", Object.entries(card.coCurricular), leftBottom, DOMAIN_GREEN_BG, DOMAIN_GREEN_TEXT);
       leftBottom += 3;
     }
     if (card.psychomotor && Object.keys(card.psychomotor).length) {
-      leftBottom = drawTraitGrid("Behavioral Assessment", Object.entries(card.psychomotor), leftBottom);
+      leftBottom = drawTraitGrid("BEHAVIOURAL ASSESSMENT", Object.entries(card.psychomotor), leftBottom, DOMAIN_ORANGE_BG, DOMAIN_ORANGE_TEXT);
     }
   }
 
@@ -582,40 +753,67 @@ async function buildReportCardDoc(
     const rightX = M + 4 + leftW + 6;
     const rightW = contentW - leftW - 6;
     let ry = gridTop;
-    doc.setFont("helvetica", "bold");
+    doc.setFont("times", "bold");
     doc.setFontSize(9);
-    doc.setTextColor(PRIMARY);
-    doc.text("Grading Key", rightX, ry + 4);
+    doc.setTextColor(NAVY);
+    doc.text("GRADING KEY", rightX, ry + 4);
     ry += 7;
-    doc.setFont("helvetica", "italic");
-    doc.setFontSize(7.8);
-    doc.setTextColor(INK);
+    const rowH = 4.8;
+    const scoreColW = rightW * 0.34;
+    const gradeColW = rightW * 0.32;
+    doc.setFont("times", "bold");
+    doc.setFontSize(7);
+    doc.setDrawColor(INK);
+    doc.setFillColor(HEADER_BG);
+    doc.rect(rightX, ry, rightW, rowH, "FD");
+    doc.setTextColor(NAVY);
+    doc.text("SCORE", rightX + scoreColW / 2, ry + 3.3, { align: "center" });
+    doc.text("GRADE", rightX + scoreColW + gradeColW / 2, ry + 3.3, { align: "center" });
+    doc.text("REMARK", rightX + scoreColW + gradeColW + (rightW - scoreColW - gradeColW) / 2, ry + 3.3, { align: "center" });
+    ry += rowH;
+    doc.setFont("times", "normal");
+    doc.setFontSize(7);
     for (const band of gradeBands) {
-      doc.text(`${band.min} - ${band.max}  =  ${band.remark}`, rightX, ry, { maxWidth: rightW });
-      ry += 4.6;
+      const bg = band.min >= 70 ? GRADE_GREEN : band.min >= 50 ? GRADE_YELLOW : GRADE_RED;
+      doc.setFillColor(bg);
+      doc.setDrawColor(INK);
+      doc.rect(rightX, ry, rightW, rowH, "FD");
+      doc.setTextColor(INK);
+      doc.text(`${band.min} - ${band.max}`, rightX + scoreColW / 2, ry + 3.3, { align: "center" });
+      doc.text(fitSingleLine(doc, band.grade, gradeColW - 1, 7, 5), rightX + scoreColW + gradeColW / 2, ry + 3.3, { align: "center" });
+      doc.text(fitSingleLine(doc, band.remark, rightW - scoreColW - gradeColW - 1, 7, 5), rightX + scoreColW + gradeColW + (rightW - scoreColW - gradeColW) / 2, ry + 3.3, { align: "center" });
+      ry += rowH;
     }
     rightBottom = ry;
   }
   y = Math.max(leftBottom, rightBottom) + 5;
 
   function commentLine(label: string, value: string | null | undefined) {
-    doc.setFont("helvetica", "italic");
+    doc.setFont("times", "bold");
     doc.setFontSize(9);
     doc.setTextColor(INK);
-    const text = `${label}: ${value ?? ""}`;
-    const lines = doc.splitTextToSize(text, contentW - 8);
-    doc.text(lines, M + 4, y);
-    // Fill the rest of the line with a dotted rule if there's room left.
+    doc.text(`${label}:`, M + 4, y);
+    const labelW = doc.getTextWidth(`${label}: `);
+    doc.setFont("times", "normal");
+    const lines = doc.splitTextToSize(value ?? "", contentW - 8 - labelW);
+    doc.text(lines, M + 4 + labelW, y);
+    doc.setDrawColor(INK);
+    doc.setLineWidth(0.15);
+    dashedHLine(doc, M + 4 + labelW + (lines[0] ? doc.getTextWidth(lines[0]) + 1 : 0), W - M - 4, y + 1.3);
     y += Math.max(lines.length, 1) * 5;
   }
 
   function nameSignRow(nameLabel: string, nameValue: string | null | undefined, signLabel = "Sign/Date") {
-    doc.setFont("helvetica", "italic");
+    doc.setFont("times", "bold");
     doc.setFontSize(9);
     doc.setTextColor(INK);
-    doc.text(`${nameLabel}: ${nameValue ?? ""}`, M + 4, y);
+    doc.text(`${nameLabel}:`, M + 4, y);
+    const labelW = doc.getTextWidth(`${nameLabel}: `);
+    doc.setFont("times", "normal");
+    doc.text(nameValue ?? "", M + 4 + labelW, y);
     doc.text(`${signLabel}: `, W - M - 55, y);
-    doc.setDrawColor(MUTED);
+    doc.setDrawColor(INK);
+    doc.setLineWidth(0.15);
     doc.line(W - M - 40, y + 0.5, W - M - 4, y + 0.5);
     y += 6;
   }
@@ -626,16 +824,24 @@ async function buildReportCardDoc(
   nameSignRow("Principal's Name", card.principalName);
 
   if (config.showFees) {
-    doc.setDrawColor(BORDER);
-    doc.setLineWidth(0.2);
+    doc.setDrawColor(INK);
+    doc.setLineWidth(0.3);
     doc.line(M + 4, y, W - M - 4, y);
     y += 5;
-    doc.setFont("helvetica", "italic");
+    doc.setFont("times", "bold");
     doc.setFontSize(9);
     doc.setTextColor(INK);
-    doc.text(`Fees Owed: ${fmtMoney(card.feesOwed) || "—"}`, M + 4, y);
-    doc.text(`Next Term's Fees: ${fmtMoney(card.nextTermFees) || "—"}`, M + 4 + contentW / 3, y);
-    doc.text(`Payable On Or Before: ${fmtDate(card.feesPayableBy) || "—"}`, M + 4 + (contentW / 3) * 2, y);
+    doc.text("Fees Owed:", M + 4, y);
+    doc.setFont("times", "normal");
+    doc.text(fmtMoney(card.feesOwed) || "—", M + 4 + doc.getTextWidth("Fees Owed: "), y);
+    doc.setFont("times", "bold");
+    doc.text("Next Term's Fees:", M + 4 + contentW / 3, y);
+    doc.setFont("times", "normal");
+    doc.text(fmtMoney(card.nextTermFees) || "—", M + 4 + contentW / 3 + doc.getTextWidth("Next Term's Fees: "), y);
+    doc.setFont("times", "bold");
+    doc.text("Payable On Or Before:", M + 4 + (contentW / 3) * 2, y);
+    doc.setFont("times", "normal");
+    doc.text(fmtDate(card.feesPayableBy) || "—", M + 4 + (contentW / 3) * 2 + doc.getTextWidth("Payable On Or Before: "), y);
     y += 6;
   }
 
