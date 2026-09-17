@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { PageHeader, Card, Stat, Badge, Select, Alert, Spinner, EmptyState, Icon, Table, Button, Modal, Field, Textarea, Tabs } from "@duga/ui";
+import { PageHeader, Card, Stat, Badge, Select, Alert, Spinner, EmptyState, Icon, Table, Button, Modal, Field, Input, Textarea, Tabs } from "@duga/ui";
 import { api } from "@/lib/client/api";
 import { BarChart } from "@/components/charts";
 import { useSection } from "@/components/SectionContext";
@@ -99,6 +99,9 @@ export default function MyClassPage() {
   const [remarkDraft, setRemarkDraft] = useState("");
   const [traitsDraft, setTraitsDraft] = useState<Record<string, string>>({});
   const [coCurricularDraft, setCoCurricularDraft] = useState<Record<string, string>>({});
+  const [formMasterNameDraft, setFormMasterNameDraft] = useState("");
+  const [principalCommentDraft, setPrincipalCommentDraft] = useState("");
+  const [principalNameDraft, setPrincipalNameDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const [modalTab, setModalTab] = useState("performance");
@@ -139,9 +142,9 @@ export default function MyClassPage() {
           nextTermFees: studentCard.reportCard.nextTermFees !== null && studentCard.reportCard.nextTermFees !== undefined ? Number(studentCard.reportCard.nextTermFees) : null,
           feesPayableBy: studentCard.reportCard.feesPayableBy,
           remark: remarkDraft || studentCard.reportCard.remark,
-          formMasterName: studentCard.reportCard.formMasterName,
-          principalComment: studentCard.reportCard.principalComment,
-          principalName: studentCard.reportCard.principalName,
+          formMasterName: formMasterNameDraft || studentCard.reportCard.formMasterName,
+          principalComment: principalCommentDraft || studentCard.reportCard.principalComment,
+          principalName: principalNameDraft || studentCard.reportCard.principalName,
         },
         studentCard.components,
         studentCard.gradingScale,
@@ -173,6 +176,9 @@ export default function MyClassPage() {
       setRemarkDraft(d.reportCard?.remark ?? "");
       setTraitsDraft(d.reportCard?.psychomotor ?? {});
       setCoCurricularDraft(d.reportCard?.coCurricular ?? {});
+      setFormMasterNameDraft(d.reportCard?.formMasterName ?? "");
+      setPrincipalCommentDraft(d.reportCard?.principalComment ?? "");
+      setPrincipalNameDraft(d.reportCard?.principalName ?? "");
     } catch (e) {
       setStudentError((e as Error).message);
     } finally {
@@ -200,9 +206,33 @@ export default function MyClassPage() {
     try {
       await api(`results/${studentCard.reportCard.id}/updateDetails`, {
         method: "POST",
-        body: { remark: remarkDraft, psychomotor: traitsDraft, coCurricular: coCurricularDraft },
+        body: {
+          remark: remarkDraft,
+          psychomotor: traitsDraft,
+          coCurricular: coCurricularDraft,
+          formMasterName: formMasterNameDraft,
+          principalComment: principalCommentDraft,
+          principalName: principalNameDraft,
+        },
       });
-      setStudentCard((c) => (c ? { ...c, reportCard: c.reportCard ? { ...c.reportCard, remark: remarkDraft, psychomotor: traitsDraft, coCurricular: coCurricularDraft } : null } : c));
+      setStudentCard((c) =>
+        c
+          ? {
+              ...c,
+              reportCard: c.reportCard
+                ? {
+                    ...c.reportCard,
+                    remark: remarkDraft,
+                    psychomotor: traitsDraft,
+                    coCurricular: coCurricularDraft,
+                    formMasterName: formMasterNameDraft,
+                    principalComment: principalCommentDraft,
+                    principalName: principalNameDraft,
+                  }
+                : null,
+            }
+          : c,
+      );
     } catch (e) {
       alert((e as Error).message);
     } finally {
@@ -444,6 +474,19 @@ export default function MyClassPage() {
                       </div>
                       <Textarea rows={4} value={remarkDraft} onChange={(e) => setRemarkDraft(e.target.value)} placeholder="e.g. A hardworking pupil who participates well in class..." />
                     </div>
+
+                    <Field label="Form master's name" hint="Printed under your comment on the report card.">
+                      <Input value={formMasterNameDraft} onChange={(e) => setFormMasterNameDraft(e.target.value)} placeholder="e.g. Mrs. Grace Adebayo" />
+                    </Field>
+
+                    <div>
+                      <label style={{ fontSize: 12.5, fontWeight: 600, display: "block", marginBottom: 6 }}>Principal&apos;s comment</label>
+                      <Textarea rows={3} value={principalCommentDraft} onChange={(e) => setPrincipalCommentDraft(e.target.value)} placeholder="Only fill this in if the principal has given you their comment to add." />
+                    </div>
+
+                    <Field label="Principal's name">
+                      <Input value={principalNameDraft} onChange={(e) => setPrincipalNameDraft(e.target.value)} placeholder="e.g. Mr. Emmanuel Okafor" />
+                    </Field>
 
                     <div>
                       <Button type="button" variant="outline" size="sm" loading={previewing} onClick={previewUrl ? closePreview : openPreview}>
