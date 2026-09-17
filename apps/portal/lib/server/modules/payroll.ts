@@ -3,6 +3,34 @@ import type { Module } from ".";
 import { can, num, str, financeManager } from "../helpers";
 
 const BURSAR_ACCESS_KEY = "bursarFinanceAccess";
+const PAYROLL_RULES_KEY = "payrollRules";
+const DEFAULT_LATE_AFTER_TIME = "08:00";
+
+interface PayrollRules {
+  /** "HH:MM", 24-hour, compared against the staff member's own clock-in
+   * time on the same day. Matches this app's existing convention of not
+   * doing any explicit timezone conversion (see security.ts's
+   * toLocaleTimeString() usage) — both this setting and StaffAttendance's
+   * checkInAt are read in the server's local time. */
+  lateAfterTime: string;
+}
+
+async function getPayrollRules(schoolId: string): Promise<PayrollRules> {
+  const row = await prisma.schoolSetting.findUnique({ where: { schoolId_key: { schoolId, key: PAYROLL_RULES_KEY } } });
+  const raw = row?.value && typeof row.value === "object" ? (row.value as { lateAfterTime?: unknown }) : {};
+  const lateAfterTime = typeof raw.lateAfterTime === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(raw.lateAfterTime) ? raw.lateAfterTime : DEFAULT_LATE_AFTER_TIME;
+  return { lateAfterTime };
+}
+
+// Later than lateAfterTime on the day they clocked in — a day they never
+// clocked in at all is an absence, not lateness (the two are deliberately
+// never conflated; see the note in `generate` below).
+function isLateCheckIn(checkInAt: Date, lateAfterTime: string): boolean {
+  const [h, m] = lateAfterTime.split(":").map(Number);
+  const hh = checkInAt.getHours();
+  const mm = checkInAt.getMinutes();
+  return hh > h! || (hh === h && mm > m!);
+}
 
 async function assertPayrollAccess(ctx: Parameters<NonNullable<Module["list"]>>[0], manage = false) {
   can(ctx, manage ? "payroll:manage" : "payroll:view");
@@ -25,12 +53,13 @@ export const payrollModule: Module = {
     await assertPayrollAccess(ctx);
     const schoolId = ctx.session.user.schoolId;
     const month = ctx.query.get("month") ?? new Date().toISOString().slice(0, 7);
-    const [staff, entries, access] = await Promise.all([
+    const [staff, entries, access, payrollRules] = await Promise.all([
       prisma.user.findMany({ where: { schoolId, role: { in: ["TEACHER", "ADMIN", "BURSAR"] }, status: "ACTIVE" }, include: { salaryProfile: true, teacher: true, admin: true }, orderBy: [{ firstName: "asc" }] }),
       prisma.payrollEntry.findMany({ where: { schoolId, month }, include: { user: { select: { firstName: true, lastName: true, role: true } } }, orderBy: { user: { firstName: "asc" } } }),
       prisma.schoolSetting.findUnique({ where: { schoolId_key: { schoolId, key: BURSAR_ACCESS_KEY } } }),
+      getPayrollRules(schoolId),
     ]);
-    return { role: ctx.session.user.role, month, staff, entries, bursarAccess: access?.value === true };
+    return { role: ctx.session.user.role, month, staff, entries, bursarAccess: access?.value === true, payrollRules };
   },
   actions: {
     setBursarAccess: async (ctx) => {
@@ -38,6 +67,15 @@ export const payrollModule: Module = {
       const enabled = ctx.body.enabled === true;
       await prisma.schoolSetting.upsert({ where: { schoolId_key: { schoolId: ctx.session.user.schoolId, key: BURSAR_ACCESS_KEY } }, update: { value: enabled }, create: { schoolId: ctx.session.user.schoolId, key: BURSAR_ACCESS_KEY, value: enabled } });
       return { enabled };
+    },
+    setPayrollRules: async (ctx) => {
+      if (ctx.session.user.role !== "OWNER") throw new Error("Only the owner can set payroll rules");
+      const lateAfterTime = str(ctx.body.lateAfterTime);
+      if (!lateAfterTime || !/^([01]\d|2[0-3]):[0-5]\d$/.test(lateAfterTime)) throw new Error("lateAfterTime must be HH:MM (24-hour)");
+      const schoolId = ctx.session.user.schoolId;
+      await prisma.schoolSetting.upsert({ where: { schoolId_key: { schoolId, key: PAYROLL_RULES_KEY } }, update: { value: { lateAfterTime } }, create: { schoolId, key: PAYROLL_RULES_KEY, value: { lateAfterTime } } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "payroll.rulesUpdated", entityType: "School", entityId: schoolId, meta: { lateAfterTime } });
+      return { lateAfterTime };
     },
     setSalary: async (ctx) => {
       if (ctx.session.user.role !== "OWNER") throw new Error("Only the owner can set staff salaries and rules");
@@ -55,17 +93,41 @@ export const payrollModule: Module = {
       await assertPayrollAccess(ctx, true);
       const schoolId = ctx.session.user.schoolId; const month = str(ctx.body.month) ?? new Date().toISOString().slice(0, 7); const { start, end } = monthRange(month);
       const staff = await prisma.user.findMany({ where: { schoolId, role: { in: ["TEACHER", "ADMIN", "BURSAR"] }, status: "ACTIVE" }, include: { salaryProfile: true } });
-      const attendance = await prisma.staffAttendance.groupBy({ by: ["userId"], where: { schoolId, date: { gte: start, lt: end }, checkInAt: { not: null } }, _count: { id: true } });
-      const attendanceByUser = new Map(attendance.map((row) => [row.userId, row._count.id]));
+      const { lateAfterTime } = await getPayrollRules(schoolId);
+      const attendanceRows = await prisma.staffAttendance.findMany({ where: { schoolId, date: { gte: start, lt: end }, checkInAt: { not: null } }, select: { userId: true, checkInAt: true } });
+      const attendanceByUser = new Map<string, { count: number; late: number }>();
+      for (const row of attendanceRows) {
+        const agg = attendanceByUser.get(row.userId) ?? { count: 0, late: 0 };
+        agg.count += 1;
+        if (isLateCheckIn(row.checkInAt!, lateAfterTime)) agg.late += 1;
+        attendanceByUser.set(row.userId, agg);
+      }
       let created = 0;
       for (const user of staff) {
         const profile = user.salaryProfile; if (!profile) continue;
-        // Absences are not assumed as lateness. The owner/bursar enters actual
-        // late days, while this field shows clocked work days for review.
+        // Absences are not assumed as lateness — a day never clocked in at
+        // all doesn't count toward lateDays, only a clock-in after
+        // lateAfterTime does. The owner/bursar can still correct this via
+        // "Adjust" (e.g. a documented excuse), which is why this only seeds
+        // the value on first creation (update: {}) rather than overwriting
+        // an entry someone already reviewed.
+        const attendance = attendanceByUser.get(user.id) ?? { count: 0, late: 0 };
+        const lateDeduction = attendance.late * Number(profile.latePenalty);
+        const netPay = Math.max(0, Number(profile.monthlyAmount) + Number(profile.rewardAmount) - lateDeduction);
         const entry = await prisma.payrollEntry.upsert({
           where: { schoolId_userId_month: { schoolId, userId: user.id, month } },
           update: {},
-          create: { schoolId, userId: user.id, month, baseSalary: profile.monthlyAmount, reward: profile.rewardAmount, netPay: Number(profile.monthlyAmount) + Number(profile.rewardAmount), note: `${attendanceByUser.get(user.id) ?? 0} attendance day(s) clocked` },
+          create: {
+            schoolId,
+            userId: user.id,
+            month,
+            baseSalary: profile.monthlyAmount,
+            reward: profile.rewardAmount,
+            lateDays: attendance.late,
+            lateDeduction,
+            netPay,
+            note: `${attendance.count} attendance day(s) clocked, ${attendance.late} late (after ${lateAfterTime})`,
+          },
         });
         if (entry.createdAt.getTime() > Date.now() - 10000) created++;
       }
