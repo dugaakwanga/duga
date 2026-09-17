@@ -62,7 +62,7 @@ function fromAddressFor(type: string): string {
 }
 
 function fromNameFor(type: string): string {
-  return type === "application" ? "De Ultimate Glory Academy — Admissions" : "De Ultimate Glory Academy";
+  return type === "application" ? "DUGA Admissions" : "De Ultimate Glory Academy";
 }
 
 // Resend's free tier caps at 100 emails/day — this stays under that with a
@@ -126,14 +126,14 @@ async function sendViaSendPulse(fromEmail: string, fromName: string, to: string,
 // Picks Resend while it's under today's safe limit, SendPulse once that's
 // used up, and falls back to whichever provider isn't the one that just
 // failed — so a single provider outage doesn't drop the email entirely.
-async function sendViaProvider(from: string, fromName: string, to: string, subject: string, text: string, link?: string): Promise<void> {
+async function sendViaProvider(type: string, from: string, fromName: string, to: string, subject: string, text: string, link?: string): Promise<void> {
   const hasResend = Boolean(process.env.RESEND_API_KEY);
   const hasSendPulse = Boolean(process.env.SENDPULSE_API_KEY);
   if (!hasResend && !hasSendPulse) {
     console.log(`[email:dev] to=${to} subject="${subject}" body="${text}"`);
     return;
   }
-  const html = renderEmailHtml({ title: subject, body: text, link });
+  const html = renderEmailHtml({ type, title: subject, body: text, link });
   const preferResend = hasResend && (!hasSendPulse || (await usageToday("resend")) < RESEND_DAILY_SAFE_LIMIT);
   const primary = preferResend ? "resend" : "sendpulse";
   try {
@@ -154,7 +154,7 @@ async function sendEmail(opts: NotifyOptions) {
   try {
     const user = await prisma.user.findUnique({ where: { id: opts.userId }, select: { email: true } });
     if (!user?.email) return;
-    await sendViaProvider(from, fromName, user.email, opts.title, opts.body || "", opts.link);
+    await sendViaProvider(opts.type, from, fromName, user.email, opts.title, opts.body || "", opts.link);
   } catch (e) {
     console.error("email send failed:", e);
   }
@@ -167,7 +167,7 @@ async function sendEmail(opts: NotifyOptions) {
 export async function sendRawEmail(to: string, subject: string, body: string): Promise<void> {
   if (!to) return;
   try {
-    await sendViaProvider(fromAddressFor("application"), fromNameFor("application"), to, subject, body);
+    await sendViaProvider("application", fromAddressFor("application"), fromNameFor("application"), to, subject, body);
   } catch (e) {
     console.error("email send failed:", e);
   }
