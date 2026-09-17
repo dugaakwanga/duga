@@ -134,6 +134,7 @@ const STAFF_NAV: NavSection[] = [
     items: [
       { href: "/portal/staff", label: "Staff", icon: "staff", perm: "staff:view", feature: "staff" },
       { href: "/portal/settings", label: "School Settings", icon: "settings", perm: "settings:manage", feature: "settings" },
+      { href: "/portal/settings/email-templates", label: "Email Templates", icon: "announcements", perm: "emailTemplates:manage", feature: "settings" },
       { href: "/portal/audit", label: "Audit Log", icon: "audit", perm: "audit:view", feature: "audit" },
       { href: "/portal/security", label: "Gate & Visitors", icon: "attendance", perm: "gate:view", feature: "security" },
     ],

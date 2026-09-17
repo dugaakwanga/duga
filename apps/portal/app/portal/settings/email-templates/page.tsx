@@ -36,6 +36,16 @@ export default function EmailTemplatesPage() {
   const [saved, setSaved] = useState(false);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  // The main Settings page is owner-only, but admin can reach this page
+  // directly from the sidebar — a "back to Settings" link would 403 for
+  // them, so it only shows up for whoever can actually load that page.
+  const [canSeeMainSettings, setCanSeeMainSettings] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((j) => j.ok && setCanSeeMainSettings(j.user.role === "OWNER"));
+  }, []);
 
   function load() {
     api<{ items: TemplateItem[] }>("emailTemplates")
@@ -115,9 +125,11 @@ export default function EmailTemplatesPage() {
         title="Email templates"
         subtitle="Edit the wording of the letter-style parts of each notification email — the actual fact (amount, name, admission number) always comes from live data."
         actions={
-          <Link href="/portal/settings" className="duga-btn duga-btn--ghost duga-btn--sm" style={{ display: "inline-flex" }}>
-            ← Settings
-          </Link>
+          canSeeMainSettings ? (
+            <Link href="/portal/settings" className="duga-btn duga-btn--ghost duga-btn--sm" style={{ display: "inline-flex" }}>
+              ← Settings
+            </Link>
+          ) : undefined
         }
       />
       <div className="duga-split-2">

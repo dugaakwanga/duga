@@ -69,6 +69,9 @@ export type Permission =
   // can manage it without the broader access the rest of School Settings
   // implies (subscription, feature toggles, etc.).
   | "curriculum:manage"
+  // Same reasoning: admin can edit notification email wording without the
+  // broader School Settings access (school profile, terms, subscription).
+  | "emailTemplates:manage"
   // Applications (admissions inbox)
   | "applications:view"
   | "applications:manage"
@@ -207,6 +210,7 @@ const rolePermissions: Record<Role, Permission[]> = {
     "timetable:view",
     "timetable:manage",
     "curriculum:manage",
+    "emailTemplates:manage",
     "transport:view",
     "transport:manage",
     "applications:view",

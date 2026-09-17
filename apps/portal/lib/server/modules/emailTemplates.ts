@@ -33,7 +33,7 @@ function findType(type: string | undefined) {
 
 export const emailTemplatesModule: Module = {
   async list(ctx) {
-    can(ctx, "settings:manage");
+    can(ctx, "emailTemplates:manage");
     const schoolId = ctx.session.user.schoolId;
     const rows = await prisma.emailTemplate.findMany({ where: { schoolId } });
     const byType = new Map(rows.map((r) => [r.type, r]));
@@ -52,7 +52,7 @@ export const emailTemplatesModule: Module = {
 
   actions: {
     save: async (ctx) => {
-      can(ctx, "settings:manage");
+      can(ctx, "emailTemplates:manage");
       const schoolId = ctx.session.user.schoolId;
       const meta = findType(str(ctx.body.type));
       // Leaving a field blank clears any previous customization for it and
@@ -74,7 +74,7 @@ export const emailTemplatesModule: Module = {
     },
 
     reset: async (ctx) => {
-      can(ctx, "settings:manage");
+      can(ctx, "emailTemplates:manage");
       const schoolId = ctx.session.user.schoolId;
       const meta = findType(str(ctx.body.type));
       await prisma.emailTemplate.deleteMany({ where: { schoolId, type: meta.type } });
@@ -85,7 +85,7 @@ export const emailTemplatesModule: Module = {
     // so what the admin sees while editing is what actually goes out, not
     // an approximation of it.
     preview: async (ctx) => {
-      can(ctx, "settings:manage");
+      can(ctx, "emailTemplates:manage");
       const meta = findType(str(ctx.body.type));
       const html = renderEmailHtml({
         type: meta.type,
