@@ -218,43 +218,53 @@ export const studentsModule: Module = {
 
     const passwordHash = await bcrypt.hash(str(b.tempPassword) ?? "password123", 10);
 
-    const user = await prisma.user.create({
-      data: {
-        schoolId,
-        role: "STUDENT",
-        email: email ?? null,
-        phone,
-        passwordHash,
-        firstName,
-        lastName,
-        mustChangePassword: true,
-      },
-    });
-
     // This config is a price and duration, not a payment. Access begins only
     // when a successful payment is recorded.
     const feePaidThrough = null;
 
-    const student = await prisma.student.create({
-      data: {
-        userId: user.id,
-        schoolId,
-        admissionNumber,
-        section: classGroup.level.section,
-        gender,
-        dateOfBirth,
-        isBoarding,
-        currentClassGroupId: classGroup.id,
-        feeAmount,
-        feeDays,
-        feeStartDate,
-        feeEndDate,
-        feePaidThrough,
-      },
-    });
+    // One transaction: if the admission number collides or anything else
+    // fails partway through, the user account must not be left behind as an
+    // orphan with no Student profile — that ghost account would still show
+    // up everywhere a STUDENT-role user is listed (e.g. the messaging
+    // contact picker's "Unassigned" bucket) despite never being a real,
+    // usable student record.
+    const { user, student } = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          schoolId,
+          role: "STUDENT",
+          email: email ?? null,
+          phone,
+          passwordHash,
+          firstName,
+          lastName,
+          mustChangePassword: true,
+        },
+      });
 
-    await prisma.placementHistory.create({
-      data: { schoolId, studentId: student.id, toClassGroupId: classGroup.id, changedBy: ctx.session.user.id },
+      const student = await tx.student.create({
+        data: {
+          userId: user.id,
+          schoolId,
+          admissionNumber,
+          section: classGroup.level.section,
+          gender,
+          dateOfBirth,
+          isBoarding,
+          currentClassGroupId: classGroup.id,
+          feeAmount,
+          feeDays,
+          feeStartDate,
+          feeEndDate,
+          feePaidThrough,
+        },
+      });
+
+      await tx.placementHistory.create({
+        data: { schoolId, studentId: student.id, toClassGroupId: classGroup.id, changedBy: ctx.session.user.id },
+      });
+
+      return { user, student };
     });
 
     if (b.parentEmail || b.parentName) {
