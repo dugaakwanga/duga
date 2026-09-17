@@ -1,0 +1,203 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { Card, PageHeader, Field, Textarea, Button, Badge, Alert, Spinner, EmptyState, Icon } from "@duga/ui";
+import { api } from "@/lib/client/api";
+
+interface EmailCopy {
+  greeting: string;
+  intro: string;
+  closing: string;
+  signOff: string;
+}
+
+interface TemplateItem {
+  type: string;
+  label: string;
+  default: EmailCopy;
+  custom: Partial<EmailCopy> | null;
+}
+
+const FIELDS: Array<{ key: keyof EmailCopy; label: string; hint: string }> = [
+  { key: "greeting", label: "Greeting", hint: "Use {{name}} to insert the recipient's name — falls back to \"Parent/Guardian\" when it isn't known." },
+  { key: "intro", label: "Opening line", hint: "The sentence right after the greeting, before the actual fact (amount, admission number, etc.)." },
+  { key: "closing", label: "Closing note", hint: "Comes after the fact — reassurance, next steps, an invitation to reach out." },
+  { key: "signOff", label: "Sign-off", hint: "Shown after \"Warm regards,\" — e.g. \"De Ultimate Glory Academy\" or \"DUGA Admissions\"." },
+];
+
+export default function EmailTemplatesPage() {
+  const [items, setItems] = useState<TemplateItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [active, setActive] = useState<string | null>(null);
+  const [form, setForm] = useState<EmailCopy>({ greeting: "", intro: "", closing: "", signOff: "" });
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  function load() {
+    api<{ items: TemplateItem[] }>("emailTemplates")
+      .then((d) => setItems(d.items))
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  function openType(item: TemplateItem) {
+    setActive(item.type);
+    setSaved(false);
+    setPreviewHtml(null);
+    setForm({
+      greeting: item.custom?.greeting ?? item.default.greeting,
+      intro: item.custom?.intro ?? item.default.intro,
+      closing: item.custom?.closing ?? item.default.closing,
+      signOff: item.custom?.signOff ?? item.default.signOff,
+    });
+  }
+
+  const activeItem = items.find((i) => i.type === active) ?? null;
+  const isCustomized = Boolean(activeItem?.custom);
+
+  async function save() {
+    if (!active) return;
+    setSaving(true);
+    setSaved(false);
+    try {
+      await api("emailTemplates/save", { method: "POST", body: { type: active, ...form } });
+      setSaved(true);
+      load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function resetToDefault() {
+    if (!active || !activeItem) return;
+    setSaving(true);
+    try {
+      await api("emailTemplates/reset", { method: "POST", body: { type: active } });
+      setForm({ ...activeItem.default });
+      setSaved(true);
+      load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function runPreview() {
+    if (!active) return;
+    setPreviewLoading(true);
+    try {
+      const d = await api<{ html: string }>("emailTemplates/preview", { method: "POST", body: { type: active, ...form }, loading: false });
+      setPreviewHtml(d.html);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  if (error) return <Alert tone="danger">{error}</Alert>;
+  if (loading) return <Spinner size={28} />;
+
+  return (
+    <div>
+      <PageHeader
+        title="Email templates"
+        subtitle="Edit the wording of the letter-style parts of each notification email — the actual fact (amount, name, admission number) always comes from live data."
+        actions={
+          <Link href="/portal/settings" className="duga-btn duga-btn--ghost duga-btn--sm" style={{ display: "inline-flex" }}>
+            ← Settings
+          </Link>
+        }
+      />
+      <div className="duga-split-2">
+        <Card title="Notification types" pad={false}>
+          <div style={{ maxHeight: 560, overflowY: "auto" }}>
+            {items.map((item) => (
+              <button
+                key={item.type}
+                onClick={() => openType(item)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  width: "100%",
+                  textAlign: "left",
+                  padding: "12px 16px",
+                  border: "none",
+                  borderBottom: "1px solid var(--duga-border)",
+                  background: active === item.type ? "var(--duga-surface-2)" : "transparent",
+                  cursor: "pointer",
+                }}
+              >
+                <span style={{ fontSize: 13.5, fontWeight: 600 }}>{item.label}</span>
+                {item.custom && <Badge tone="accent">Customized</Badge>}
+              </button>
+            ))}
+          </div>
+        </Card>
+
+        <div>
+          {!activeItem ? (
+            <Card>
+              <EmptyState title="Choose a notification type" hint="Pick one on the left to edit its email wording." />
+            </Card>
+          ) : (
+            <Card title={activeItem.label}>
+              {isCustomized && (
+                <Alert tone="info">
+                  This type has custom wording. Clear a field and save to fall back to the built-in default for it.
+                </Alert>
+              )}
+              {FIELDS.map((f) => (
+                <Field key={f.key} label={f.label} hint={f.hint}>
+                  <Textarea
+                    value={form[f.key]}
+                    onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+                    rows={f.key === "greeting" || f.key === "signOff" ? 2 : 4}
+                  />
+                </Field>
+              ))}
+              {saved && <Alert tone="success">Saved.</Alert>}
+              <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
+                <Button onClick={save} loading={saving}>Save</Button>
+                <Button variant="outline" onClick={runPreview} loading={previewLoading}>
+                  <Icon name="check" size={16} /> Preview email
+                </Button>
+                {isCustomized && (
+                  <Button variant="ghost" onClick={resetToDefault} disabled={saving}>
+                    Reset to default
+                  </Button>
+                )}
+              </div>
+            </Card>
+          )}
+
+          {previewHtml && (
+            <Card title="Preview" style={{ marginTop: 16 }}>
+              <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginBottom: 10 }}>
+                Rendered with sample data — this is exactly what a real send looks like with your current wording.
+              </div>
+              <iframe
+                srcDoc={previewHtml}
+                title="Email preview"
+                style={{ width: "100%", height: 640, border: "1px solid var(--duga-border)", borderRadius: 10, background: "#eae9e6" }}
+              />
+            </Card>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

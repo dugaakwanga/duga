@@ -1,6 +1,6 @@
 import { prisma } from "./prisma";
 import { sendPush } from "./push";
-import { renderEmailHtml } from "./emailTemplate";
+import { renderEmailHtml, type EmailCopy } from "./emailTemplate";
 
 export interface NotifyOptions {
   schoolId: string;
@@ -88,6 +88,29 @@ async function recordUsage(provider: string): Promise<void> {
     .catch(() => undefined);
 }
 
+// Admin's edited greeting/intro/closing/sign-off for a notification type,
+// if they've saved one (see lib/server/modules/emailTemplates.ts) — cached
+// briefly since this now runs on every single email send, not just once
+// per deploy like most of this app's other settings caches.
+interface CopyCacheEntry {
+  value: Partial<EmailCopy> | null;
+  expiresAt: number;
+}
+const emailCopyCache = new Map<string, CopyCacheEntry>();
+const EMAIL_COPY_CACHE_TTL_MS = 60_000;
+
+async function getEmailCopyOverride(schoolId: string, type: string): Promise<Partial<EmailCopy> | undefined> {
+  const key = `${schoolId}:${type}`;
+  const cached = emailCopyCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.value ?? undefined;
+  const row = await prisma.emailTemplate.findUnique({ where: { schoolId_type: { schoolId, type } } }).catch(() => null);
+  const value: Partial<EmailCopy> | null = row
+    ? { greeting: row.greeting ?? undefined, intro: row.intro ?? undefined, closing: row.closing ?? undefined, signOff: row.signOff ?? undefined }
+    : null;
+  emailCopyCache.set(key, { value, expiresAt: Date.now() + EMAIL_COPY_CACHE_TTL_MS });
+  return value ?? undefined;
+}
+
 async function sendViaResend(from: string, to: string, subject: string, text: string, html: string): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) throw new Error("Resend not configured");
@@ -126,14 +149,25 @@ async function sendViaSendPulse(fromEmail: string, fromName: string, to: string,
 // Picks Resend while it's under today's safe limit, SendPulse once that's
 // used up, and falls back to whichever provider isn't the one that just
 // failed — so a single provider outage doesn't drop the email entirely.
-async function sendViaProvider(type: string, from: string, fromName: string, to: string, subject: string, text: string, link?: string, recipientName?: string): Promise<void> {
+async function sendViaProvider(
+  schoolId: string,
+  type: string,
+  from: string,
+  fromName: string,
+  to: string,
+  subject: string,
+  text: string,
+  link?: string,
+  recipientName?: string,
+): Promise<void> {
   const hasResend = Boolean(process.env.RESEND_API_KEY);
   const hasSendPulse = Boolean(process.env.SENDPULSE_API_KEY);
   if (!hasResend && !hasSendPulse) {
     console.log(`[email:dev] to=${to} subject="${subject}" body="${text}"`);
     return;
   }
-  const html = renderEmailHtml({ type, title: subject, body: text, link, recipientName });
+  const copyOverride = await getEmailCopyOverride(schoolId, type);
+  const html = renderEmailHtml({ type, title: subject, body: text, link, recipientName, copyOverride });
   const preferResend = hasResend && (!hasSendPulse || (await usageToday("resend")) < RESEND_DAILY_SAFE_LIMIT);
   const primary = preferResend ? "resend" : "sendpulse";
   try {
@@ -154,7 +188,7 @@ async function sendEmail(opts: NotifyOptions) {
   try {
     const user = await prisma.user.findUnique({ where: { id: opts.userId }, select: { email: true, firstName: true } });
     if (!user?.email) return;
-    await sendViaProvider(opts.type, from, fromName, user.email, opts.title, opts.body || "", opts.link, user.firstName);
+    await sendViaProvider(opts.schoolId, opts.type, from, fromName, user.email, opts.title, opts.body || "", opts.link, user.firstName);
   } catch (e) {
     console.error("email send failed:", e);
   }
@@ -164,10 +198,13 @@ async function sendEmail(opts: NotifyOptions) {
 // — e.g. an admissions applicant who hasn't been admitted, so has no portal
 // account for dispatchNotification's user-scoped lookups to find. Only ever
 // called for admissions flows, so it always sends from the admissions inbox.
-export async function sendRawEmail(to: string, subject: string, body: string): Promise<void> {
+// schoolId is optional only because a couple of call sites predate this
+// parameter — without it, an admin's saved override for "application" is
+// simply skipped and the built-in default copy is used instead.
+export async function sendRawEmail(to: string, subject: string, body: string, schoolId?: string): Promise<void> {
   if (!to) return;
   try {
-    await sendViaProvider("application", fromAddressFor("application"), fromNameFor("application"), to, subject, body);
+    await sendViaProvider(schoolId ?? "", "application", fromAddressFor("application"), fromNameFor("application"), to, subject, body);
   } catch (e) {
     console.error("email send failed:", e);
   }

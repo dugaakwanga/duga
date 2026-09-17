@@ -357,6 +357,26 @@ model EmailProviderUsage {
   @@unique([provider, day])
 }
 
+// Admin-editable copy for the letter-style parts of a notification email —
+// greeting, intro paragraph, closing paragraph, sign-off. The actual fact
+// (amount, student name, admission number, ...) is never stored here; it's
+// generated fresh from live data at send time and slotted in as its own
+// bolded line, same as the built-in default copy already does. A row is
+// only present once a school has actually customized that type; anything
+// missing here just falls back to the built-in default in code.
+model EmailTemplate {
+  id        String   @id @default(cuid())
+  schoolId  String
+  type      String
+  greeting  String?
+  intro     String?
+  closing   String?
+  signOff   String?
+  updatedAt DateTime @updatedAt
+
+  @@unique([schoolId, type])
+}
+
 model Student {
   id                  String        @id @default(cuid())
   userId              String        @unique

@@ -98,6 +98,7 @@ export async function POST(request: NextRequest) {
           email,
           "Your entrance test link",
           `Thank you for applying, ${applicantName}. Please complete the entrance test at: ${testUrl}`,
+          school.id,
         ).catch(() => undefined);
       }
     }

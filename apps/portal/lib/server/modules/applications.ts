@@ -87,7 +87,7 @@ export const applicationsModule: Module = {
       if (user) {
         await dispatchNotification({ schoolId, userId: user.id, type: "application", title, body, link: "/portal/applications", channels: ["IN_APP", "EMAIL", "PUSH"] });
       } else if (app.email) {
-        await sendRawEmail(app.email, title, body);
+        await sendRawEmail(app.email, title, body, schoolId);
       }
       return updated;
     },

@@ -5,6 +5,7 @@ export * from "./prisma";
 export * from "./session";
 export * from "./audit";
 export * from "./notify";
+export * from "./emailTemplate";
 export * from "./school";
 export * from "./reportCard";
 export * from "./paystack";

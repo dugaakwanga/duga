@@ -394,6 +394,15 @@ export default function SettingsPage() {
             </Link>
           </Card>
 
+          <Card title="Email templates" style={{ marginTop: 16 }}>
+            <div style={{ fontSize: 13.5, color: "var(--duga-ink-2)", marginBottom: 12 }}>
+              Edit the wording of fee reminders, payment confirmations, admissions emails and every other notification email — greeting, opening line, closing note and sign-off.
+            </div>
+            <Link href="/portal/settings/email-templates" className="duga-btn duga-btn--outline duga-btn--sm" style={{ display: "inline-flex" }}>
+              Edit email templates
+            </Link>
+          </Card>
+
           <Card title="Scheme of Work" style={{ marginTop: 16 }}>
             <div style={{ fontSize: 13.5, color: "var(--duga-ink-2)", marginBottom: 12 }}>
               Upload the school&apos;s official curriculum so the AI assistant can draft lesson notes grounded in it, not just a generic topic.

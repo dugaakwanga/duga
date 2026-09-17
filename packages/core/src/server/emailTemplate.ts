@@ -11,61 +11,71 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-// A named greeting beats a generic one whenever we actually know who we're
-// writing to (dispatchNotification always does — it's addressed to a real
-// User row). Falls back to a role-shaped generic only when we don't (e.g.
-// sendRawEmail, before an applicant has any account at all).
-function greetingFor(type: string, recipientName?: string): string {
-  if (recipientName) return `Dear ${recipientName},`;
-  return type === "application" ? "Dear Applicant/Parent," : "Dear Parent/Guardian,";
+export interface EmailCopy {
+  greeting: string;
+  intro: string;
+  closing: string;
+  signOff: string;
 }
 
-// Push/in-app notifications are deliberately terse — one glanceable line.
-// Email can carry more, and a bare one-liner reads as unfinished in an
-// inbox, so each notification type gets wrapped in a greeting, the actual
-// fact, a bit of standing context, and a sign-off — without inventing any
-// specifics (dates, policies, amounts) beyond what the caller already
-// passed in.
-function paragraphsFor(type: string, title: string, body: string, greeting: string): string[] {
-  if (type === "fee_reminder") {
-    return [
-      greeting,
-      "We hope this message finds you and your family well. This is a friendly reminder from our finance office regarding your child's school account.",
-      `<strong>${body}</strong>`,
-      "Payments can sometimes take a day or two to reflect, so if you've already settled this, please accept our thanks and disregard the reminder. If anything about the balance looks off, or you'd like to arrange a payment plan, our office is always glad to talk it through.",
-      "We're grateful for your continued trust and partnership in your child's education.",
-      "Warm regards,<br>De Ultimate Glory Academy",
-    ];
+// Every notification type gets a sensible built-in letter — greeting, an
+// intro line, the actual fact (inserted separately, bolded), a closing
+// line, and a sign-off. {{name}} is replaced with the recipient's real
+// name when known, or a role-shaped fallback otherwise. Types not listed
+// here (most of them — messages, assignments, library, gate alerts, ...)
+// use DEFAULT_COPY: a short, generic wrapper, since those are meant to
+// stay brief. A school can override any of the four fields per type (see
+// EmailTemplate in schema.prisma / lib/server/modules/emailTemplates.ts);
+// whatever they leave blank keeps falling back to what's defined here.
+const DEFAULT_COPY: Record<string, EmailCopy> = {
+  fee_reminder: {
+    greeting: "Dear {{name}},",
+    intro: "We hope this message finds you and your family well. This is a friendly reminder from our finance office regarding your child's school account.",
+    closing:
+      "Payments can sometimes take a day or two to reflect, so if you've already settled this, please accept our thanks and disregard the reminder. If anything about the balance looks off, or you'd like to arrange a payment plan, our office is always glad to talk it through.<br><br>We're grateful for your continued trust and partnership in your child's education.",
+    signOff: "De Ultimate Glory Academy",
+  },
+  payment: {
+    greeting: "Dear {{name}},",
+    intro: "Thank you — we've recorded a payment on your child's school account.",
+    closing:
+      "You're welcome to review the full payment history and current balance at any time from the Fees section of the school portal.<br><br>We appreciate your continued support.",
+    signOff: "De Ultimate Glory Academy",
+  },
+  application_admitted: {
+    greeting: "Dear {{name}},",
+    intro: "🎉 Congratulations! We are delighted to offer your child a place at De Ultimate Glory Academy — thank you for trusting us with such an important step in their education.",
+    closing: "We're looking forward to meeting your family in person and helping your child settle in.",
+    signOff: "DUGA Admissions",
+  },
+  application: {
+    greeting: "Dear {{name}},",
+    intro: "Thank you for applying to De Ultimate Glory Academy — we're grateful for your interest in joining our school community.",
+    closing: "If you have any questions at all about your application or the admissions process, we're always happy to help — just reply to this email.",
+    signOff: "DUGA Admissions",
+  },
+};
+
+const DEFAULT_COPY_FALLBACK: EmailCopy = {
+  greeting: "Dear {{name}},",
+  intro: "",
+  closing: "",
+  signOff: "De Ultimate Glory Academy",
+};
+
+// "application" covers both a plain status update and the admitted email,
+// which read very differently — keyed separately above by title so each
+// gets its own default copy, but both are edited under one "Admissions"
+// entry in the admin UI (see lib/server/modules/emailTemplates.ts).
+export function defaultCopyFor(type: string, title?: string): EmailCopy {
+  if (type === "application" && title?.toLowerCase().includes("admitted")) {
+    return DEFAULT_COPY.application_admitted ?? DEFAULT_COPY_FALLBACK;
   }
-  if (type === "payment") {
-    return [
-      greeting,
-      "Thank you — we've recorded a payment on your child's school account.",
-      `<strong>${body}</strong>`,
-      "You're welcome to review the full payment history and current balance at any time from the Fees section of the school portal.",
-      "We appreciate your continued support.",
-      "Warm regards,<br>De Ultimate Glory Academy",
-    ];
-  }
-  if (type === "application") {
-    if (title.toLowerCase().includes("admitted")) {
-      return [
-        greeting,
-        "🎉 Congratulations! We are delighted to offer your child a place at De Ultimate Glory Academy — thank you for trusting us with such an important step in their education.",
-        `<strong>${body}</strong>`,
-        "We're looking forward to meeting your family in person and helping your child settle in.",
-        "Warm regards,<br>DUGA Admissions",
-      ];
-    }
-    return [
-      greeting,
-      "Thank you for applying to De Ultimate Glory Academy — we're grateful for your interest in joining our school community.",
-      `<strong>${body}</strong>`,
-      "If you have any questions at all about your application or the admissions process, we're always happy to help — just reply to this email.",
-      "Warm regards,<br>DUGA Admissions",
-    ];
-  }
-  return [body];
+  return DEFAULT_COPY[type] ?? DEFAULT_COPY_FALLBACK;
+}
+
+function applyName(s: string, recipientName?: string): string {
+  return s.replace(/\{\{\s*name\s*\}\}/gi, recipientName || "Parent/Guardian");
 }
 
 // A plain-text notification body/title rendered as a branded HTML email —
@@ -76,11 +86,32 @@ function paragraphsFor(type: string, title: string, body: string, greeting: stri
 // the same student photos used in the site's own hero carousel, played as
 // frames) since email clients run no CSS/JS — a GIF is the one animation
 // technique that actually renders in an inbox.
-export function renderEmailHtml(opts: { type: string; title: string; body: string; link?: string; recipientName?: string }): string {
+export function renderEmailHtml(opts: {
+  type: string;
+  title: string;
+  body: string;
+  link?: string;
+  recipientName?: string;
+  copyOverride?: Partial<EmailCopy>;
+}): string {
   const title = escapeHtml(opts.title);
-  const greeting = greetingFor(opts.type, opts.recipientName ? escapeHtml(opts.recipientName) : undefined);
-  const paragraphs = paragraphsFor(opts.type, opts.title, escapeHtml(opts.body).replace(/\n/g, "<br>"), greeting);
+  const fallback = defaultCopyFor(opts.type, opts.title);
+  const copy: EmailCopy = {
+    greeting: opts.copyOverride?.greeting || fallback.greeting,
+    intro: opts.copyOverride?.intro ?? fallback.intro,
+    closing: opts.copyOverride?.closing ?? fallback.closing,
+    signOff: opts.copyOverride?.signOff || fallback.signOff,
+  };
+  const name = opts.recipientName ? escapeHtml(opts.recipientName) : undefined;
+  const factHtml = escapeHtml(opts.body).replace(/\n/g, "<br>");
+
+  const paragraphs = [applyName(copy.greeting, name)];
+  if (copy.intro) paragraphs.push(applyName(copy.intro, name));
+  paragraphs.push(`<strong>${factHtml}</strong>`);
+  if (copy.closing) paragraphs.push(applyName(copy.closing, name));
+  paragraphs.push(`Warm regards,<br>${applyName(copy.signOff, name)}`);
   const bodyHtml = paragraphs.map((p) => `<div style="margin-bottom:12px;">${p}</div>`).join("");
+
   const linkHref = opts.link ? (opts.link.startsWith("http") ? opts.link : `${PORTAL_BASE_URL}${opts.link}`) : null;
   const button = linkHref
     ? `<tr>
