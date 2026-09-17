@@ -41,6 +41,31 @@ export function pushConfigured(): boolean {
   return Boolean(firebaseConfig.apiKey && firebaseConfig.projectId && vapidKey);
 }
 
+// Belt-and-suspenders alongside the live Notification.permission read: on
+// some Android WebAPK launches that read has come back stale/"default"
+// immediately after the OS dialog was genuinely accepted, which sent the
+// install gate right back to "Step 2" on the very next open despite the
+// user having already granted it. This flag records a confirmed grant so
+// the gate can trust it over a transient misread. It never overrides an
+// explicit "denied" — a real revoke (checked live) still re-shows the gate.
+const GRANTED_FLAG_KEY = "duga:push:granted";
+
+export function markPushGranted(): void {
+  try {
+    localStorage.setItem(GRANTED_FLAG_KEY, "1");
+  } catch {
+    // Storage unavailable (private browsing, quota) — nothing to persist.
+  }
+}
+
+export function wasPushGranted(): boolean {
+  try {
+    return localStorage.getItem(GRANTED_FLAG_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 type MessagingSdk = typeof import("firebase/messaging");
 
 interface Loaded {
@@ -97,6 +122,7 @@ export async function requestPermissionAndRegister(): Promise<"granted" | "denie
     const token = await loaded.sdk.getToken(loaded.messaging, { vapidKey, serviceWorkerRegistration: loaded.registration });
     if (!token) return "denied";
     await api("push/register", { method: "POST", body: { token, userAgent: navigator.userAgent }, loading: false });
+    markPushGranted();
     return "granted";
   } catch (e) {
     console.error("push registration failed:", e);

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Card, Button, Alert, Icon } from "@duga/ui";
-import { isStandalone, isIos, pushConfigured, requestPermissionAndRegister, preloadMessaging, startForegroundPushListener } from "@/lib/client/push";
+import { isStandalone, isIos, pushConfigured, requestPermissionAndRegister, preloadMessaging, startForegroundPushListener, wasPushGranted } from "@/lib/client/push";
 
 interface InstallPromptEvent extends Event {
   prompt: () => void;
@@ -82,8 +82,15 @@ export function PushInstallGate({ role }: { role: string }) {
     startForegroundPushListener();
   }, [skip, standalone, permission]);
 
+  // Trust a confirmed past grant over a live read that came back "default"
+  // instead of "granted" — seen on some Android WebAPK launches right after
+  // the OS dialog was genuinely accepted. An explicit "denied" (a real
+  // revoke) is never overridden, so turning notifications off still
+  // re-shows the gate as expected.
+  const effectivelyGranted = permission === "granted" || (permission !== "denied" && permission !== "unsupported" && wasPushGranted());
+
   if (skip) return null;
-  if (standalone && permission === "granted") return null;
+  if (standalone && effectivelyGranted) return null;
   // iOS Safari doesn't expose the Notification API at all until the site is
   // actually running standalone (added to the Home Screen) — so "unsupported"
   // before that point just means "not installed yet," not "never possible."
