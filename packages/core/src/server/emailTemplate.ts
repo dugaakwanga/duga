@@ -17,32 +17,42 @@ function escapeHtml(s: string): string {
 // actual fact, a bit of standing context, and a sign-off — without
 // inventing any specifics (dates, policies, amounts) beyond what the
 // caller already passed in.
-function paragraphsFor(type: string, body: string): string[] {
+function paragraphsFor(type: string, title: string, body: string): string[] {
   if (type === "fee_reminder") {
     return [
       "Dear Parent/Guardian,",
-      "This is a courtesy reminder from the school's finance office regarding your child's account.",
-      body,
-      "If you have already made this payment, please accept our thanks — it may simply not be reflected yet. If you have any questions about the balance, or would like to discuss it, please don't hesitate to contact the school office.",
-      "Thank you for your continued partnership in your child's education.",
+      "We hope this message finds you and your family well. This is a friendly reminder from our finance office regarding your child's school account.",
+      `<strong>${body}</strong>`,
+      "Payments can sometimes take a day or two to reflect, so if you've already settled this, please accept our thanks and disregard the reminder. If anything about the balance looks off, or you'd like to arrange a payment plan, our office is always glad to talk it through.",
+      "We're grateful for your continued trust and partnership in your child's education.",
       "Warm regards,<br>De Ultimate Glory Academy",
     ];
   }
   if (type === "payment") {
     return [
       "Dear Parent/Guardian,",
-      "Thank you — this confirms a payment on your child's account.",
-      body,
-      "You can review the full payment history and current balance at any time from the Fees section of the school portal.",
+      "Thank you — we've recorded a payment on your child's school account.",
+      `<strong>${body}</strong>`,
+      "You're welcome to review the full payment history and current balance at any time from the Fees section of the school portal.",
+      "We appreciate your continued support.",
       "Warm regards,<br>De Ultimate Glory Academy",
     ];
   }
   if (type === "application") {
+    if (title.toLowerCase().includes("admitted")) {
+      return [
+        "Dear Parent/Guardian,",
+        "🎉 Congratulations! We are delighted to offer your child a place at De Ultimate Glory Academy — thank you for trusting us with such an important step in their education.",
+        `<strong>${body}</strong>`,
+        "We're looking forward to meeting your family in person and helping your child settle in.",
+        "Warm regards,<br>DUGA Admissions",
+      ];
+    }
     return [
       "Dear Applicant/Parent,",
-      "Thank you for your interest in De Ultimate Glory Academy.",
-      body,
-      "If you have any questions at all about the admissions process, our team is glad to help — just reply to this email or reach out to the school office.",
+      "Thank you for applying to De Ultimate Glory Academy — we're grateful for your interest in joining our school community.",
+      `<strong>${body}</strong>`,
+      "If you have any questions at all about your application or the admissions process, we're always happy to help — just reply to this email.",
       "Warm regards,<br>DUGA Admissions",
     ];
   }
@@ -59,7 +69,7 @@ function paragraphsFor(type: string, body: string): string[] {
 // technique that actually renders in an inbox.
 export function renderEmailHtml(opts: { type: string; title: string; body: string; link?: string }): string {
   const title = escapeHtml(opts.title);
-  const paragraphs = paragraphsFor(opts.type, escapeHtml(opts.body).replace(/\n/g, "<br>"));
+  const paragraphs = paragraphsFor(opts.type, opts.title, escapeHtml(opts.body).replace(/\n/g, "<br>"));
   const bodyHtml = paragraphs.map((p) => `<div style="margin-bottom:12px;">${p}</div>`).join("");
   const linkHref = opts.link ? (opts.link.startsWith("http") ? opts.link : `${PORTAL_BASE_URL}${opts.link}`) : null;
   const button = linkHref

@@ -114,7 +114,6 @@ export const applicationsModule: Module = {
 
       // Reuse an existing student user for this email if one already exists.
       let user = app.email ? await prisma.user.findFirst({ where: { schoolId, email: app.email, role: "STUDENT" } }) : null;
-      const isNewAccount = !user;
       if (!user) {
         user = await prisma.user.create({
           data: {
@@ -166,14 +165,21 @@ export const applicationsModule: Module = {
       const note = `Admitted on ${new Date().toISOString().slice(0, 10)} as ${admissionNumber}`;
       await prisma.application.update({ where: { id: app.id }, data: { notes: [app.notes, note].filter(Boolean).join("\n") || undefined } });
 
-      const credentialsLine = isNewAccount ? ` Your temporary password is ${tempPassword} — you'll be asked to change it on first sign-in.` : "";
+      // Deliberately no login details or portal link here — the account
+      // exists (with a temp password already set server-side), but portal
+      // access is something admin hands the family separately
+      // once they've come in for the full enrollment/onboarding process,
+      // not a "here's your password" line inside the admission notice.
+      const school = await prisma.school.findUnique({ where: { id: schoolId }, select: { phone: true, address: true } });
+      const contactLine = school?.phone
+        ? ` For any questions, please call us on ${school.phone}${school.address ? ` or visit us at ${school.address}` : ""}.`
+        : "";
       await dispatchNotification({
         schoolId,
         userId: user.id,
         type: "application",
         title: "Congratulations — you've been admitted!",
-        body: `Your admission number is ${admissionNumber}.${credentialsLine} Sign in to the student portal to begin.`,
-        link: "/portal/student",
+        body: `Your admission number is ${admissionNumber}. Please visit the school to complete the full enrollment and onboarding process.${contactLine}`,
         channels: ["IN_APP", "EMAIL", "PUSH"],
       });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "application.admitted", entityType: "Application", entityId: app.id, meta: { admissionNumber } });
