@@ -22,10 +22,14 @@ const messaging = firebase.messaging();
 
 // Fires when a push arrives while the app isn't in the foreground — shows a
 // system notification and stashes the deep link for the click handler below.
+// The server sends a data-only message (no top-level "notification" field)
+// specifically so this handler always runs — a payload with "notification"
+// gets auto-displayed by Firebase's own SDK instead, silently skipping this
+// entirely on some Android/Chrome combinations.
 messaging.onBackgroundMessage((payload) => {
-  const title = payload.notification?.title || "DUGA Portal";
-  const body = payload.notification?.body || "";
-  const link = payload.fcmOptions?.link || payload.data?.link || "/portal";
+  const title = payload.data?.title || "DUGA Portal";
+  const body = payload.data?.body || "";
+  const link = payload.data?.link || "/portal";
   self.registration.showNotification(title, {
     body,
     icon: "/icons/icon-192.png",

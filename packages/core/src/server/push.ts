@@ -41,11 +41,22 @@ export async function sendPush(opts: NotifyOptions): Promise<void> {
       return;
     }
 
+    // Deliberately a DATA-ONLY message (no top-level `notification` field) —
+    // when a push has one, Firebase's own SDK auto-displays it inside the
+    // service worker and never invokes our onBackgroundMessage handler at
+    // all, which is a well-documented reason a push can come back
+    // successful from the Admin SDK yet never actually show on Android
+    // Chrome (whatever that internal auto-display path does differently
+    // there silently fails). A data-only message guarantees our own
+    // handler — and its showNotification() call — runs every time, on
+    // every platform.
     const payload = {
       tokens: tokens.map((t) => t.token),
-      notification: { title: opts.title, body: opts.body || "" },
-      data: opts.link ? { link: opts.link } : undefined,
-      webpush: opts.link ? { fcmOptions: { link: opts.link } } : undefined,
+      data: {
+        title: opts.title,
+        body: opts.body || "",
+        ...(opts.link ? { link: opts.link } : {}),
+      },
     };
 
     // A momentary FCM/network blip shouldn't silently drop a time-sensitive

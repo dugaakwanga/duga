@@ -14,10 +14,22 @@ const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
 // True once the portal is running as an installed app rather than a plain
 // browser tab — the only context browsers reliably deliver push to
 // (Safari/iOS in particular ignores web push entirely from a regular tab).
+// The manifest declares display:"standalone", but a browser is free to
+// actually render an installed PWA as "minimal-ui" or "fullscreen" instead
+// (some Android launchers/WebViews do) — checking only "standalone" left
+// those installs stuck forever thinking Step 1 was never done, since none
+// of the exit conditions below would ever become true. Any non-"browser"
+// display mode means it's genuinely installed.
 export function isStandalone(): boolean {
   if (typeof window === "undefined") return false;
   const nav = window.navigator as Navigator & { standalone?: boolean };
-  return window.matchMedia?.("(display-mode: standalone)").matches || nav.standalone === true;
+  if (nav.standalone === true) return true;
+  if (!window.matchMedia) return false;
+  return (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    window.matchMedia("(display-mode: fullscreen)").matches ||
+    window.matchMedia("(display-mode: minimal-ui)").matches
+  );
 }
 
 export function isIos(): boolean {
@@ -104,9 +116,12 @@ export async function startForegroundPushListener(): Promise<void> {
   const loaded = await loadMessaging();
   if (!loaded || Notification.permission !== "granted") return;
   loaded.sdk.onMessage(loaded.messaging, (payload) => {
-    const title = payload.notification?.title || "DUGA Portal";
-    const body = payload.notification?.body || "";
-    const link = payload.fcmOptions?.link || (payload.data as Record<string, string> | undefined)?.link || "/portal";
+    // Data-only message (see push.ts server-side) — title/body/link all
+    // live under data, not the (unused) notification field.
+    const data = payload.data as Record<string, string> | undefined;
+    const title = data?.title || "DUGA Portal";
+    const body = data?.body || "";
+    const link = data?.link || "/portal";
     // vibrate on the Notification options only takes effect on platforms
     // that support it (mainly Android Chrome); navigator.vibrate() is the
     // direct fallback, and only works because the tab is in the foreground
