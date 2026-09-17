@@ -154,6 +154,10 @@ export const studentsModule: Module = {
       total: students.length,
       role: ctx.session.user.role,
       canManage: hasPermission(ctx.session.user.role, "students:manage"),
+      // Bursar can set/edit fees (fees:manage) without the broader ability to
+      // edit/promote/remove student records (students:manage) — a separate
+      // flag so the UI can show just the "Set fee" action for them.
+      canSetFee: hasPermission(ctx.session.user.role, "fees:manage"),
     };
   },
 

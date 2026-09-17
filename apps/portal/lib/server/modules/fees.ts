@@ -11,29 +11,54 @@ async function assertFinanceManager(ctx: { session: { user: { role: string; scho
   }
 }
 
-// Grant fee-access days for a payment. By default this is proportional
-// (amount/feeAmount*feeDays), extending from the current expiry so an
-// instalment never overwrites unused days. When a bursar explicitly declares
-// what period a payment covers (e.g. "this covers Term 2"), coversTo is used
-// instead of the proportional math — still never moving the window backward.
-async function grantFeeAccessForPayment(schoolId: string, studentId: string, amount: number, coversTo?: Date) {
+// Recompute a student's fee-access window from scratch after a payment.
+// Coverage is always calculated from the term's start date (feeStartDate)
+// using the TOTAL amount paid since then — not from whenever the family
+// happens to pay — so a partial payment can leave feePaidThrough already in
+// the past relative to today if it doesn't fully cover the period elapsed
+// so far. This is recomputed fresh every time (not incrementally extended),
+// so it's self-correcting regardless of payment order or timing, and it's
+// the single source of truth for feePaidThrough for BOTH the invoice/
+// payment system and the standalone fee-access window.
+//
+// A bursar can still explicitly declare what period a payment covers (e.g.
+// "this covers Term 2") via Payment.coversTo — when any payment in the
+// current billing window has one, the latest such date wins outright over
+// the proportional math (never moving the window backward from feeStartDate).
+export async function recomputeFeeAccess(schoolId: string, studentId: string): Promise<{ paidThrough: Date | null; totalPaid: number }> {
   const student = await prisma.student.findFirst({ where: { id: studentId, schoolId } });
-  if (!student) return { daysGranted: 0, paidThrough: null };
-  const start = student.feePaidThrough && student.feePaidThrough > new Date() ? student.feePaidThrough : new Date();
-
-  if (coversTo) {
-    const paidThrough = coversTo > start ? coversTo : start;
-    await prisma.student.update({ where: { id: student.id }, data: { feePaidThrough: paidThrough } });
-    const daysGranted = Math.round((paidThrough.getTime() - start.getTime()) / 86400000);
-    return { daysGranted, paidThrough };
+  if (!student || !student.feeStartDate || Number(student.feeAmount) <= 0 || student.feeDays <= 0) {
+    return { paidThrough: student?.feePaidThrough ?? null, totalPaid: 0 };
   }
 
-  if (Number(student.feeAmount) <= 0 || student.feeDays <= 0) return { daysGranted: 0, paidThrough: student.feePaidThrough };
-  const daysGranted = Math.floor((amount / Number(student.feeAmount)) * student.feeDays);
-  if (daysGranted <= 0) return { daysGranted: 0, paidThrough: student.feePaidThrough };
-  const paidThrough = new Date(start.getTime() + daysGranted * 86400000);
+  const payments = await prisma.payment.findMany({
+    where: { schoolId, studentId, status: "SUCCESS", paidAt: { gte: student.feeStartDate } },
+    select: { amount: true, coversTo: true },
+  });
+  const totalPaid = payments.reduce((a, p) => a + Number(p.amount), 0);
+  const explicitCoversTo = payments
+    .map((p) => p.coversTo)
+    .filter((d): d is Date => d !== null)
+    .sort((a, b) => b.getTime() - a.getTime())[0];
+
+  const paidThrough = explicitCoversTo
+    ? (explicitCoversTo > student.feeStartDate ? explicitCoversTo : student.feeStartDate)
+    : new Date(student.feeStartDate.getTime() + Math.floor((totalPaid / Number(student.feeAmount)) * student.feeDays) * 86400000);
+
   await prisma.student.update({ where: { id: student.id }, data: { feePaidThrough: paidThrough } });
-  return { daysGranted, paidThrough };
+  return { paidThrough, totalPaid };
+}
+
+// A one-line addition to a payment notification stating exactly what date
+// the family's fees now cover through — the whole point of computing
+// coverage from the term's start date is being able to say this plainly,
+// including when it's still behind today's date after a partial payment.
+function coverageSuffix(access: { paidThrough: Date | null }): string {
+  if (!access.paidThrough) return "";
+  const d = access.paidThrough.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  return access.paidThrough.getTime() < Date.now()
+    ? ` School fees cover through ${d} so far — that's still behind today's date.`
+    : ` School fees now cover through ${d}.`;
 }
 
 async function notifyParentsOfBalance(schoolId: string, studentId: string, invoice: { invoiceNumber: string; balance: unknown }) {
@@ -501,6 +526,58 @@ export const feesModule: Module = {
       return { ok: true };
     },
 
+    // A one-off charge for a single student — a fine, a late-registration
+    // fee, a damaged-book charge, anything that isn't part of the school-
+    // wide FeeStructure rate table. Adds a line item to an existing invoice
+    // (given invoiceId, or the student's existing invoice for that term),
+    // or creates a fresh single-item invoice for that student/term if
+    // neither exists yet.
+    addInvoiceItem: async (ctx) => {
+      await assertFinanceManager(ctx);
+      const schoolId = ctx.session.user.schoolId;
+      const description = str(ctx.body.description);
+      const amount = num(ctx.body.amount);
+      if (!description) throw new Error("A description is required");
+      if (amount === undefined || amount <= 0) throw new Error("A positive amount is required");
+
+      let invoiceId = str(ctx.body.invoiceId);
+      if (!invoiceId) {
+        const studentId = str(ctx.body.studentId);
+        const termId = str(ctx.body.termId);
+        if (!studentId || !termId) throw new Error("Provide either invoiceId, or studentId and termId");
+        const existing = await prisma.invoice.findUnique({ where: { schoolId_studentId_termId: { schoolId, studentId, termId } } });
+        if (existing) {
+          invoiceId = existing.id;
+        } else {
+          const invoiceSeq = (await prisma.invoice.count({ where: { schoolId } })) + 1;
+          const created = await prisma.invoice.create({
+            data: {
+              schoolId,
+              studentId,
+              termId,
+              invoiceNumber: `INV-${String(invoiceSeq).padStart(5, "0")}`,
+              totalAmount: amount,
+              paidAmount: 0,
+              balance: amount,
+              status: "UNPAID",
+              issuedAt: new Date(),
+              items: { create: [{ feeTypeId: null, description, amount }] },
+            },
+          });
+          await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.invoiceItemAdded", entityType: "Invoice", entityId: created.id, meta: { description, amount, createdInvoice: true } });
+          return created;
+        }
+      }
+
+      const invoice = await prisma.invoice.findFirst({ where: { id: invoiceId, schoolId } });
+      if (!invoice) throw new Error("Invoice not found");
+      await prisma.invoiceItem.create({ data: { invoiceId, feeTypeId: null, description, amount } });
+      await prisma.invoice.update({ where: { id: invoiceId }, data: { totalAmount: { increment: amount } } });
+      const updated = await refreshInvoice(invoiceId);
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.invoiceItemAdded", entityType: "Invoice", entityId: invoiceId, meta: { description, amount } });
+      return updated;
+    },
+
     // Initiate a Paystack payment for an invoice
     initPayment: async (ctx) => {
       can(ctx, "payments:make");
@@ -554,14 +631,14 @@ export const feesModule: Module = {
       if (!(await paystackConfigured())) {
         // Development mock: treat as success immediately and return a mock URL.
         await prisma.payment.update({ where: { id: payment.id }, data: { status: "SUCCESS", paidAt: new Date(), gatewayRef: `MOCK-${reference}`, receiptNumber: `RCPT-${reference.slice(-6)}` } });
-        const access = await grantFeeAccessForPayment(schoolId, invoice.studentId, payAmount);
+        const access = await recomputeFeeAccess(schoolId, invoice.studentId);
         await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.paymentMocked", entityType: "Payment", entityId: payment.id, meta: { reference, amount: payAmount, installmentId: installmentRow?.id } });
         const updated = await refreshInvoice(invoice.id);
         if (installmentRow) await refreshInstallment(installmentRow.id);
         if (Number(updated?.balance ?? 0) > 0 && updated) await notifyParentsOfBalance(schoolId, invoice.studentId, updated);
         const student = await prisma.student.findUnique({ where: { id: invoice.studentId }, include: { user: true } });
         if (student) {
-          const body = `₦${payAmount.toLocaleString()} received. Balance: ₦${(updated?.balance ?? 0).toLocaleString()}`;
+          const body = `₦${payAmount.toLocaleString()} received. Balance: ₦${(updated?.balance ?? 0).toLocaleString()}.${coverageSuffix(access)}`;
           await dispatchNotification({ schoolId, userId: student.userId, type: "payment", title: "Payment received", body, link: "/portal/fees" });
           await notifyParentsOfPayment(schoolId, invoice.studentId, `${student.user.firstName} ${student.user.lastName}`, "Payment received", body);
         }
@@ -607,12 +684,12 @@ export const feesModule: Module = {
 
       const invoice = await refreshInvoice(payment.invoiceId!);
       if (payment.installmentId) await refreshInstallment(payment.installmentId);
-      const access = await grantFeeAccessForPayment(ctx.session.user.schoolId, payment.studentId, Number(payment.amount));
+      const access = await recomputeFeeAccess(ctx.session.user.schoolId, payment.studentId);
       if (invoice && Number(invoice.balance) > 0) await notifyParentsOfBalance(ctx.session.user.schoolId, payment.studentId, invoice);
       await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "fees.paymentVerified", entityType: "Payment", entityId: payment.id, meta: { reference } });
       const student = await prisma.student.findUnique({ where: { id: payment.studentId }, include: { user: true } });
       if (student) {
-        const body = `₦${Number(payment.amount).toLocaleString()} confirmed. Balance: ₦${(invoice?.balance ?? 0).toLocaleString()}`;
+        const body = `₦${Number(payment.amount).toLocaleString()} confirmed. Balance: ₦${(invoice?.balance ?? 0).toLocaleString()}.${coverageSuffix(access)}`;
         await dispatchNotification({ schoolId: ctx.session.user.schoolId, userId: student.userId, type: "payment", title: "Payment confirmed", body, link: "/portal/fees" });
         await notifyParentsOfPayment(ctx.session.user.schoolId, payment.studentId, `${student.user.firstName} ${student.user.lastName}`, "Payment confirmed", body);
       }
@@ -704,10 +781,63 @@ export const feesModule: Module = {
       });
       const invoice = invoiceRow ? await refreshInvoice(invoiceRow.id) : null;
       const installment = installmentRow ? await refreshInstallment(installmentRow.id) : null;
-      const access = await grantFeeAccessForPayment(schoolId, studentId, amount, coversTo);
-      if (invoice && Number(invoice.balance) > 0) await notifyParentsOfBalance(schoolId, studentId, invoice);
+      const access = await recomputeFeeAccess(schoolId, studentId);
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.manualPayment", entityType: "Payment", entityId: payment.id, meta: { amount, coversTo: coversTo?.toISOString(), installmentId: installmentRow?.id } });
+
+      // Confirm the amount just accepted (not just the generic "you still
+      // owe" reminder) to both the student and the parent — a bursar
+      // recording a part-payment should tell the family exactly what was
+      // just credited and what's left, the same way an online payment does.
+      const student = await prisma.student.findUnique({ where: { id: studentId }, include: { user: true } });
+      if (student) {
+        const balanceText = invoice ? ` Invoice balance: ₦${Number(invoice.balance).toLocaleString()}.` : "";
+        const body = `₦${amount.toLocaleString()} received.${balanceText}${coverageSuffix(access)}`;
+        await dispatchNotification({ schoolId, userId: student.userId, type: "payment", title: "Payment received", body, link: "/portal/fees" });
+        await notifyParentsOfPayment(schoolId, studentId, `${student.user.firstName} ${student.user.lastName}`, "Payment received", body);
+      }
       return { payment, invoice, installment, access };
+    },
+
+    // Bursar/admin/owner: grant a fee-access exception for a student (a
+    // scholarship, payment plan, or one-off exception) — bypasses the fee
+    // window for every fee-gated feature (tests, assignments, elearn, games,
+    // live, results), since assertFeeAccess/resolveResultsAccess both check
+    // the same FeeOverride table. Lives here (not results.ts) so it's gated
+    // by the "fees" feature bursar already has, not "results", which their
+    // role's feature whitelist deliberately excludes.
+    setOverride: async (ctx) => {
+      can(ctx, "overrides:manage");
+      const studentId = str(ctx.body.studentId);
+      const termId = str(ctx.body.termId);
+      const reason = str(ctx.body.reason) ?? "EXCEPTION";
+      const isActive = ctx.body.isActive !== false;
+      if (!studentId) throw new Error("studentId required");
+      const override = await prisma.feeOverride.create({
+        data: {
+          schoolId: ctx.session.user.schoolId,
+          studentId,
+          termId,
+          reason: reason as "SCHOLARSHIP",
+          note: str(ctx.body.note),
+          discountAmount: num(ctx.body.discountAmount),
+          dueDate: str(ctx.body.dueDate) ? new Date(String(ctx.body.dueDate)) : undefined,
+          expiresAt: str(ctx.body.expiresAt) ? new Date(String(ctx.body.expiresAt)) : undefined,
+          isActive,
+          createdByUserId: ctx.session.user.id,
+        },
+      });
+      await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "fees.accessOverride", entityType: "FeeOverride", entityId: override.id, meta: { studentId, reason, isActive } });
+      return override;
+    },
+
+    deactivateOverride: async (ctx) => {
+      can(ctx, "overrides:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const existing = await prisma.feeOverride.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!existing) throw new Error("Override not found");
+      const override = await prisma.feeOverride.update({ where: { id: ctx.id }, data: { isActive: false } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.accessOverrideRevoked", entityType: "FeeOverride", entityId: ctx.id });
+      return override;
     },
   },
 };

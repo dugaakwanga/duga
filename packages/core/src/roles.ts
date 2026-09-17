@@ -247,6 +247,7 @@ const rolePermissions: Record<Role, Permission[]> = {
     "fees:view",
     "fees:manage",
     "fees:collect",
+    "overrides:manage",
     "financials:view",
     "payroll:view",
     "payroll:manage",

@@ -121,18 +121,19 @@ export const resultsModule: Module = {
         orderBy: { createdAt: "desc" },
       });
 
-      // Gate: only show published cards that are paid/overridden
+      // Gate: only show published cards that are paid/overridden. Unified
+      // with tests/assignments/elearn/games/live under one date-aware fee
+      // window — resolveResultsAccess already incorporates it, so there's
+      // no separate feeLocked check to reconcile against here anymore.
       const gated = [];
       for (const rc of reportCards) {
         if (!rc.isPublished) continue;
         const access = await resolveResultsAccess(rc.studentId, rc.termId);
-        const student = rc.student;
-        const feeLocked = Number(student.feeAmount) > 0 && student.feeDays > 0 && (!student.feePaidThrough || student.feePaidThrough.getTime() < Date.now());
         const items = access.allowed ? await prisma.reportCardItem.findMany({ where: { reportCardId: rc.id }, include: { subject: true }, orderBy: { position: "asc" } }) : null;
         gated.push({
           ...rc,
-          access: access.allowed && !feeLocked ? "granted" : "locked",
-          gatedReason: feeLocked ? "fee_expired" : access.reason,
+          access: access.allowed ? "granted" : "locked",
+          gatedReason: access.reason,
           gpa: gpaOf(items),
           items,
         });
@@ -196,11 +197,10 @@ export const resultsModule: Module = {
     ]);
     // Students/parents must also pass the fee gate (published + paid/overridden).
     if (role === "STUDENT" || role === "PARENT") {
-      // resolveResultsAccess already fully governs results gating (its own
-      // resultsRequirePayment toggle + Invoice status + FeeOverride) — an
-      // additional assertFeeAccess check here used the unrelated
-      // feePaidThrough window and could block a student even when the admin
-      // had explicitly turned resultsRequirePayment off, or vice versa.
+      // resolveResultsAccess already fully governs results gating: whether
+      // "results" is in the admin's fee-gated feature list, an active
+      // FeeOverride, and the student's feePaidThrough window — one unified
+      // check, no separate assertFeeAccess call needed here.
       const access = await resolveResultsAccess(rc.studentId, rc.termId);
       if (!access.allowed) {
         const err = new Error("This report card is locked") as Error & { status?: number };
@@ -656,31 +656,9 @@ export const resultsModule: Module = {
       await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "results.published", entityType: "ReportCard", meta: { termId, classGroupId, count: result.reportCards.length } });
       return { count: result.reportCards.length };
     },
-
-    // Owner/admin: grant/revoke fee override for a student (gates results access)
-    setOverride: async (ctx) => {
-      can(ctx, "overrides:manage");
-      const studentId = str(ctx.body.studentId);
-      const termId = str(ctx.body.termId);
-      const reason = str(ctx.body.reason) ?? "EXCEPTION";
-      const isActive = ctx.body.isActive !== false;
-      if (!studentId) throw new Error("studentId required");
-      const override = await prisma.feeOverride.create({
-        data: {
-          schoolId: ctx.session.user.schoolId,
-          studentId,
-          termId,
-          reason: reason as "SCHOLARSHIP",
-          note: str(ctx.body.note),
-          discountAmount: num(ctx.body.discountAmount),
-          dueDate: str(ctx.body.dueDate) ? new Date(String(ctx.body.dueDate)) : undefined,
-          expiresAt: str(ctx.body.expiresAt) ? new Date(String(ctx.body.expiresAt)) : undefined,
-          isActive,
-          createdByUserId: ctx.session.user.id,
-        },
-      });
-      await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "results.accessOverride", entityType: "FeeOverride", entityId: override.id, meta: { studentId, reason, isActive } });
-      return override;
-    },
+    // FeeOverride management (setOverride/deactivateOverride) lives in
+    // fees.ts, not here — it's a fee-system concept a bursar needs to reach,
+    // and the "results" resource/feature gate (FEATURE_BY_RESOURCE) isn't in
+    // BURSAR's feature whitelist, only "fees" is.
   },
 };

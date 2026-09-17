@@ -42,6 +42,7 @@ export default function StudentsPage() {
   const [items, setItems] = useState<Student[]>([]);
   const [classes, setClasses] = useState<ClassOption[]>([]);
   const [canManage, setCanManage] = useState(false);
+  const [canSetFee, setCanSetFee] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -106,9 +107,10 @@ export default function StudentsPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await api<{ items: Student[]; canManage: boolean }>("students", { query: { search: search || undefined } });
+      const data = await api<{ items: Student[]; canManage: boolean; canSetFee: boolean }>("students", { query: { search: search || undefined } });
       setItems(data.items);
       setCanManage(data.canManage);
+      setCanSetFee(data.canSetFee);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -360,7 +362,7 @@ export default function StudentsPage() {
     <div>
       <PageHeader
         title="Students"
-        subtitle={canManage ? "Enroll, search and manage students and their fee access." : "Search and view students."}
+        subtitle={canManage ? "Enroll, search and manage students and their fee access." : canSetFee ? "Search students and set their fee access." : "Search and view students."}
         actions={
           canManage ? (
             <Button onClick={() => setOpen(true)}>
@@ -497,7 +499,7 @@ export default function StudentsPage() {
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       {canManage && <Button size="sm" variant="ghost" onClick={() => openEdit(s)}>Edit</Button>}
                       {canManage && <Button size="sm" variant="ghost" onClick={() => { setPasswordTarget(s); setTempPassword(""); setPasswordError(null); }}>Set password</Button>}
-                      {canManage && <Button size="sm" variant="outline" onClick={() => { setFeeTarget(s); setFeeForm({}); }}>Set fee</Button>}
+                      {canSetFee && <Button size="sm" variant="outline" onClick={() => { setFeeTarget(s); setFeeForm({}); }}>Set fee</Button>}
                       {canManage && <Button size="sm" variant="outline" onClick={() => { setPromoteTarget(s); setPromoteForm({}); }}>Move class</Button>}
                       <Button size="sm" variant="outline" loading={printingCards === s.id} onClick={() => printIdCards([s.id], s.id)}>ID card</Button>
                       {canManage && <Button size="sm" variant="danger" onClick={() => removeStudent(s)}>Remove</Button>}

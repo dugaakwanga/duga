@@ -65,7 +65,7 @@ export default function SettingsPage() {
   const [days, setDays] = useState<Record<string, boolean>>(DEFAULT_DAYS);
   const [holidays, setHolidays] = useState<Array<{ date: string; name: string }>>([]);
   const [holidayForm, setHolidayForm] = useState<{ date: string; name: string }>({ date: "", name: "" });
-  const [restrictions, setRestrictions] = useState<RestrictionsConfig>({ resultsRequirePayment: true, applicationsOpen: true, feeGatedFeatures: ["tests", "assignments", "elearn", "games", "live"], allowStudentToStudentChat: false });
+  const [restrictions, setRestrictions] = useState<RestrictionsConfig>({ resultsRequirePayment: true, applicationsOpen: true, feeGatedFeatures: ["tests", "assignments", "elearn", "games", "live", "results"], allowStudentToStudentChat: false });
   const [termOpen, setTermOpen] = useState(false);
   const [termForm, setTermForm] = useState<Record<string, string>>({});
   const [termBusy, setTermBusy] = useState(false);
@@ -324,14 +324,6 @@ export default function SettingsPage() {
             <div style={{ display: "grid", gap: 10 }}>
               <button
                 type="button"
-                onClick={() => setRestrictions({ ...restrictions, resultsRequirePayment: !restrictions.resultsRequirePayment })}
-                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", border: "1px solid var(--duga-border)", borderRadius: 10, cursor: "pointer", textAlign: "left", background: "transparent" }}
-              >
-                <span style={{ fontSize: 13.5, fontWeight: 600 }}>Require fee payment before results</span>
-                <Badge tone={restrictions.resultsRequirePayment ? "success" : "neutral"}>{restrictions.resultsRequirePayment ? "On" : "Off"}</Badge>
-              </button>
-              <button
-                type="button"
                 onClick={() => setRestrictions({ ...restrictions, applicationsOpen: !restrictions.applicationsOpen })}
                 style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", border: "1px solid var(--duga-border)", borderRadius: 10, cursor: "pointer", textAlign: "left", background: "transparent" }}
               >
@@ -353,7 +345,7 @@ export default function SettingsPage() {
 
             <div style={{ fontSize: 13.5, fontWeight: 600, marginTop: 18, marginBottom: 8 }}>Block for students who are owing</div>
             <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginBottom: 10 }}>
-              When a student&apos;s fee-access window lapses (see Fees → Students owing), these are the things it blocks. Turn any of them off to let owing students keep using that feature anyway.
+              When a student&apos;s fee-access window lapses (see Fees → Students owing), these are the things it blocks — including report cards/results, gated by the same date-aware fee window as everything else here rather than a separate all-or-nothing rule. A FeeOverride (Fees → Overrides) always grants access regardless. Turn any of them off to let owing students keep using that feature anyway.
             </div>
             <div style={{ display: "grid", gap: 10 }}>
               {[
@@ -362,6 +354,7 @@ export default function SettingsPage() {
                 { key: "elearn", label: "E-learning content" },
                 { key: "games", label: "Educational games" },
                 { key: "live", label: "Live classes" },
+                { key: "results", label: "Report cards / results" },
               ].map((f) => {
                 const on = restrictions.feeGatedFeatures.includes(f.key);
                 return (

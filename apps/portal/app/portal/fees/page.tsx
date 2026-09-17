@@ -76,6 +76,17 @@ interface OwingStudent {
   fee: { feePaidThrough: string | null; daysRemaining: number; expired: boolean };
 }
 
+interface Override {
+  id: string;
+  reason: string;
+  note: string | null;
+  discountAmount: string | number | null;
+  expiresAt: string | null;
+  isActive: boolean;
+  student: { id: string; user: { firstName: string; lastName: string } };
+  term: { id: string; name: string } | null;
+}
+
 interface ChildFeeSummary {
   studentId: string;
   name: string;
@@ -118,6 +129,13 @@ export default function FeesPage() {
   const [installmentBusy, setInstallmentBusy] = useState(false);
   const [installmentPayTarget, setInstallmentPayTarget] = useState<Installment | null>(null);
   const [installmentPayAmount, setInstallmentPayAmount] = useState("");
+  const [overrides, setOverrides] = useState<Override[]>([]);
+  const [overrideBusy, setOverrideBusy] = useState(false);
+  const [grantTarget, setGrantTarget] = useState<{ id: string; name: string } | null>(null);
+  const [grantForm, setGrantForm] = useState({ termId: "", reason: "EXCEPTION", note: "", expiresAt: "" });
+  const [chargeTarget, setChargeTarget] = useState<Invoice | null>(null);
+  const [chargeForm, setChargeForm] = useState({ description: "", amount: "" });
+  const [chargeBusy, setChargeBusy] = useState(false);
   const isStaff = role === "OWNER" || role === "BURSAR";
   const { section } = useSection();
 
@@ -135,6 +153,7 @@ export default function FeesPage() {
       paymentRecordsVisible?: boolean;
       owingStudents?: OwingStudent[];
       byChild?: ChildFeeSummary[];
+      overrides?: Override[];
     }>("fees");
     setRole(d.role);
     setInvoices(d.invoices);
@@ -147,6 +166,7 @@ export default function FeesPage() {
     setPaymentRecordsVisible(d.paymentRecordsVisible !== false);
     setOwingStudents(d.owingStudents ?? []);
     setByChild(d.byChild);
+    setOverrides(d.overrides ?? []);
   }, [section]);
 
   useEffect(() => {
@@ -295,6 +315,69 @@ export default function FeesPage() {
     }
   }
 
+  function openGrantOverride(student: { id: string; name: string }) {
+    setGrantTarget(student);
+    setGrantForm({ termId: "", reason: "EXCEPTION", note: "", expiresAt: "" });
+  }
+
+  async function submitGrantOverride() {
+    if (!grantTarget) return;
+    setOverrideBusy(true);
+    try {
+      await api("fees/setOverride", {
+        method: "POST",
+        body: {
+          studentId: grantTarget.id,
+          termId: grantForm.termId || undefined,
+          reason: grantForm.reason,
+          note: grantForm.note || undefined,
+          expiresAt: grantForm.expiresAt || undefined,
+        },
+      });
+      setGrantTarget(null);
+      await load();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setOverrideBusy(false);
+    }
+  }
+
+  async function revokeOverride(id: string) {
+    if (!confirm("Revoke this fee exception? The student will go back to being gated by their fee window.")) return;
+    setOverrideBusy(true);
+    try {
+      await api(`fees/${id}/deactivateOverride`, { method: "POST", body: {} });
+      await load();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setOverrideBusy(false);
+    }
+  }
+
+  function openAddCharge(invoice: Invoice) {
+    setChargeTarget(invoice);
+    setChargeForm({ description: "", amount: "" });
+  }
+
+  async function submitAddCharge() {
+    if (!chargeTarget) return;
+    const amount = Number(chargeForm.amount);
+    if (!chargeForm.description.trim()) return alert("Enter a description for this charge");
+    if (!amount || amount <= 0) return alert("Enter a valid amount");
+    setChargeBusy(true);
+    try {
+      await api(`fees/${chargeTarget.id}/addInvoiceItem`, { method: "POST", body: { description: chargeForm.description, amount } });
+      setChargeTarget(null);
+      await load();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setChargeBusy(false);
+    }
+  }
+
   function openSetup(kind: SetupKind) {
     setSetupKind(kind);
     setEditingSetupId(null);
@@ -423,16 +506,47 @@ export default function FeesPage() {
           <div style={{ fontSize: 13, color: "var(--duga-muted)", marginBottom: 10 }}>
             Their fee-access window has lapsed — whichever features are set to require payment (Settings → Restrictions) are currently blocked for them.
           </div>
-          <Table headers={["Student", "Admission no.", "Paid through", ""]}>
+          <Table headers={["Student", "Admission no.", "Paid through", "", ""]}>
             {owingStudents.map((s) => (
               <tr key={s.id}>
                 <td>{s.user.firstName} {s.user.lastName}</td>
                 <td>{s.admissionNumber}</td>
                 <td>{s.fee.feePaidThrough ? new Date(s.fee.feePaidThrough).toLocaleDateString() : "Never paid"}</td>
                 <td><Badge tone="danger">Owing</Badge></td>
+                <td>
+                  <Button size="sm" variant="outline" onClick={() => openGrantOverride({ id: s.id, name: `${s.user.firstName} ${s.user.lastName}` })}>
+                    Grant exception
+                  </Button>
+                </td>
               </tr>
             ))}
           </Table>
+        </Card>
+      )}
+
+      {isStaff && (
+        <Card title={`Fee exceptions / overrides (${overrides.length})`} style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 13, color: "var(--duga-muted)", marginBottom: 10 }}>
+            A scholarship, payment plan, or one-off exception that grants access to every fee-gated feature (tests, assignments, e-learning, games, live classes, results) for a student regardless of their fee window.
+          </div>
+          {overrides.length === 0 ? (
+            <div style={{ fontSize: 13, color: "var(--duga-muted)" }}>No active exceptions.</div>
+          ) : (
+            <Table headers={["Student", "Term", "Reason", "Note", "Expires", ""]}>
+              {overrides.map((o) => (
+                <tr key={o.id}>
+                  <td>{o.student.user.firstName} {o.student.user.lastName}</td>
+                  <td>{o.term?.name ?? "All terms"}</td>
+                  <td><Badge tone="neutral">{o.reason}</Badge></td>
+                  <td>{o.note ?? "—"}</td>
+                  <td>{o.expiresAt ? new Date(o.expiresAt).toLocaleDateString() : "Never"}</td>
+                  <td>
+                    <Button size="sm" variant="ghost" loading={overrideBusy} onClick={() => revokeOverride(o.id)}>Revoke</Button>
+                  </td>
+                </tr>
+              ))}
+            </Table>
+          )}
         </Card>
       )}
 
@@ -522,6 +636,7 @@ export default function FeesPage() {
                               {i.installmentPlan ? "Installments" : "Set up installments"}
                             </Button>
                             <Button size="sm" variant="outline" loading={paying === i.id} onClick={() => openRecordPayment(i.id)}>Record payment</Button>
+                            <Button size="sm" variant="outline" onClick={() => openAddCharge(i)}>Add charge</Button>
                             <Button size="sm" variant="ghost" loading={paying === i.id} onClick={() => deleteInvoice(i.id)}>Delete</Button>
                           </div>
                         </td>
@@ -705,6 +820,48 @@ export default function FeesPage() {
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <Button variant="ghost" onClick={() => setPayTarget(null)}>Cancel</Button>
           <Button onClick={submitRecordPayment} loading={paying === payTarget}>Record payment</Button>
+        </div>
+      </Modal>
+
+      <Modal open={!!grantTarget} onClose={() => setGrantTarget(null)} title={grantTarget ? `Grant exception — ${grantTarget.name}` : ""}>
+        <Alert tone="info">Grants access to every fee-gated feature (tests, assignments, e-learning, games, live classes, results) regardless of the fee window — for a scholarship, an agreed payment plan, or a one-off exception.</Alert>
+        <Field label="Term" hint="Leave blank to apply to every term, not just one.">
+          <Select value={grantForm.termId} onChange={(e) => setGrantForm({ ...grantForm, termId: e.target.value })}>
+            <option value="">All terms</option>
+            {terms.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </Select>
+        </Field>
+        <Field label="Reason">
+          <Select value={grantForm.reason} onChange={(e) => setGrantForm({ ...grantForm, reason: e.target.value })}>
+            <option value="SCHOLARSHIP">Scholarship</option>
+            <option value="PAYMENT_PLAN">Payment plan</option>
+            <option value="EXCEPTION">Exception</option>
+            <option value="FREE">Free</option>
+          </Select>
+        </Field>
+        <Field label="Note (optional)">
+          <Input value={grantForm.note} onChange={(e) => setGrantForm({ ...grantForm, note: e.target.value })} placeholder="e.g. Approved by the owner, Sept 2026" />
+        </Field>
+        <Field label="Expires on (optional)" hint="Leave blank for no expiry.">
+          <Input type="date" value={grantForm.expiresAt} onChange={(e) => setGrantForm({ ...grantForm, expiresAt: e.target.value })} />
+        </Field>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+          <Button variant="ghost" onClick={() => setGrantTarget(null)}>Cancel</Button>
+          <Button onClick={submitGrantOverride} loading={overrideBusy}>Grant exception</Button>
+        </div>
+      </Modal>
+
+      <Modal open={!!chargeTarget} onClose={() => setChargeTarget(null)} title={chargeTarget ? `Add charge — ${chargeTarget.invoiceNumber}` : ""}>
+        <Alert tone="info">A one-off charge for this student only — a fine, a late-registration fee, a damaged-book charge — added as a new line item on this invoice.</Alert>
+        <Field label="Description" required>
+          <Input value={chargeForm.description} onChange={(e) => setChargeForm({ ...chargeForm, description: e.target.value })} placeholder="e.g. Damaged textbook" />
+        </Field>
+        <Field label="Amount (₦)" required>
+          <Input type="number" min={0} value={chargeForm.amount} onChange={(e) => setChargeForm({ ...chargeForm, amount: e.target.value })} />
+        </Field>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+          <Button variant="ghost" onClick={() => setChargeTarget(null)}>Cancel</Button>
+          <Button onClick={submitAddCharge} loading={chargeBusy}>Add charge</Button>
         </div>
       </Modal>
 

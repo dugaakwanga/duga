@@ -1,5 +1,5 @@
 import { prisma } from "@duga/core/server";
-import { logAudit } from "@duga/core/server";
+import { logAudit, effectiveGatedFeatures } from "@duga/core/server";
 import type { Module } from ".";
 import { can } from "../helpers";
 
@@ -15,12 +15,16 @@ export interface SchoolDaysConfig {
 }
 
 export interface RestrictionsConfig {
-  /** Gate published results behind a settled fee invoice for students/parents. */
+  /** Deprecated — "results" is now just another entry in feeGatedFeatures,
+   * unified with the other fee-gated features under the same date-aware fee
+   * window instead of its own separate paid/unpaid switch. Kept only so old
+   * saved settings (from before that merge) still enforce results-gating the
+   * way they used to; see effectiveGatedFeatures in school.ts. */
   resultsRequirePayment: boolean;
   /** Accept new online applications on the public website. */
   applicationsOpen: boolean;
   /** Which features are blocked for students whose fee-access window has
-   * lapsed. Subset of "tests" | "assignments" | "elearn" | "games" | "live". */
+   * lapsed. Subset of "tests" | "assignments" | "elearn" | "games" | "live" | "results". */
   feeGatedFeatures: string[];
   /** Off by default: students may only message a teacher or admin, never
    * each other. An admin can open student-to-student direct messaging here
@@ -32,7 +36,7 @@ export interface RestrictionsConfig {
 const DEFAULT_RESTRICTIONS: RestrictionsConfig = {
   resultsRequirePayment: true,
   applicationsOpen: true,
-  feeGatedFeatures: ["tests", "assignments", "elearn", "games", "live"],
+  feeGatedFeatures: ["tests", "assignments", "elearn", "games", "live", "results"],
   allowStudentToStudentChat: false,
 };
 
@@ -72,13 +76,19 @@ export const settingsModule: Module = {
     const bursarFinanceAccess = await prisma.schoolSetting.findUnique({
       where: { schoolId_key: { schoolId: ctx.session.user.schoolId, key: "bursarFinanceAccess" } },
     });
-    const [schoolDays, restrictions] = await Promise.all([
+    const [schoolDays, restrictions, gatedFeatures] = await Promise.all([
       readSetting<SchoolDaysConfig>(ctx.session.user.schoolId, SCHOOL_DAYS_KEY, {
         weekdays: { monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: false, sunday: false },
         holidays: [],
       }),
       readSetting<RestrictionsConfig>(ctx.session.user.schoolId, RESTRICTIONS_KEY, DEFAULT_RESTRICTIONS),
+      effectiveGatedFeatures(ctx.session.user.schoolId),
     ]);
+    // Always the fully-migrated list (folds the old, separate
+    // resultsRequirePayment boolean in) so the UI's "results" checkbox
+    // reflects true current enforcement even for a school that saved
+    // restrictions before results joined this list.
+    restrictions.feeGatedFeatures = [...gatedFeatures];
     return {
       school,
       settings,
@@ -209,13 +219,17 @@ export const settingsModule: Module = {
       can(ctx, "settings:manage");
       const schoolId = ctx.session.user.schoolId;
       const current = await readSetting<RestrictionsConfig>(schoolId, RESTRICTIONS_KEY, DEFAULT_RESTRICTIONS);
-      const validFeatures = new Set(["tests", "assignments", "elearn", "games", "live"]);
+      const validFeatures = new Set(["tests", "assignments", "elearn", "games", "live", "results"]);
+      const feeGatedFeatures = Array.isArray(ctx.body.feeGatedFeatures)
+        ? ctx.body.feeGatedFeatures.filter((f: unknown): f is string => typeof f === "string" && validFeatures.has(f))
+        : current.feeGatedFeatures;
       const cfg: RestrictionsConfig = {
-        resultsRequirePayment: typeof ctx.body.resultsRequirePayment === "boolean" ? ctx.body.resultsRequirePayment : current.resultsRequirePayment,
+        // The frontend no longer has a separate results toggle — it's just
+        // "results" in/out of feeGatedFeatures now — but this field stays in
+        // sync with that so old code paths reading it directly still agree.
+        resultsRequirePayment: feeGatedFeatures.includes("results"),
         applicationsOpen: typeof ctx.body.applicationsOpen === "boolean" ? ctx.body.applicationsOpen : current.applicationsOpen,
-        feeGatedFeatures: Array.isArray(ctx.body.feeGatedFeatures)
-          ? ctx.body.feeGatedFeatures.filter((f: unknown): f is string => typeof f === "string" && validFeatures.has(f))
-          : current.feeGatedFeatures,
+        feeGatedFeatures,
         allowStudentToStudentChat: typeof ctx.body.allowStudentToStudentChat === "boolean" ? ctx.body.allowStudentToStudentChat : current.allowStudentToStudentChat,
       };
       await writeSetting(schoolId, RESTRICTIONS_KEY, cfg);

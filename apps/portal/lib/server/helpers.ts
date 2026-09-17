@@ -1,7 +1,13 @@
 import { assertPermission, type Permission, type Role } from "@duga/core";
 import type { Ctx } from "@/app/api/v1/[...path]/route";
-import { prisma, getSetting } from "@duga/core/server";
+import { prisma } from "@duga/core/server";
 import type { Section } from "@/lib/sections";
+
+// Fee-access window logic (feeInfoOf, assertFeeAccess, FeeGatedFeature, ...)
+// now lives in packages/core/src/server/school.ts so resolveResultsAccess
+// there can share it — re-exported here so existing callers that import from
+// "../helpers" don't need to change.
+export { feeDaysBetween, feeInfoOf, assertFeeAccess, effectiveGatedFeatures, type FeeGatedFeature, type StudentFeeInfo } from "@duga/core/server";
 
 export function sectionOf(v: unknown): Section | undefined {
   const s = str(v)?.trim();
@@ -258,99 +264,6 @@ export function todayUTC(): Date {
 
 export function isoDay(date: Date): string {
   return date.toISOString().slice(0, 10);
-}
-
-// ---------------------------------------------------------------------------
-// Per-child fee / access window helpers.
-// The admin sets a fee amount and the number of days it covers when a child is
-// enrolled. The app tracks the window (feePaidThrough) and computes how many
-// days remain; once the window passes the student's portal access is locked.
-// ---------------------------------------------------------------------------
-
-export interface StudentFeeInfo {
-  feeAmount: string;
-  feeDays: number;
-  feeStartDate: string | null;
-  feeEndDate: string | null;
-  feePaidThrough: string | null;
-  usedDays: number;
-  daysRemaining: number;
-  expired: boolean;
-}
-
-// The fee-setting UI collects a start/end date (typically a term's dates,
-// not an arbitrary day count) — this derives the day count the existing
-// payment-proration math (feeInfoOf, grantFeeAccessForPayment) runs on.
-export function feeDaysBetween(start: Date | null, end: Date | null): number {
-  if (!start || !end) return 0;
-  const days = Math.round((end.getTime() - start.getTime()) / 86400000);
-  return Math.max(0, days);
-}
-
-export function feeInfoOf(student: {
-  feeAmount: { toString(): string } | string | null;
-  feeDays: number | null;
-  feeStartDate?: Date | null;
-  feeEndDate?: Date | null;
-  feePaidThrough: Date | null;
-  enrollmentDate: Date;
-}): StudentFeeInfo {
-  const amount = typeof student.feeAmount === "string" ? student.feeAmount : (student.feeAmount as { toString(): string })?.toString() ?? "0";
-  const feeDays = student.feeDays ?? 0;
-  const paidThrough = student.feePaidThrough;
-  const start = paidThrough ? new Date(paidThrough.getTime() - feeDays * 86400000) : student.enrollmentDate;
-  const now = Date.now();
-  const end = paidThrough ? paidThrough.getTime() : now;
-  const usedDays = Math.max(0, Math.floor((Math.min(now, end) - start.getTime()) / 86400000));
-  const daysRemaining = paidThrough ? Math.max(0, Math.ceil((end - now) / 86400000)) : feeDays;
-  // A configured fee plan requires a successful payment before access starts.
-  // Schools which have not configured a plan (zero amount/days) remain ungated.
-  const expired = feeDays > 0 && Number(amount) > 0 && (!paidThrough || now > end);
-  return {
-    feeAmount: amount,
-    feeDays,
-    feeStartDate: student.feeStartDate ? student.feeStartDate.toISOString() : null,
-    feeEndDate: student.feeEndDate ? student.feeEndDate.toISOString() : null,
-    feePaidThrough: paidThrough ? paidThrough.toISOString() : null,
-    usedDays,
-    daysRemaining,
-    expired,
-  };
-}
-
-// Which fee-gated features are currently blocked for owing students — admin
-// configurable via Settings → Restrictions (schoolSetting key "restrictions",
-// field feeGatedFeatures). Matches the historical hardcoded default so
-// existing schools see no behavior change until they opt out of one.
-export type FeeGatedFeature = "tests" | "assignments" | "elearn" | "games" | "live";
-const DEFAULT_FEE_GATED_FEATURES: FeeGatedFeature[] = ["tests", "assignments", "elearn", "games", "live"];
-
-async function isFeeGated(schoolId: string, feature: FeeGatedFeature): Promise<boolean> {
-  const restrictions = await getSetting(schoolId, "restrictions");
-  const list =
-    restrictions && typeof restrictions === "object" && Array.isArray((restrictions as { feeGatedFeatures?: unknown }).feeGatedFeatures)
-      ? ((restrictions as { feeGatedFeatures: unknown[] }).feeGatedFeatures as string[])
-      : DEFAULT_FEE_GATED_FEATURES;
-  return list.includes(feature);
-}
-
-// Throw 403 for STUDENT/PARENT callers when the child's fee window has lapsed
-// AND the school has this specific feature configured as fee-gated.
-export async function assertFeeAccess(
-  schoolId: string,
-  student: { feeAmount: { toString(): string } | string | null; feeDays: number | null; feePaidThrough: Date | null },
-  feature: FeeGatedFeature,
-): Promise<void> {
-  const feeAmount = Number(student.feeAmount ?? 0);
-  const configured = feeAmount > 0 && (student.feeDays ?? 0) > 0;
-  const expired = configured && (!student.feePaidThrough || student.feePaidThrough.getTime() < Date.now());
-  if (!expired) return;
-  if (!(await isFeeGated(schoolId, feature))) return;
-  const err = new Error(
-    "Access suspended — payment is required or the school fee period has ended. Please contact the school to renew.",
-  ) as Error & { status?: number };
-  err.status = 403;
-  throw err;
 }
 
 /**
