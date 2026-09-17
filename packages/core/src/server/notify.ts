@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { sendPush } from "./push";
+import { renderEmailHtml } from "./emailTemplate";
 
 export interface NotifyOptions {
   schoolId: string;
@@ -87,13 +88,13 @@ async function recordUsage(provider: string): Promise<void> {
     .catch(() => undefined);
 }
 
-async function sendViaResend(from: string, to: string, subject: string, text: string): Promise<void> {
+async function sendViaResend(from: string, to: string, subject: string, text: string, html: string): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) throw new Error("Resend not configured");
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from, to, subject, text }),
+    body: JSON.stringify({ from, to, subject, text, html }),
   });
   if (!res.ok) throw new Error(`resend ${res.status}`);
   await recordUsage("resend");
@@ -102,10 +103,9 @@ async function sendViaResend(from: string, to: string, subject: string, text: st
 // SendPulse's transactional endpoint requires the html body base64-encoded
 // and wants { name, email } objects for from/to rather than plain strings —
 // see https://api.sendpulse.com/.well-known/openapi/smtp.yaml.
-async function sendViaSendPulse(fromEmail: string, fromName: string, to: string, subject: string, text: string): Promise<void> {
+async function sendViaSendPulse(fromEmail: string, fromName: string, to: string, subject: string, text: string, html: string): Promise<void> {
   const apiKey = process.env.SENDPULSE_API_KEY;
   if (!apiKey) throw new Error("SendPulse not configured");
-  const html = Buffer.from(`<p>${text.replace(/\n/g, "<br>")}</p>`, "utf-8").toString("base64");
   const res = await fetch("https://api.sendpulse.com/smtp/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -114,7 +114,7 @@ async function sendViaSendPulse(fromEmail: string, fromName: string, to: string,
         subject,
         from: { name: fromName, email: fromEmail },
         to: [{ email: to }],
-        html,
+        html: Buffer.from(html, "utf-8").toString("base64"),
         text,
       },
     }),
@@ -126,24 +126,25 @@ async function sendViaSendPulse(fromEmail: string, fromName: string, to: string,
 // Picks Resend while it's under today's safe limit, SendPulse once that's
 // used up, and falls back to whichever provider isn't the one that just
 // failed — so a single provider outage doesn't drop the email entirely.
-async function sendViaProvider(from: string, fromName: string, to: string, subject: string, text: string): Promise<void> {
+async function sendViaProvider(from: string, fromName: string, to: string, subject: string, text: string, link?: string): Promise<void> {
   const hasResend = Boolean(process.env.RESEND_API_KEY);
   const hasSendPulse = Boolean(process.env.SENDPULSE_API_KEY);
   if (!hasResend && !hasSendPulse) {
     console.log(`[email:dev] to=${to} subject="${subject}" body="${text}"`);
     return;
   }
+  const html = renderEmailHtml({ title: subject, body: text, link });
   const preferResend = hasResend && (!hasSendPulse || (await usageToday("resend")) < RESEND_DAILY_SAFE_LIMIT);
   const primary = preferResend ? "resend" : "sendpulse";
   try {
-    if (primary === "resend") await sendViaResend(from, to, subject, text);
-    else await sendViaSendPulse(from, fromName, to, subject, text);
+    if (primary === "resend") await sendViaResend(from, to, subject, text, html);
+    else await sendViaSendPulse(from, fromName, to, subject, text, html);
   } catch (e) {
     const fallback = primary === "resend" ? (hasSendPulse ? "sendpulse" : null) : hasResend ? "resend" : null;
     if (!fallback) throw e;
     console.error(`email via ${primary} failed, falling back to ${fallback}:`, e);
-    if (fallback === "resend") await sendViaResend(from, to, subject, text);
-    else await sendViaSendPulse(from, fromName, to, subject, text);
+    if (fallback === "resend") await sendViaResend(from, to, subject, text, html);
+    else await sendViaSendPulse(from, fromName, to, subject, text, html);
   }
 }
 
@@ -153,7 +154,7 @@ async function sendEmail(opts: NotifyOptions) {
   try {
     const user = await prisma.user.findUnique({ where: { id: opts.userId }, select: { email: true } });
     if (!user?.email) return;
-    await sendViaProvider(from, fromName, user.email, opts.title, opts.body || "");
+    await sendViaProvider(from, fromName, user.email, opts.title, opts.body || "", opts.link);
   } catch (e) {
     console.error("email send failed:", e);
   }
