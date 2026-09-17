@@ -126,14 +126,14 @@ async function sendViaSendPulse(fromEmail: string, fromName: string, to: string,
 // Picks Resend while it's under today's safe limit, SendPulse once that's
 // used up, and falls back to whichever provider isn't the one that just
 // failed — so a single provider outage doesn't drop the email entirely.
-async function sendViaProvider(type: string, from: string, fromName: string, to: string, subject: string, text: string, link?: string): Promise<void> {
+async function sendViaProvider(type: string, from: string, fromName: string, to: string, subject: string, text: string, link?: string, recipientName?: string): Promise<void> {
   const hasResend = Boolean(process.env.RESEND_API_KEY);
   const hasSendPulse = Boolean(process.env.SENDPULSE_API_KEY);
   if (!hasResend && !hasSendPulse) {
     console.log(`[email:dev] to=${to} subject="${subject}" body="${text}"`);
     return;
   }
-  const html = renderEmailHtml({ type, title: subject, body: text, link });
+  const html = renderEmailHtml({ type, title: subject, body: text, link, recipientName });
   const preferResend = hasResend && (!hasSendPulse || (await usageToday("resend")) < RESEND_DAILY_SAFE_LIMIT);
   const primary = preferResend ? "resend" : "sendpulse";
   try {
@@ -152,9 +152,9 @@ async function sendEmail(opts: NotifyOptions) {
   const from = fromAddressFor(opts.type);
   const fromName = fromNameFor(opts.type);
   try {
-    const user = await prisma.user.findUnique({ where: { id: opts.userId }, select: { email: true } });
+    const user = await prisma.user.findUnique({ where: { id: opts.userId }, select: { email: true, firstName: true } });
     if (!user?.email) return;
-    await sendViaProvider(opts.type, from, fromName, user.email, opts.title, opts.body || "", opts.link);
+    await sendViaProvider(opts.type, from, fromName, user.email, opts.title, opts.body || "", opts.link, user.firstName);
   } catch (e) {
     console.error("email send failed:", e);
   }

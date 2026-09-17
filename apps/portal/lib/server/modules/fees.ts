@@ -37,13 +37,16 @@ async function grantFeeAccessForPayment(schoolId: string, studentId: string, amo
 }
 
 async function notifyParentsOfBalance(schoolId: string, studentId: string, invoice: { invoiceNumber: string; balance: unknown }) {
-  const links = await prisma.studentParent.findMany({ where: { schoolId, studentId }, include: { parent: true } });
+  const links = await prisma.studentParent.findMany({
+    where: { schoolId, studentId },
+    include: { parent: true, student: { select: { user: { select: { firstName: true, lastName: true } } } } },
+  });
   await Promise.all(links.map((link) => dispatchNotification({
     schoolId,
     userId: link.parent.userId,
     type: "fee_reminder",
     title: "Outstanding school fees",
-    body: `Outstanding balance: ${formatNaira(Number(invoice.balance))} for ${invoice.invoiceNumber}.`,
+    body: `Outstanding balance for ${link.student.user.firstName} ${link.student.user.lastName}: ${formatNaira(Number(invoice.balance))} (${invoice.invoiceNumber}).`,
     link: "/portal/fees",
     channels: ["IN_APP", "EMAIL", "SMS", "PUSH"],
   })));
@@ -52,15 +55,17 @@ async function notifyParentsOfBalance(schoolId: string, studentId: string, invoi
 
 // Every fee-related notification is routed to the parent's email (not just
 // in-app/push) — money matters need a channel a parent actually checks and
-// can find again later, unlike a push that scrolls away.
-async function notifyParentsOfPayment(schoolId: string, studentId: string, title: string, body: string) {
+// can find again later, unlike a push that scrolls away. The child's name
+// is prefixed since a parent with more than one child at the school needs
+// to know which account this is about at a glance.
+async function notifyParentsOfPayment(schoolId: string, studentId: string, studentName: string, title: string, body: string) {
   const links = await prisma.studentParent.findMany({ where: { schoolId, studentId }, include: { parent: true } });
   await Promise.all(links.map((link) => dispatchNotification({
     schoolId,
     userId: link.parent.userId,
     type: "payment",
     title,
-    body,
+    body: `${studentName}: ${body}`,
     link: "/portal/fees",
     channels: ["IN_APP", "EMAIL", "PUSH"],
   })));
@@ -72,10 +77,11 @@ async function notifyParentsOfPayment(schoolId: string, studentId: string, title
 export async function sendFeeReminders(schoolId: string): Promise<number> {
   const unpaid = await prisma.invoice.findMany({
     where: { schoolId, status: { in: ["UNPAID", "PARTIAL"] } },
-    include: { student: true },
+    include: { student: { include: { user: { select: { firstName: true, lastName: true } } } } },
   });
   let sent = 0;
   for (const inv of unpaid) {
+    const studentName = `${inv.student.user.firstName} ${inv.student.user.lastName}`;
     const parentLinks = await prisma.studentParent.findMany({ where: { studentId: inv.studentId }, include: { parent: true } });
     for (const link of parentLinks) {
       await dispatchNotification({
@@ -83,7 +89,7 @@ export async function sendFeeReminders(schoolId: string): Promise<number> {
         userId: link.parent.userId,
         type: "fee_reminder",
         title: "Fee payment reminder",
-        body: `Outstanding balance: ${formatNaira(Number(inv.balance))} for ${inv.invoiceNumber}.`,
+        body: `Outstanding balance for ${studentName}: ${formatNaira(Number(inv.balance))} (${inv.invoiceNumber}).`,
         link: "/portal/fees",
         channels: ["IN_APP", "EMAIL", "SMS", "PUSH"],
       });
@@ -557,7 +563,7 @@ export const feesModule: Module = {
         if (student) {
           const body = `₦${payAmount.toLocaleString()} received. Balance: ₦${(updated?.balance ?? 0).toLocaleString()}`;
           await dispatchNotification({ schoolId, userId: student.userId, type: "payment", title: "Payment received", body, link: "/portal/fees" });
-          await notifyParentsOfPayment(schoolId, invoice.studentId, "Payment received", body);
+          await notifyParentsOfPayment(schoolId, invoice.studentId, `${student.user.firstName} ${student.user.lastName}`, "Payment received", body);
         }
         return { mock: true, reference, authorization_url: "/portal/fees", status: "SUCCESS", access };
       }
@@ -608,7 +614,7 @@ export const feesModule: Module = {
       if (student) {
         const body = `₦${Number(payment.amount).toLocaleString()} confirmed. Balance: ₦${(invoice?.balance ?? 0).toLocaleString()}`;
         await dispatchNotification({ schoolId: ctx.session.user.schoolId, userId: student.userId, type: "payment", title: "Payment confirmed", body, link: "/portal/fees" });
-        await notifyParentsOfPayment(ctx.session.user.schoolId, payment.studentId, "Payment confirmed", body);
+        await notifyParentsOfPayment(ctx.session.user.schoolId, payment.studentId, `${student.user.firstName} ${student.user.lastName}`, "Payment confirmed", body);
       }
       return { status: "SUCCESS", payment, invoice, access };
     },

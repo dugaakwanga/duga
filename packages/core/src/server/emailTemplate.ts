@@ -11,16 +11,25 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
+// A named greeting beats a generic one whenever we actually know who we're
+// writing to (dispatchNotification always does — it's addressed to a real
+// User row). Falls back to a role-shaped generic only when we don't (e.g.
+// sendRawEmail, before an applicant has any account at all).
+function greetingFor(type: string, recipientName?: string): string {
+  if (recipientName) return `Dear ${recipientName},`;
+  return type === "application" ? "Dear Applicant/Parent," : "Dear Parent/Guardian,";
+}
+
 // Push/in-app notifications are deliberately terse — one glanceable line.
 // Email can carry more, and a bare one-liner reads as unfinished in an
-// inbox, so each notification type gets wrapped in a short greeting, the
-// actual fact, a bit of standing context, and a sign-off — without
-// inventing any specifics (dates, policies, amounts) beyond what the
-// caller already passed in.
-function paragraphsFor(type: string, title: string, body: string): string[] {
+// inbox, so each notification type gets wrapped in a greeting, the actual
+// fact, a bit of standing context, and a sign-off — without inventing any
+// specifics (dates, policies, amounts) beyond what the caller already
+// passed in.
+function paragraphsFor(type: string, title: string, body: string, greeting: string): string[] {
   if (type === "fee_reminder") {
     return [
-      "Dear Parent/Guardian,",
+      greeting,
       "We hope this message finds you and your family well. This is a friendly reminder from our finance office regarding your child's school account.",
       `<strong>${body}</strong>`,
       "Payments can sometimes take a day or two to reflect, so if you've already settled this, please accept our thanks and disregard the reminder. If anything about the balance looks off, or you'd like to arrange a payment plan, our office is always glad to talk it through.",
@@ -30,7 +39,7 @@ function paragraphsFor(type: string, title: string, body: string): string[] {
   }
   if (type === "payment") {
     return [
-      "Dear Parent/Guardian,",
+      greeting,
       "Thank you — we've recorded a payment on your child's school account.",
       `<strong>${body}</strong>`,
       "You're welcome to review the full payment history and current balance at any time from the Fees section of the school portal.",
@@ -41,7 +50,7 @@ function paragraphsFor(type: string, title: string, body: string): string[] {
   if (type === "application") {
     if (title.toLowerCase().includes("admitted")) {
       return [
-        "Dear Parent/Guardian,",
+        greeting,
         "🎉 Congratulations! We are delighted to offer your child a place at De Ultimate Glory Academy — thank you for trusting us with such an important step in their education.",
         `<strong>${body}</strong>`,
         "We're looking forward to meeting your family in person and helping your child settle in.",
@@ -49,7 +58,7 @@ function paragraphsFor(type: string, title: string, body: string): string[] {
       ];
     }
     return [
-      "Dear Applicant/Parent,",
+      greeting,
       "Thank you for applying to De Ultimate Glory Academy — we're grateful for your interest in joining our school community.",
       `<strong>${body}</strong>`,
       "If you have any questions at all about your application or the admissions process, we're always happy to help — just reply to this email.",
@@ -67,9 +76,10 @@ function paragraphsFor(type: string, title: string, body: string): string[] {
 // the same student photos used in the site's own hero carousel, played as
 // frames) since email clients run no CSS/JS — a GIF is the one animation
 // technique that actually renders in an inbox.
-export function renderEmailHtml(opts: { type: string; title: string; body: string; link?: string }): string {
+export function renderEmailHtml(opts: { type: string; title: string; body: string; link?: string; recipientName?: string }): string {
   const title = escapeHtml(opts.title);
-  const paragraphs = paragraphsFor(opts.type, opts.title, escapeHtml(opts.body).replace(/\n/g, "<br>"));
+  const greeting = greetingFor(opts.type, opts.recipientName ? escapeHtml(opts.recipientName) : undefined);
+  const paragraphs = paragraphsFor(opts.type, opts.title, escapeHtml(opts.body).replace(/\n/g, "<br>"), greeting);
   const bodyHtml = paragraphs.map((p) => `<div style="margin-bottom:12px;">${p}</div>`).join("");
   const linkHref = opts.link ? (opts.link.startsWith("http") ? opts.link : `${PORTAL_BASE_URL}${opts.link}`) : null;
   const button = linkHref
