@@ -98,7 +98,7 @@ const SHEET_CSS = `
   background:#fff;
   width:210mm;
   min-height:297mm;
-  padding:7mm 12mm;
+  padding:5mm 10mm;
   border:2px solid #000;
   position:relative;
 }
@@ -129,7 +129,7 @@ const SHEET_CSS = `
 .${ROOT} h2.section-title{
   text-align:center;
   font-size:13.5px;
-  margin:9px 0 5px;
+  margin:6px 0 4px;
   font-weight:bold;
   color:#1f3a5f;
   /* html2canvas mismeasures word-space width for bold Georgia at small
@@ -150,12 +150,12 @@ const SHEET_CSS = `
   font-size:11px;
   margin-bottom:4px;
 }
-.${ROOT} .field{ border-bottom:1px dotted #000; display:flex; gap:4px; }
+.${ROOT} .field{ border-bottom:1px dotted #000; display:flex; gap:4px; line-height:1.35; padding-bottom:1px; }
 .${ROOT} .field label{ font-weight:bold; white-space:nowrap; }
 .${ROOT} .field span{ flex-grow:1; }
 
 .${ROOT} table{ width:100%; border-collapse:collapse; font-size:10px; }
-.${ROOT} th, .${ROOT} td{ border:1px solid #000; padding:2px 4px; text-align:center; }
+.${ROOT} th, .${ROOT} td{ border:1px solid #000; padding:1.5px 4px; text-align:center; line-height:1.3; }
 .${ROOT} thead th{ background:#eaf0f6; color:#1f3a5f; }
 .${ROOT} td.subject-name{ text-align:left; font-weight:bold; font-size:10.5px; }
 .${ROOT} tr.total-row td{ font-weight:bold; background:#eaf0f6; }
@@ -167,7 +167,7 @@ const SHEET_CSS = `
 .${ROOT} .mini-table th, .${ROOT} .mini-table td{ font-size:9.5px; padding:1.5px 3px; }
 
 .${ROOT} .remarks{ margin-top:6px; font-size:10.5px; }
-.${ROOT} .remarks .line{ border-bottom:1px dotted #000; min-height:12px; margin-bottom:3px; }
+.${ROOT} .remarks .line{ border-bottom:1px dotted #000; min-height:12px; line-height:1.35; padding-bottom:1px; margin-bottom:3px; }
 .${ROOT} .sig-row{ display:flex; justify-content:space-between; margin-top:2px; font-size:10.5px; gap:20px; }
 .${ROOT} .sig-row .field{ flex:1; }
 
@@ -353,7 +353,7 @@ function buildAcademicTableHtml(components: ReportCardPdfComponent[], items: Rep
 // static demo array.
 function buildChartSvg(items: ReportCardPdfItem[]): string {
   const w = 700;
-  const h = 145;
+  const h = 118;
   const padL = 30;
   const padB = 42;
   const padT = 10;
@@ -364,7 +364,7 @@ function buildChartSvg(items: ReportCardPdfItem[]): string {
   const barGap = 10;
   const barW = chartW / n - barGap;
 
-  let svg = `<svg id="chartSvg" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:145px;border:1px solid #000;background:#fff;">`;
+  let svg = `<svg id="chartSvg" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:${h}px;border:1px solid #000;background:#fff;">`;
   svg += `<line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + chartH}" stroke="#000"/>`;
   svg += `<line x1="${padL}" y1="${padT + chartH}" x2="${w - padR}" y2="${padT + chartH}" stroke="#000"/>`;
   for (let v = 0; v <= 100; v += 20) {
