@@ -344,6 +344,19 @@ model PushToken {
   @@index([userId])
 }
 
+// How many emails each provider has sent today — Vercel serverless functions
+// don't share memory between invocations, so this is the only way to know
+// "is Resend's free 100/day already used up" and fail over to SendPulse.
+// One row per provider per UTC day; reset is implicit (a new day = a new row).
+model EmailProviderUsage {
+  id       String @id @default(cuid())
+  provider String
+  day      String
+  count    Int    @default(0)
+
+  @@unique([provider, day])
+}
+
 model Student {
   id                  String        @id @default(cuid())
   userId              String        @unique

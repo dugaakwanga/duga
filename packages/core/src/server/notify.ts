@@ -52,7 +52,7 @@ export async function dispatchNotification(opts: NotifyOptions): Promise<void> {
 
 // Admissions mail (application status, "you're admitted") comes from the
 // admissions inbox; every other notification type comes from the general
-// info inbox — two separate Resend-verified senders on the same domain.
+// info inbox — two separate verified senders on the same domain.
 function fromAddressFor(type: string): string {
   if (type === "application") {
     return process.env.MAIL_FROM_ADMISSIONS || process.env.MAIL_FROM || "no-reply@deultimateglory.com";
@@ -60,22 +60,100 @@ function fromAddressFor(type: string): string {
   return process.env.MAIL_FROM || "no-reply@deultimateglory.com";
 }
 
-async function sendEmail(opts: NotifyOptions) {
+function fromNameFor(type: string): string {
+  return type === "application" ? "De Ultimate Glory Academy — Admissions" : "De Ultimate Glory Academy";
+}
+
+// Resend's free tier caps at 100 emails/day — this stays under that with a
+// safety margin, then fails over to SendPulse (12,000/month, no comparable
+// daily wall) for the rest of the day. Combined that's roughly 15,000/month
+// of free capacity, split so a single burst (e.g. every parent with an
+// unpaid invoice, reminded in one run) doesn't get throttled mid-send.
+const RESEND_DAILY_SAFE_LIMIT = 90;
+
+function todayKey(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+async function usageToday(provider: string): Promise<number> {
+  const row = await prisma.emailProviderUsage.findUnique({ where: { provider_day: { provider, day: todayKey() } } });
+  return row?.count ?? 0;
+}
+
+async function recordUsage(provider: string): Promise<void> {
+  const day = todayKey();
+  await prisma.emailProviderUsage
+    .upsert({ where: { provider_day: { provider, day } }, update: { count: { increment: 1 } }, create: { provider, day, count: 1 } })
+    .catch(() => undefined);
+}
+
+async function sendViaResend(from: string, to: string, subject: string, text: string): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) throw new Error("Resend not configured");
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ from, to, subject, text }),
+  });
+  if (!res.ok) throw new Error(`resend ${res.status}`);
+  await recordUsage("resend");
+}
+
+// SendPulse's transactional endpoint requires the html body base64-encoded
+// and wants { name, email } objects for from/to rather than plain strings —
+// see https://api.sendpulse.com/.well-known/openapi/smtp.yaml.
+async function sendViaSendPulse(fromEmail: string, fromName: string, to: string, subject: string, text: string): Promise<void> {
+  const apiKey = process.env.SENDPULSE_API_KEY;
+  if (!apiKey) throw new Error("SendPulse not configured");
+  const html = Buffer.from(`<p>${text.replace(/\n/g, "<br>")}</p>`, "utf-8").toString("base64");
+  const res = await fetch("https://api.sendpulse.com/smtp/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      email: {
+        subject,
+        from: { name: fromName, email: fromEmail },
+        to: [{ email: to }],
+        html,
+        text,
+      },
+    }),
+  });
+  if (!res.ok) throw new Error(`sendpulse ${res.status} ${await res.text().catch(() => "")}`);
+  await recordUsage("sendpulse");
+}
+
+// Picks Resend while it's under today's safe limit, SendPulse once that's
+// used up, and falls back to whichever provider isn't the one that just
+// failed — so a single provider outage doesn't drop the email entirely.
+async function sendViaProvider(from: string, fromName: string, to: string, subject: string, text: string): Promise<void> {
+  const hasResend = Boolean(process.env.RESEND_API_KEY);
+  const hasSendPulse = Boolean(process.env.SENDPULSE_API_KEY);
+  if (!hasResend && !hasSendPulse) {
+    console.log(`[email:dev] to=${to} subject="${subject}" body="${text}"`);
+    return;
+  }
+  const preferResend = hasResend && (!hasSendPulse || (await usageToday("resend")) < RESEND_DAILY_SAFE_LIMIT);
+  const primary = preferResend ? "resend" : "sendpulse";
+  try {
+    if (primary === "resend") await sendViaResend(from, to, subject, text);
+    else await sendViaSendPulse(from, fromName, to, subject, text);
+  } catch (e) {
+    const fallback = primary === "resend" ? (hasSendPulse ? "sendpulse" : null) : hasResend ? "resend" : null;
+    if (!fallback) throw e;
+    console.error(`email via ${primary} failed, falling back to ${fallback}:`, e);
+    if (fallback === "resend") await sendViaResend(from, to, subject, text);
+    else await sendViaSendPulse(from, fromName, to, subject, text);
+  }
+}
+
+async function sendEmail(opts: NotifyOptions) {
   const from = fromAddressFor(opts.type);
+  const fromName = fromNameFor(opts.type);
   try {
     const user = await prisma.user.findUnique({ where: { id: opts.userId }, select: { email: true } });
     if (!user?.email) return;
-    if (apiKey) {
-      const res = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ from, to: user.email, subject: opts.title, text: opts.body || "" }),
-      });
-      if (!res.ok) throw new Error(`email ${res.status}`);
-    } else {
-      console.log(`[email:dev] to=${user.email} subject="${opts.title}" body="${opts.body ?? ""}"`);
-    }
+    await sendViaProvider(from, fromName, user.email, opts.title, opts.body || "");
   } catch (e) {
     console.error("email send failed:", e);
   }
@@ -87,19 +165,8 @@ async function sendEmail(opts: NotifyOptions) {
 // called for admissions flows, so it always sends from the admissions inbox.
 export async function sendRawEmail(to: string, subject: string, body: string): Promise<void> {
   if (!to) return;
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = fromAddressFor("application");
   try {
-    if (apiKey) {
-      const res = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ from, to, subject, text: body }),
-      });
-      if (!res.ok) throw new Error(`email ${res.status}`);
-    } else {
-      console.log(`[email:dev] to=${to} subject="${subject}" body="${body}"`);
-    }
+    await sendViaProvider(fromAddressFor("application"), fromNameFor("application"), to, subject, body);
   } catch (e) {
     console.error("email send failed:", e);
   }
