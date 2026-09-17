@@ -52,7 +52,7 @@ interface ReportCard {
   classSize?: number | null;
   subjectCount?: number | null;
   term: { name: string; startDate?: string | null; endDate?: string | null; session?: { name: string } | null } | null;
-  student: { id: string; photoUrl?: string | null; admissionNumber?: string; user: { firstName: string; lastName: string } };
+  student: { id: string; photoUrl?: string | null; admissionNumber?: string; gender?: "MALE" | "FEMALE" | null; user: { firstName: string; lastName: string } };
   classGroup: { level: { name: string }; name: string } | null;
   access?: "granted" | "locked";
   gatedReason?: string | null;
@@ -242,7 +242,7 @@ export default function ResultsPage() {
         school,
         reportCardConfig,
         {
-          student: { ...rc.student.user, admissionNumber: rc.student.admissionNumber, photoUrl: rc.student.photoUrl },
+          student: { ...rc.student.user, admissionNumber: rc.student.admissionNumber, photoUrl: rc.student.photoUrl, gender: rc.student.gender },
           className: rc.classGroup ? `${rc.classGroup.level.name} ${rc.classGroup.name}` : null,
           term: rc.term,
           sessionName: rc.term?.session?.name ?? null,

@@ -117,7 +117,7 @@ export const resultsModule: Module = {
 
       const reportCards = await prisma.reportCard.findMany({
         where: { schoolId, studentId: { in: studentIds } },
-        include: { term: { include: { session: true } }, student: { select: { id: true, photoUrl: true, feeAmount: true, feeDays: true, feePaidThrough: true, user: { select: { firstName: true, lastName: true } } } } },
+        include: { term: { include: { session: true } }, student: { select: { id: true, photoUrl: true, admissionNumber: true, gender: true, feeAmount: true, feeDays: true, feePaidThrough: true, user: { select: { firstName: true, lastName: true } } } } },
         orderBy: { createdAt: "desc" },
       });
 
@@ -151,7 +151,7 @@ export const resultsModule: Module = {
     const [reportCards, classSubjects] = await Promise.all([
       prisma.reportCard.findMany({
         where: { schoolId, ...(section ? { classGroup: { level: { section } } } : {}) },
-        include: { term: { include: { session: true } }, student: { select: { id: true, photoUrl: true, user: { select: { firstName: true, lastName: true } } } }, classGroup: { include: { level: true } }, items: { include: { subject: true }, orderBy: { position: "asc" } } },
+        include: { term: { include: { session: true } }, student: { select: { id: true, photoUrl: true, admissionNumber: true, gender: true, user: { select: { firstName: true, lastName: true } } } }, classGroup: { include: { level: true } }, items: { include: { subject: true }, orderBy: { position: "asc" } } },
         orderBy: { createdAt: "desc" },
         take: 500,
       }),
