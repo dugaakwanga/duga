@@ -53,7 +53,7 @@ interface ReportCard {
   subjectCount?: number | null;
   term: { name: string; startDate?: string | null; endDate?: string | null; session?: { name: string } | null } | null;
   student: { id: string; photoUrl?: string | null; admissionNumber?: string; gender?: "MALE" | "FEMALE" | null; user: { firstName: string; lastName: string } };
-  classGroup: { level: { name: string }; name: string } | null;
+  classGroup: { level: { name: string; section: string }; name: string } | null;
   access?: "granted" | "locked";
   gatedReason?: string | null;
   items?: Array<{
@@ -238,9 +238,17 @@ export default function ResultsPage() {
     if (!school || !reportCardConfig) return alert("Report card settings are still loading — try again in a moment.");
     setDownloadingId(rc.id);
     try {
+      // reportCardConfig.sectionLabel reflects the admin's currently
+      // selected section filter, which is blank whenever "All sections" is
+      // selected — that's the wrong section for a specific student's card
+      // regardless, so fall back to the section this student's own class
+      // actually belongs to rather than leaving it off the sheet.
+      const effectiveConfig = reportCardConfig.sectionLabel
+        ? reportCardConfig
+        : { ...reportCardConfig, sectionLabel: rc.classGroup ? `${rc.classGroup.level.section} Section`.toUpperCase() : null };
       await downloadReportCardPdf(
         school,
-        reportCardConfig,
+        effectiveConfig,
         {
           student: { ...rc.student.user, admissionNumber: rc.student.admissionNumber, photoUrl: rc.student.photoUrl, gender: rc.student.gender },
           className: rc.classGroup ? `${rc.classGroup.level.name} ${rc.classGroup.name}` : null,

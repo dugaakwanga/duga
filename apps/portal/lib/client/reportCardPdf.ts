@@ -130,10 +130,17 @@ const SHEET_CSS = `
   text-align:center;
   font-size:13.5px;
   margin:9px 0 5px;
-  text-decoration:underline;
-  text-decoration-color:#1f3a5f;
   font-weight:bold;
   color:#1f3a5f;
+  /* html2canvas mismeasures word-space width for bold Georgia at small
+     sizes and renders words with no gap between them ("ACADEMICREPORT") —
+     a documented html2canvas quirk. A non-zero letter-spacing forces it
+     onto its accurate per-glyph text path instead of the collapsed one. */
+  letter-spacing:0.3px;
+}
+.${ROOT} h2.section-title .title-ul{
+  border-bottom:1.5px solid #1f3a5f;
+  padding-bottom:2px;
 }
 
 .${ROOT} .id-block{
@@ -190,6 +197,16 @@ async function toDataUrl(url: string | null): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+// A section title with its navy underline drawn via border-bottom on an
+// inner <span> rather than CSS text-decoration — html2canvas's text layout
+// silently collapses the space between words in bold text-decoration:underline
+// headings (confirmed: "PERFORMANCE CHART" rendered as "PERFORMANCECHART"),
+// but a border-bottom on a wrapping span doesn't touch text layout at all.
+function titleHtml(text: string, fontSize?: string): string {
+  const style = fontSize ? ` style="font-size:${fontSize};"` : "";
+  return `<h2 class="section-title"${style}><span class="title-ul">${text}</span></h2>`;
 }
 
 function esc(s: string | null | undefined): string {
@@ -373,6 +390,23 @@ function buildChartSvg(items: ReportCardPdfItem[]): string {
   return svg;
 }
 
+// Canonical trait order — mirrors DEFAULT_PSYCHOMOTOR_TRAITS/
+// DEFAULT_BEHAVIORAL_TRAITS in packages/core/src/server/reportCard.ts. The
+// traits are stored as a JSON object on the report card, so their key order
+// depends on how Postgres/Prisma happened to serialize it (often
+// alphabetical) rather than the printed sheet's intended order — this puts
+// them back in the right order for display, unknown traits sorted last.
+const DEFAULT_PSYCHOMOTOR_TRAITS = ["Handwriting", "Sports/Games", "Verbal Fluency", "Leadership", "Musical Skill"];
+const DEFAULT_BEHAVIORAL_TRAITS = ["Neatness", "Punctuality", "Honesty", "Self Control", "Obedience", "Politeness", "Relationship with Others"];
+
+function sortTraitEntries(entries: Array<[string, string]>, order: string[]): Array<[string, string]> {
+  return [...entries].sort((a, b) => {
+    const ia = order.indexOf(a[0]);
+    const ib = order.indexOf(b[0]);
+    return (ia === -1 ? order.length : ia) - (ib === -1 ? order.length : ib);
+  });
+}
+
 function buildTraitTableHtml(entries: Array<[string, string]>, tableClass: string): string {
   const letters = ["A", "B", "C", "D", "E"];
   const rows = entries
@@ -440,18 +474,18 @@ function buildSheetHtml(
   const academicSection =
     config.showCognitive && card.items?.length
       ? `
-    <h2 class="section-title">ACADEMIC REPORT</h2>
+    ${titleHtml("ACADEMIC REPORT")}
     ${buildAcademicTableHtml(components, card.items)}
     <div class="chart-wrap">
-      <h2 class="section-title">PERFORMANCE CHART &mdash; STRENGTHS &amp; WEAKNESSES</h2>
+      ${titleHtml("PERFORMANCE CHART &mdash; STRENGTHS &amp; WEAKNESSES")}
       ${buildChartSvg(card.items)}
       <div class="chart-note">Each bar is the subject's Total Score out of 100. The dashed line marks the pass mark (50).</div>
     </div>`
       : "";
 
   const domainGridsHtml = config.showPsychomotor
-    ? `${card.coCurricular && Object.keys(card.coCurricular).length ? `<h2 class="section-title" style="font-size:12.5px;">PSYCHOMOTOR &amp; AFFECTIVE DOMAIN</h2>${buildTraitTableHtml(Object.entries(card.coCurricular), "domain-table")}` : ""}
-    ${card.psychomotor && Object.keys(card.psychomotor).length ? `<h2 class="section-title" style="font-size:12.5px;">BEHAVIOURAL ASSESSMENT</h2>${buildTraitTableHtml(Object.entries(card.psychomotor), "behaviour-table")}` : ""}`
+    ? `${card.coCurricular && Object.keys(card.coCurricular).length ? `${titleHtml("PSYCHOMOTOR &amp; AFFECTIVE DOMAIN", "12.5px")}${buildTraitTableHtml(sortTraitEntries(Object.entries(card.coCurricular), DEFAULT_PSYCHOMOTOR_TRAITS), "domain-table")}` : ""}
+    ${card.psychomotor && Object.keys(card.psychomotor).length ? `${titleHtml("BEHAVIOURAL ASSESSMENT", "12.5px")}${buildTraitTableHtml(sortTraitEntries(Object.entries(card.psychomotor), DEFAULT_BEHAVIORAL_TRAITS), "behaviour-table")}` : ""}`
     : "";
 
   const feesHtml = config.showFees
@@ -488,7 +522,7 @@ function buildSheetHtml(
       <div class="two-col">
         <div>${domainGridsHtml}</div>
         <div>
-          <h2 class="section-title" style="font-size:12.5px;">GRADING KEY</h2>
+          ${titleHtml("GRADING KEY", "12.5px")}
           ${buildGradingKeyHtml(gradeBands)}
         </div>
       </div>

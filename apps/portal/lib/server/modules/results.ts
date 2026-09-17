@@ -117,7 +117,7 @@ export const resultsModule: Module = {
 
       const reportCards = await prisma.reportCard.findMany({
         where: { schoolId, studentId: { in: studentIds } },
-        include: { term: { include: { session: true } }, student: { select: { id: true, photoUrl: true, admissionNumber: true, gender: true, feeAmount: true, feeDays: true, feePaidThrough: true, user: { select: { firstName: true, lastName: true } } } } },
+        include: { term: { include: { session: true } }, student: { select: { id: true, photoUrl: true, admissionNumber: true, gender: true, feeAmount: true, feeDays: true, feePaidThrough: true, user: { select: { firstName: true, lastName: true } } } }, classGroup: { include: { level: true } } },
         orderBy: { createdAt: "desc" },
       });
 
