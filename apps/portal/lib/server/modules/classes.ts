@@ -47,7 +47,7 @@ export const classesModule: Module = {
       prisma.academicSession.findMany({
         where: { schoolId },
         orderBy: { createdAt: "desc" },
-        include: { terms: { select: { id: true, name: true, termNumber: true, status: true, startDate: true, endDate: true }, orderBy: { termNumber: "asc" } } },
+        include: { terms: { select: { id: true, name: true, termNumber: true, status: true, startDate: true, endDate: true, feesDueDate: true }, orderBy: { termNumber: "asc" } } },
       }),
       prisma.classGroup.findMany({
         where: { schoolId, ...(visibleIds ? { id: { in: visibleIds } } : {}), ...(section ? { level: { section } } : {}) },
@@ -62,7 +62,10 @@ export const classesModule: Module = {
       }),
       ctx.session.user.role === "OWNER" || ctx.session.user.role === "ADMIN"
         ? prisma.user.findMany({
-            where: { schoolId, role: "TEACHER", status: "ACTIVE" },
+            // Anyone with a Teacher profile is assignable — not just role
+            // "TEACHER" — so an admin marked as "also teaches" shows up here
+            // too, not just plain teachers.
+            where: { schoolId, status: "ACTIVE", teacher: { isNot: null } },
             include: { teacher: true },
             orderBy: { firstName: "asc" },
             take: 300,

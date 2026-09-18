@@ -233,6 +233,7 @@ export const studentsModule: Module = {
     const feeAmount = num(b.feeAmount) ?? 0;
     const feeStartDate = str(b.feeStartDate) ? new Date(String(b.feeStartDate)) : null;
     const feeEndDate = str(b.feeEndDate) ? new Date(String(b.feeEndDate)) : null;
+    const feesDueDate = str(b.feesDueDate) ? new Date(String(b.feesDueDate)) : null;
     if (feeEndDate && feeStartDate && feeEndDate <= feeStartDate) throw new Error("Fee end date must be after the start date");
     const feeDays = feeDaysBetween(feeStartDate, feeEndDate);
 
@@ -287,6 +288,7 @@ export const studentsModule: Module = {
           feeDays,
           feeStartDate,
           feeEndDate,
+          feesDueDate,
           feePaidThrough,
         },
       });
@@ -409,15 +411,18 @@ export const studentsModule: Module = {
       const feeAmount = num(ctx.body.feeAmount) ?? 0;
       const feeStartDate = str(ctx.body.feeStartDate) ? new Date(String(ctx.body.feeStartDate)) : null;
       const feeEndDate = str(ctx.body.feeEndDate) ? new Date(String(ctx.body.feeEndDate)) : null;
+      const feesDueDate = str(ctx.body.feesDueDate) ? new Date(String(ctx.body.feesDueDate)) : null;
       if (feeEndDate && feeStartDate && feeEndDate <= feeStartDate) throw new Error("Fee end date must be after the start date");
+      if (feesDueDate && feeEndDate && feesDueDate > feeEndDate) throw new Error("Fees-due date must not be after the fee period's end date");
+      if (feesDueDate && feeStartDate && feesDueDate < feeStartDate) throw new Error("Fees-due date must not be before the fee period's start date");
       const feeDays = feeDaysBetween(feeStartDate, feeEndDate);
       const student = await prisma.student.findFirst({ where: { id: ctx.id, schoolId } });
       if (!student) throw new Error("Student not found");
       const updated = await prisma.student.update({
         where: { id: ctx.id },
-        data: { feeAmount, feeDays, feeStartDate, feeEndDate, ...(feeAmount <= 0 || feeDays <= 0 ? { feePaidThrough: null } : {}) },
+        data: { feeAmount, feeDays, feeStartDate, feeEndDate, feesDueDate, ...(feeAmount <= 0 || feeDays <= 0 ? { feePaidThrough: null } : {}) },
       });
-      await logAudit({ schoolId, userId: ctx.session.user.id, action: "student.fee.set", entityType: "Student", entityId: ctx.id, meta: { feeAmount, feeDays, feeStartDate, feeEndDate } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "student.fee.set", entityType: "Student", entityId: ctx.id, meta: { feeAmount, feeDays, feeStartDate, feeEndDate, feesDueDate } });
       return { ...updated, fee: feeInfoOf(updated) };
     },
     promote: async (ctx) => {

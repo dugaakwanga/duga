@@ -13,13 +13,18 @@ interface PayrollRules {
    * toLocaleTimeString() usage) — both this setting and StaffAttendance's
    * checkInAt are read in the server's local time. */
   lateAfterTime: string;
+  /** ₦ deducted per late day — one school-wide amount applied to every
+   * staff member, not set per person (it used to live on StaffSalary; a
+   * school punishes lateness the same way for everyone). */
+  latePenaltyAmount: number;
 }
 
 async function getPayrollRules(schoolId: string): Promise<PayrollRules> {
   const row = await prisma.schoolSetting.findUnique({ where: { schoolId_key: { schoolId, key: PAYROLL_RULES_KEY } } });
-  const raw = row?.value && typeof row.value === "object" ? (row.value as { lateAfterTime?: unknown }) : {};
+  const raw = row?.value && typeof row.value === "object" ? (row.value as { lateAfterTime?: unknown; latePenaltyAmount?: unknown }) : {};
   const lateAfterTime = typeof raw.lateAfterTime === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(raw.lateAfterTime) ? raw.lateAfterTime : DEFAULT_LATE_AFTER_TIME;
-  return { lateAfterTime };
+  const latePenaltyAmount = typeof raw.latePenaltyAmount === "number" && raw.latePenaltyAmount >= 0 ? raw.latePenaltyAmount : 0;
+  return { lateAfterTime, latePenaltyAmount };
 }
 
 // Later than lateAfterTime on the day they clocked in — a day they never
@@ -53,13 +58,14 @@ export const payrollModule: Module = {
     await assertPayrollAccess(ctx);
     const schoolId = ctx.session.user.schoolId;
     const month = ctx.query.get("month") ?? new Date().toISOString().slice(0, 7);
-    const [staff, entries, access, payrollRules] = await Promise.all([
+    const [staff, entries, access, payrollRules, deductions] = await Promise.all([
       prisma.user.findMany({ where: { schoolId, role: { in: ["TEACHER", "ADMIN", "BURSAR"] }, status: "ACTIVE" }, include: { salaryProfile: true, teacher: true, admin: true }, orderBy: [{ firstName: "asc" }] }),
       prisma.payrollEntry.findMany({ where: { schoolId, month }, include: { user: { select: { firstName: true, lastName: true, role: true } } }, orderBy: { user: { firstName: "asc" } } }),
       prisma.schoolSetting.findUnique({ where: { schoolId_key: { schoolId, key: BURSAR_ACCESS_KEY } } }),
       getPayrollRules(schoolId),
+      prisma.staffDeduction.findMany({ where: { schoolId, month }, orderBy: { createdAt: "desc" } }),
     ]);
-    return { role: ctx.session.user.role, month, staff, entries, bursarAccess: access?.value === true, payrollRules };
+    return { role: ctx.session.user.role, month, staff, entries, bursarAccess: access?.value === true, payrollRules, deductions };
   },
   actions: {
     setBursarAccess: async (ctx) => {
@@ -72,10 +78,11 @@ export const payrollModule: Module = {
       await assertPayrollAccess(ctx, true);
       const lateAfterTime = str(ctx.body.lateAfterTime);
       if (!lateAfterTime || !/^([01]\d|2[0-3]):[0-5]\d$/.test(lateAfterTime)) throw new Error("lateAfterTime must be HH:MM (24-hour)");
+      const latePenaltyAmount = Math.max(0, num(ctx.body.latePenaltyAmount) ?? 0);
       const schoolId = ctx.session.user.schoolId;
-      await prisma.schoolSetting.upsert({ where: { schoolId_key: { schoolId, key: PAYROLL_RULES_KEY } }, update: { value: { lateAfterTime } }, create: { schoolId, key: PAYROLL_RULES_KEY, value: { lateAfterTime } } });
-      await logAudit({ schoolId, userId: ctx.session.user.id, action: "payroll.rulesUpdated", entityType: "School", entityId: schoolId, meta: { lateAfterTime } });
-      return { lateAfterTime };
+      await prisma.schoolSetting.upsert({ where: { schoolId_key: { schoolId, key: PAYROLL_RULES_KEY } }, update: { value: { lateAfterTime, latePenaltyAmount } }, create: { schoolId, key: PAYROLL_RULES_KEY, value: { lateAfterTime, latePenaltyAmount } } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "payroll.rulesUpdated", entityType: "School", entityId: schoolId, meta: { lateAfterTime, latePenaltyAmount } });
+      return { lateAfterTime, latePenaltyAmount };
     },
     setSalary: async (ctx) => {
       await assertPayrollAccess(ctx, true);
@@ -83,18 +90,64 @@ export const payrollModule: Module = {
       const user = await prisma.user.findFirst({ where: { id: userId, schoolId: ctx.session.user.schoolId, role: { in: ["TEACHER", "ADMIN", "BURSAR"] } } });
       if (!user) throw new Error("Staff member not found");
       const monthlyAmount = Math.max(0, num(ctx.body.monthlyAmount) ?? 0);
-      const latePenalty = Math.max(0, num(ctx.body.latePenalty) ?? 0);
       const rewardAmount = Math.max(0, num(ctx.body.rewardAmount) ?? 0);
-      const salary = await prisma.staffSalary.upsert({ where: { userId }, update: { monthlyAmount, latePenalty, rewardAmount }, create: { schoolId: ctx.session.user.schoolId, userId, monthlyAmount, latePenalty, rewardAmount } });
+      const salary = await prisma.staffSalary.upsert({ where: { userId }, update: { monthlyAmount, rewardAmount }, create: { schoolId: ctx.session.user.schoolId, userId, monthlyAmount, rewardAmount } });
       await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "payroll.salarySet", entityType: "StaffSalary", entityId: salary.id });
       return salary;
+    },
+    // Ad-hoc deductions (e.g. didn't submit lesson notes) — logged by hand,
+    // any time, for any month. If that month's payroll entry already exists
+    // and isn't PAID, the amount is folded in immediately; otherwise it sits
+    // logged and generate() picks it up when that month is generated.
+    addDeduction: async (ctx) => {
+      await assertPayrollAccess(ctx, true);
+      const schoolId = ctx.session.user.schoolId;
+      const userId = str(ctx.body.userId);
+      const month = str(ctx.body.month);
+      const amount = num(ctx.body.amount);
+      const reason = str(ctx.body.reason);
+      if (!userId || !month || !/^\d{4}-\d{2}$/.test(month)) throw new Error("userId and month (YYYY-MM) are required");
+      if (amount === undefined || amount <= 0) throw new Error("A positive amount is required");
+      if (!reason) throw new Error("A reason is required");
+      const user = await prisma.user.findFirst({ where: { id: userId, schoolId, role: { in: ["TEACHER", "ADMIN", "BURSAR"] } } });
+      if (!user) throw new Error("Staff member not found");
+
+      const deduction = await prisma.staffDeduction.create({ data: { schoolId, userId, month, amount, reason, createdByUserId: ctx.session.user.id } });
+
+      const entry = await prisma.payrollEntry.findUnique({ where: { schoolId_userId_month: { schoolId, userId, month } } });
+      if (entry && entry.status !== "PAID") {
+        const extraDeduction = Number(entry.extraDeduction) + amount;
+        const netPay = Math.max(0, Number(entry.baseSalary) + Number(entry.reward) - Number(entry.lateDeduction) - extraDeduction);
+        await prisma.payrollEntry.update({ where: { id: entry.id }, data: { extraDeduction, netPay } });
+      }
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "payroll.deductionAdded", entityType: "StaffDeduction", entityId: deduction.id, meta: { userId, month, amount, reason } });
+      return deduction;
+    },
+    removeDeduction: async (ctx) => {
+      await assertPayrollAccess(ctx, true);
+      const schoolId = ctx.session.user.schoolId;
+      const deduction = await prisma.staffDeduction.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!deduction) throw new Error("Deduction not found");
+
+      const entry = await prisma.payrollEntry.findUnique({ where: { schoolId_userId_month: { schoolId, userId: deduction.userId, month: deduction.month } } });
+      if (entry) {
+        if (entry.status === "PAID") throw new Error("This month's payroll has already been paid — the deduction can no longer be removed");
+        const extraDeduction = Math.max(0, Number(entry.extraDeduction) - Number(deduction.amount));
+        const netPay = Math.max(0, Number(entry.baseSalary) + Number(entry.reward) - Number(entry.lateDeduction) - extraDeduction);
+        await prisma.payrollEntry.update({ where: { id: entry.id }, data: { extraDeduction, netPay } });
+      }
+      await prisma.staffDeduction.delete({ where: { id: ctx.id } });
+      return { ok: true };
     },
     generate: async (ctx) => {
       await assertPayrollAccess(ctx, true);
       const schoolId = ctx.session.user.schoolId; const month = str(ctx.body.month) ?? new Date().toISOString().slice(0, 7); const { start, end } = monthRange(month);
       const staff = await prisma.user.findMany({ where: { schoolId, role: { in: ["TEACHER", "ADMIN", "BURSAR"] }, status: "ACTIVE" }, include: { salaryProfile: true } });
-      const { lateAfterTime } = await getPayrollRules(schoolId);
-      const attendanceRows = await prisma.staffAttendance.findMany({ where: { schoolId, date: { gte: start, lt: end }, checkInAt: { not: null } }, select: { userId: true, checkInAt: true } });
+      const { lateAfterTime, latePenaltyAmount } = await getPayrollRules(schoolId);
+      const [attendanceRows, deductionRows] = await Promise.all([
+        prisma.staffAttendance.findMany({ where: { schoolId, date: { gte: start, lt: end }, checkInAt: { not: null } }, select: { userId: true, checkInAt: true } }),
+        prisma.staffDeduction.findMany({ where: { schoolId, month }, select: { userId: true, amount: true } }),
+      ]);
       const attendanceByUser = new Map<string, { count: number; late: number }>();
       for (const row of attendanceRows) {
         const agg = attendanceByUser.get(row.userId) ?? { count: 0, late: 0 };
@@ -102,6 +155,8 @@ export const payrollModule: Module = {
         if (isLateCheckIn(row.checkInAt!, lateAfterTime)) agg.late += 1;
         attendanceByUser.set(row.userId, agg);
       }
+      const deductionByUser = new Map<string, number>();
+      for (const row of deductionRows) deductionByUser.set(row.userId, (deductionByUser.get(row.userId) ?? 0) + Number(row.amount));
       let created = 0;
       for (const user of staff) {
         const profile = user.salaryProfile; if (!profile) continue;
@@ -112,8 +167,12 @@ export const payrollModule: Module = {
         // the value on first creation (update: {}) rather than overwriting
         // an entry someone already reviewed.
         const attendance = attendanceByUser.get(user.id) ?? { count: 0, late: 0 };
-        const lateDeduction = attendance.late * Number(profile.latePenalty);
-        const netPay = Math.max(0, Number(profile.monthlyAmount) + Number(profile.rewardAmount) - lateDeduction);
+        const lateDeduction = attendance.late * latePenaltyAmount;
+        // Any deductions already logged for this staff/month (see
+        // addDeduction) are folded in here on first creation — logged after
+        // that point, addDeduction patches the entry directly instead.
+        const extraDeduction = deductionByUser.get(user.id) ?? 0;
+        const netPay = Math.max(0, Number(profile.monthlyAmount) + Number(profile.rewardAmount) - lateDeduction - extraDeduction);
         const entry = await prisma.payrollEntry.upsert({
           where: { schoolId_userId_month: { schoolId, userId: user.id, month } },
           update: {},
@@ -125,6 +184,7 @@ export const payrollModule: Module = {
             reward: profile.rewardAmount,
             lateDays: attendance.late,
             lateDeduction,
+            extraDeduction,
             netPay,
             note: `${attendance.count} attendance day(s) clocked, ${attendance.late} late (after ${lateAfterTime})`,
           },
@@ -137,11 +197,11 @@ export const payrollModule: Module = {
       await assertPayrollAccess(ctx, true);
       const entry = await prisma.payrollEntry.findFirst({ where: { id: ctx.id, schoolId: ctx.session.user.schoolId } }); if (!entry) throw new Error("Payroll entry not found");
       if (entry.status === "PAID") throw new Error("A paid payroll entry cannot be changed");
-      const profile = await prisma.staffSalary.findUnique({ where: { userId: entry.userId } });
+      const { latePenaltyAmount } = await getPayrollRules(ctx.session.user.schoolId);
       const lateDays = Math.max(0, num(ctx.body.lateDays) ?? entry.lateDays);
       const reward = Math.max(0, num(ctx.body.reward) ?? Number(entry.reward));
       const extraDeduction = Math.max(0, num(ctx.body.extraDeduction) ?? Number(entry.extraDeduction));
-      const lateDeduction = lateDays * Number(profile?.latePenalty ?? 0);
+      const lateDeduction = lateDays * latePenaltyAmount;
       const netPay = Math.max(0, Number(entry.baseSalary) + reward - lateDeduction - extraDeduction);
       return prisma.payrollEntry.update({ where: { id: entry.id }, data: { lateDays, lateDeduction, reward, extraDeduction, netPay, note: str(ctx.body.note) } });
     },

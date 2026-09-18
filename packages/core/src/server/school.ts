@@ -70,6 +70,7 @@ export interface StudentFeeInfo {
   feeDays: number;
   feeStartDate: string | null;
   feeEndDate: string | null;
+  feesDueDate: string | null;
   feePaidThrough: string | null;
   usedDays: number;
   daysRemaining: number;
@@ -90,6 +91,7 @@ export function feeInfoOf(student: {
   feeDays: number | null;
   feeStartDate?: Date | null;
   feeEndDate?: Date | null;
+  feesDueDate?: Date | null;
   feePaidThrough: Date | null;
   enrollmentDate: Date;
 }): StudentFeeInfo {
@@ -109,6 +111,7 @@ export function feeInfoOf(student: {
     feeDays,
     feeStartDate: student.feeStartDate ? student.feeStartDate.toISOString() : null,
     feeEndDate: student.feeEndDate ? student.feeEndDate.toISOString() : null,
+    feesDueDate: student.feesDueDate ? student.feesDueDate.toISOString() : null,
     feePaidThrough: paidThrough ? paidThrough.toISOString() : null,
     usedDays,
     daysRemaining,

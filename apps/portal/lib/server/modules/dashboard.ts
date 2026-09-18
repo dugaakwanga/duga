@@ -1,7 +1,7 @@
 import { prisma } from "@duga/core/server";
 import type { Module } from ".";
 import { subfeatureEnabled } from "../features";
-import { feeInfoOf, isAssignedTo, resolveSection } from "../helpers";
+import { feeInfoOf, isAssignedTo, resolveSection, staffBreakdown } from "../helpers";
 import type { Section } from "@/lib/sections";
 
 // Role-aware dashboard summaries.
@@ -29,7 +29,7 @@ export const dashboardModule: Module = {
       const attendanceWhere = { schoolId, ...(section ? { student: { section } } : {}) };
       const [studentCount, staff, classCount, invoiceStats, applications, unpaid, today, attendanceTotal, attendancePresent, averageResult] = await Promise.all([
         prisma.student.count({ where: studentWhere }),
-        prisma.teacher.findMany({ where: { schoolId, user: { status: "ACTIVE" } }, select: { id: true, sections: true } }),
+        staffBreakdown(schoolId, section),
         prisma.classGroup.count({ where: classWhere }),
         finance ? prisma.invoice.aggregate({ where: { schoolId, ...(section ? { student: { is: { section } } } : {}) }, _sum: { totalAmount: true, paidAmount: true, balance: true } }) : Promise.resolve({ _sum: { totalAmount: 0, paidAmount: 0, balance: 0 } }),
         prisma.application.count({ where: { schoolId, status: "RECEIVED", ...(section ? { section } : {}) } }),
@@ -43,11 +43,10 @@ export const dashboardModule: Module = {
         prisma.studentAttendance.count({ where: { ...attendanceWhere, status: { in: ["PRESENT", "LATE"] } } }),
         prisma.reportCard.aggregate({ where: { schoolId, isPublished: true, ...(section ? { classGroup: { level: { section } } } : {}) }, _avg: { average: true }, _count: { average: true } }),
       ]);
-      const staffCount = section ? staff.filter((teacher) => Array.isArray(teacher.sections) && teacher.sections.some((s) => typeof s === "string" && s.trim().toLowerCase() === section.trim().toLowerCase())).length : staff.length;
       const attendanceRate = attendanceTotal ? Math.round((attendancePresent / attendanceTotal) * 100) : 0;
       return {
         role,
-        counts: { studentCount, staffCount, classCount, applications, unpaid, today },
+        counts: { studentCount, staffCount: staff.teaching, staff, classCount, applications, unpaid, today },
         schoolProgress: { attendanceRate, subjectAverage: Math.round(Number(averageResult._avg.average ?? 0) * 10) / 10, assessedStudents: averageResult._count.average },
         feeSummary: finance
           ? {

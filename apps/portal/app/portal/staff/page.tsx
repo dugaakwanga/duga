@@ -107,6 +107,7 @@ export default function StaffPage() {
       specialty: u.teacher?.specialty ?? "",
       designation: u.teacher?.designation ?? u.admin?.designation ?? "",
       maxPeriodsPerDay: u.teacher?.maxPeriodsPerDay != null ? String(u.teacher.maxPeriodsPerDay) : "",
+      alsoTeaches: u.role === "ADMIN" && u.teacher ? "true" : "false",
     });
     setSelectedSubjectIds(u.teacher?.subjectIds ?? []);
     setSelectedSections(u.teacher?.sections ?? u.admin?.sections ?? []);
@@ -167,6 +168,14 @@ export default function StaffPage() {
       setRoleSaving(false);
     }
   }
+
+  // An admin can be assigned subjects/sections to teach on top of their
+  // admin permissions ("Also teaches"), which reuses the same teacher-facing
+  // fields (max periods, subjects, section picker's "teach in" framing)
+  // that a plain TEACHER role already shows.
+  const effectiveRole = form.role || editing?.role || "";
+  const adminAlsoTeaches = effectiveRole === "ADMIN" && form.alsoTeaches === "true";
+  const showTeachingFields = effectiveRole === "TEACHER" || adminAlsoTeaches;
 
   return (
     <div>
@@ -326,19 +335,34 @@ export default function StaffPage() {
               </Field>
             </>
           )}
+          {effectiveRole === "ADMIN" && (
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}>
+                <input
+                  type="checkbox"
+                  checked={form.alsoTeaches === "true"}
+                  onChange={(e) => setForm({ ...form, alsoTeaches: e.target.checked ? "true" : "false" })}
+                />
+                Also teaches
+              </label>
+              <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginTop: 4, marginLeft: 24 }}>
+                Keeps their admin permissions and additionally gives them a teacher profile — assign subjects and sections below.
+              </div>
+            </div>
+          )}
           <Field label="Specialty">
             <Input value={form.specialty ?? ""} onChange={(e) => setForm({ ...form, specialty: e.target.value })} />
           </Field>
-          {(form.role === "TEACHER" || editing?.role === "TEACHER") && (
+          {showTeachingFields && (
             <Field label="Max periods per day" hint="Used by the AI timetable generator to spread this teacher's periods out. Leave blank for no extra cap.">
               <Input type="number" min={1} max={12} value={form.maxPeriodsPerDay ?? ""} onChange={(e) => setForm({ ...form, maxPeriodsPerDay: e.target.value })} placeholder="No cap" />
             </Field>
           )}
-          {((form.role === "TEACHER" || editing?.role === "TEACHER") || (currentRole === "OWNER" && [form.role, editing?.role].some((role) => role === "ADMIN" || role === "BURSAR"))) && (
+          {(showTeachingFields || (currentRole === "OWNER" && [form.role, editing?.role].some((role) => role === "ADMIN" || role === "BURSAR"))) && (
             <div className="staff-subject-picker">
               <div className="staff-subject-picker__heading">
                 <span>School sections</span>
-                <small>{form.role === "TEACHER" || editing?.role === "TEACHER" ? "Choose where this teacher is allowed to teach." : "Choose the sections this staff account can access. Leave both unassigned for full-school access."}</small>
+                <small>{showTeachingFields ? "Choose where this teacher is allowed to teach." : "Choose the sections this staff account can access. Leave both unassigned for full-school access."}</small>
               </div>
               <div className="staff-subject-picker__grid staff-section-picker">
                 {sections.map((schoolSection) => {
@@ -347,7 +371,7 @@ export default function StaffPage() {
                     <button key={schoolSection} type="button" className={`staff-subject-picker__option${selected ? " is-selected" : ""}`}
                       onClick={() => {
                         setSelectedSections((current) => selected ? current.filter((item) => item !== schoolSection) : [...current, schoolSection]);
-                        if (selected && (form.role === "TEACHER" || editing?.role === "TEACHER")) setSelectedSubjectIds((ids) => ids.filter((id) => subjects.find((subject) => subject.id === id)?.section !== schoolSection));
+                        if (selected && showTeachingFields) setSelectedSubjectIds((ids) => ids.filter((id) => subjects.find((subject) => subject.id === id)?.section !== schoolSection));
                       }} aria-pressed={selected}>
                       <span>{schoolSection[0] + schoolSection.slice(1).toLowerCase()}</span>
                       <Badge tone="neutral">{selected ? "Assigned" : "Not assigned"}</Badge>
@@ -357,7 +381,7 @@ export default function StaffPage() {
               </div>
             </div>
           )}
-          {(form.role === "TEACHER" || editing?.role === "TEACHER") && (
+          {showTeachingFields && (
             <div className="staff-subject-picker">
               <div className="staff-subject-picker__heading">
                 <span>Teaching subjects</span>

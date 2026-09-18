@@ -25,10 +25,16 @@ async function assertFinanceManager(ctx: { session: { user: { role: string; scho
 // "this covers Term 2") via Payment.coversTo — when any payment in the
 // current billing window has one, the latest such date wins outright over
 // the proportional math (never moving the window backward from feeStartDate).
-export async function recomputeFeeAccess(schoolId: string, studentId: string): Promise<{ paidThrough: Date | null; totalPaid: number }> {
+//
+// Once feesDueDate has passed, proration stops applying entirely — the
+// school needs fees fully in hand a few weeks before exams, not a partial
+// credit that happens to reach into the exam period. Before that date,
+// nothing changes: a partial payment still opens an intermittent window
+// exactly as it always has.
+export async function recomputeFeeAccess(schoolId: string, studentId: string): Promise<{ paidThrough: Date | null; totalPaid: number; pastDueDateUnpaid: boolean }> {
   const student = await prisma.student.findFirst({ where: { id: studentId, schoolId } });
   if (!student || !student.feeStartDate || Number(student.feeAmount) <= 0 || student.feeDays <= 0) {
-    return { paidThrough: student?.feePaidThrough ?? null, totalPaid: 0 };
+    return { paidThrough: student?.feePaidThrough ?? null, totalPaid: 0, pastDueDateUnpaid: false };
   }
 
   const payments = await prisma.payment.findMany({
@@ -41,19 +47,31 @@ export async function recomputeFeeAccess(schoolId: string, studentId: string): P
     .filter((d): d is Date => d !== null)
     .sort((a, b) => b.getTime() - a.getTime())[0];
 
-  const paidThrough = explicitCoversTo
-    ? (explicitCoversTo > student.feeStartDate ? explicitCoversTo : student.feeStartDate)
-    : new Date(student.feeStartDate.getTime() + Math.floor((totalPaid / Number(student.feeAmount)) * student.feeDays) * 86400000);
+  const fullyPaid = totalPaid >= Number(student.feeAmount);
+  const pastDueDate = Boolean(student.feesDueDate && Date.now() >= student.feesDueDate.getTime());
+  const pastDueDateUnpaid = pastDueDate && !fullyPaid;
+
+  const paidThrough = pastDueDateUnpaid
+    ? student.feeStartDate
+    : explicitCoversTo
+      ? (explicitCoversTo > student.feeStartDate ? explicitCoversTo : student.feeStartDate)
+      : pastDueDate
+        ? (student.feeEndDate ?? new Date(student.feeStartDate.getTime() + student.feeDays * 86400000))
+        : new Date(student.feeStartDate.getTime() + Math.floor((totalPaid / Number(student.feeAmount)) * student.feeDays) * 86400000);
 
   await prisma.student.update({ where: { id: student.id }, data: { feePaidThrough: paidThrough } });
-  return { paidThrough, totalPaid };
+  return { paidThrough, totalPaid, pastDueDateUnpaid };
 }
 
 // A one-line addition to a payment notification stating exactly what date
 // the family's fees now cover through — the whole point of computing
 // coverage from the term's start date is being able to say this plainly,
 // including when it's still behind today's date after a partial payment.
-function coverageSuffix(access: { paidThrough: Date | null }): string {
+// Once the term's fees-due deadline has passed unpaid, that framing no
+// longer applies (there's no partial "covers through" anymore) — say so
+// plainly instead.
+function coverageSuffix(access: { paidThrough: Date | null; pastDueDateUnpaid?: boolean }): string {
+  if (access.pastDueDateUnpaid) return " The fee deadline for this term has passed — full payment is required to restore access.";
   if (!access.paidThrough) return "";
   const d = access.paidThrough.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
   return access.paidThrough.getTime() < Date.now()

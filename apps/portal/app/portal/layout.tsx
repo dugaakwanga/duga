@@ -87,6 +87,10 @@ export default async function PortalLayout({ children }: { children: React.React
         canSwitchSection,
         hasBoarding,
         isClassTeacher,
+        // An admin can also hold a Teacher profile ("also teaches") — this
+        // surfaces teacher-only nav entries (e.g. "My Subjects") for them
+        // too, on top of whatever their primary role already shows.
+        hasTeacherProfile: Boolean(user.teacher),
       }}
     >
       {children}

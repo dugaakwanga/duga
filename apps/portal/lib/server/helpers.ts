@@ -14,6 +14,34 @@ export function sectionOf(v: unknown): Section | undefined {
   return s || undefined;
 }
 
+export interface StaffBreakdown {
+  teaching: number;
+  admin: number;
+  bursar: number;
+  security: number;
+  total: number;
+}
+
+// Single source of truth for "how many staff does this school have" — used
+// to replace two independently-written counts (Dashboard and Reports) that
+// disagreed with each other: one only counted active Teacher-table rows
+// (silently excluding admins), the other counted every Teacher/Admin-role
+// User with no active/inactive filter at all. "Teaching" counts active
+// Teacher-table rows (not the TEACHER role) so an admin who also teaches
+// is correctly counted as teaching staff too.
+export async function staffBreakdown(schoolId: string, section?: Section): Promise<StaffBreakdown> {
+  const [teachers, admin, bursar, security] = await Promise.all([
+    prisma.teacher.findMany({ where: { schoolId, user: { status: "ACTIVE" } }, select: { sections: true } }),
+    prisma.user.count({ where: { schoolId, role: "ADMIN", status: "ACTIVE" } }),
+    prisma.user.count({ where: { schoolId, role: "BURSAR", status: "ACTIVE" } }),
+    prisma.user.count({ where: { schoolId, role: "SECURITY", status: "ACTIVE" } }),
+  ]);
+  const teaching = section
+    ? teachers.filter((t) => Array.isArray(t.sections) && t.sections.some((s) => typeof s === "string" && s.trim().toLowerCase() === section.trim().toLowerCase())).length
+    : teachers.length;
+  return { teaching, admin, bursar, security, total: teaching + admin + bursar + security };
+}
+
 export function sectionArray(v: unknown): Section[] {
   if (!Array.isArray(v)) return [];
   return [...new Set(v.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim()))];

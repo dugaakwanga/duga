@@ -395,6 +395,7 @@ interface ShellUser {
   canSwitchSection?: boolean;
   hasBoarding?: boolean;
   isClassTeacher?: boolean;
+  hasTeacherProfile?: boolean;
 }
 
 // Human-readable label for a section: "PRIMARY" -> "Primary",
@@ -566,7 +567,7 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
         (i) =>
           (!i.finance || user.role === "OWNER" || ((user.role === "ADMIN" || user.role === "BURSAR") && user.financeAccess)) &&
           (!i.perm || hasPermission(user.role, i.perm)) &&
-          (!i.roles || i.roles.includes(user.role)) &&
+          (!i.roles || i.roles.includes(user.role) || (user.hasTeacherProfile && i.roles.includes("TEACHER"))) &&
           (!i.feature || !user.features || user.features.includes(i.feature)) &&
           (!i.subfeature || !user.subfeatures || user.subfeatures.includes(i.subfeature)) &&
           (!i.boardingOnly || user.hasBoarding) &&

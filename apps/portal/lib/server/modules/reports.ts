@@ -1,6 +1,6 @@
 import { prisma } from "@duga/core/server";
 import type { Module } from ".";
-import { financeManager } from "../helpers";
+import { financeManager, staffBreakdown } from "../helpers";
 
 async function canViewFinance(ctx: Parameters<typeof financeManager>[0]): Promise<boolean> {
   return financeManager(ctx);
@@ -31,9 +31,9 @@ export const reportsModule: Module = {
       _count: true,
     });
 
-    const [studentCount, staffCount, termCount, classCount] = await Promise.all([
+    const [studentCount, staff, termCount, classCount] = await Promise.all([
       prisma.student.count({ where: { schoolId } }),
-      prisma.user.count({ where: { schoolId, role: { in: ["TEACHER", "ADMIN"] } } }),
+      staffBreakdown(schoolId),
       prisma.term.count({ where: { schoolId } }),
       prisma.classGroup.count({ where: { schoolId } }),
     ]);
@@ -43,7 +43,7 @@ export const reportsModule: Module = {
       byStatus,
       paymentsByMethod,
       attendance,
-      counts: { studentCount, staffCount, termCount, classCount },
+      counts: { studentCount, staffCount: staff.total, staff, termCount, classCount },
     };
   },
 

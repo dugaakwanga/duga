@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@duga/core/server";
 import { logAudit } from "@duga/core/server";
 import type { Module } from ".";
-import { can, str, num, assertContactFree, resolveSection, sectionArray, sectionsOfAdmin, sectionsOfTeacher } from "../helpers";
+import { can, str, num, bool, assertContactFree, resolveSection, sectionArray, sectionsOfAdmin, sectionsOfTeacher } from "../helpers";
 
 function assertStaffTargetAccess(actorRole: string, targetRole: string) {
   if (actorRole !== "OWNER" && ["OWNER", "ADMIN", "BURSAR"].includes(targetRole)) {
@@ -105,15 +105,20 @@ export const staffModule: Module = {
     const tempPassword = str(b.tempPassword);
     const assignedSubjectIds = subjectIds(b.subjectIds);
     const assignedSections = teacherSections(b.sections);
+    // An admin can also be given subject-teaching duties on top of their
+    // admin permissions — a second, additional Teacher profile alongside
+    // their Admin one, instead of the two being mutually exclusive.
+    const alsoTeaches = role === "ADMIN" && bool(b.alsoTeaches) === true;
+    const teaches = role === "TEACHER" || alsoTeaches;
     // The teacher can be created with any single identifier — email, phone or staff number.
     if (!role || !firstName || !lastName) throw new Error("role, firstName and lastName are required");
     if (!email && !phone && !staffNumber) throw new Error("Provide at least one of email, phone number or staff ID");
     if (!["TEACHER", "ADMIN", "BURSAR", "SECURITY"].includes(role)) throw new Error("Invalid staff role");
     assertStaffTargetAccess(ctx.session.user.role, role);
     if (tempPassword && tempPassword.length < 8) throw new Error("Temporary password must be at least 8 characters");
-    if (role !== "TEACHER" && assignedSubjectIds.length) throw new Error("Only teachers can be assigned subjects");
-    if (ctx.session.user.role !== "OWNER" && role !== "TEACHER" && assignedSections.length) throw new Error("Only the school owner can assign sections to administrators or bursars");
-    if (role === "TEACHER" && assignedSections.length === 0) throw new Error("Assign the teacher to at least one school section");
+    if (!teaches && assignedSubjectIds.length) throw new Error("Only teachers (or admins marked as also teaching) can be assigned subjects");
+    if (ctx.session.user.role !== "OWNER" && role !== "TEACHER" && !alsoTeaches && assignedSections.length) throw new Error("Only the school owner can assign sections to administrators or bursars");
+    if (teaches && assignedSections.length === 0) throw new Error("Assign at least one school section to teach in");
     if (assignedSubjectIds.length) {
       const count = await prisma.subject.count({ where: { schoolId, id: { in: assignedSubjectIds }, section: { in: assignedSections } } });
       if (count !== assignedSubjectIds.length) throw new Error("One or more selected subjects were not found");
@@ -179,13 +184,26 @@ export const staffModule: Module = {
           });
         }
       } else {
-        await prisma.teacher.deleteMany({ where: { userId: existing.id, schoolId } });
+        if (alsoTeaches) {
+          if (existing.teacher) {
+            await prisma.teacher.update({
+              where: { userId: existing.id },
+              data: { staffNumber: staffNumber ?? existing.teacher.staffNumber, subjectIds: assignedSubjectIds, sections: assignedSections, designation: str(b.designation) ?? "Teacher" },
+            });
+          } else {
+            await prisma.teacher.create({
+              data: { userId: existing.id, schoolId, staffNumber: await nextStaffNumber(schoolId, "STF", "teacher"), subjectIds: assignedSubjectIds, sections: assignedSections, designation: str(b.designation) ?? "Teacher" },
+            });
+          }
+        } else {
+          await prisma.teacher.deleteMany({ where: { userId: existing.id, schoolId } });
+        }
         if (existing.admin) {
           await prisma.admin.update({
             where: { userId: existing.id },
             data: {
               designation: str(b.designation) ?? "Staff",
-              sections: assignedSections.length ? assignedSections : undefined,
+              sections: alsoTeaches ? undefined : assignedSections.length ? assignedSections : undefined,
               staffNumber: staffNumber ?? existing.admin.staffNumber,
             },
           });
@@ -195,7 +213,7 @@ export const staffModule: Module = {
               userId: existing.id,
               schoolId,
               designation: str(b.designation) ?? "Staff",
-              sections: assignedSections.length ? assignedSections : undefined,
+              sections: alsoTeaches ? undefined : assignedSections.length ? assignedSections : undefined,
               staffNumber: staffNumber ?? (await nextStaffNumber(schoolId, "ADM", "admin")),
             },
           });
@@ -236,13 +254,25 @@ export const staffModule: Module = {
           userId: user.id,
           schoolId,
           designation: str(b.designation) ?? "Staff",
-          sections: assignedSections.length ? assignedSections : undefined,
+          sections: alsoTeaches ? undefined : assignedSections.length ? assignedSections : undefined,
           staffNumber: staffNumber ?? (await nextStaffNumber(schoolId, "ADM", "admin")),
         },
       });
+      if (alsoTeaches) {
+        await prisma.teacher.create({
+          data: {
+            userId: user.id,
+            schoolId,
+            staffNumber: await nextStaffNumber(schoolId, "STF", "teacher"),
+            subjectIds: assignedSubjectIds,
+            sections: assignedSections,
+            designation: str(b.designation) ?? "Teacher",
+          },
+        });
+      }
     }
 
-    await logAudit({ schoolId, userId: ctx.session.user.id, action: "staff.created", entityType: "User", entityId: user.id, meta: { role } });
+    await logAudit({ schoolId, userId: ctx.session.user.id, action: "staff.created", entityType: "User", entityId: user.id, meta: { role, alsoTeaches } });
     return { id: user.id, email: user.email };
   },
 
@@ -279,8 +309,12 @@ export const staffModule: Module = {
     const finalRole = (data.role as string) ?? target.role;
     const assignedSubjectIds = subjectIds(b.subjectIds);
     const assignedSections = teacherSections(b.sections);
+    // An admin keeps their admin permissions while also getting a Teacher
+    // profile — the two profile blocks below run independently rather than
+    // as an either/or, so both apply for an admin marked as also teaching.
+    const alsoTeaches = finalRole === "ADMIN" && bool(b.alsoTeaches) === true;
 
-    if (finalRole === "TEACHER") {
+    if (finalRole === "TEACHER" || alsoTeaches) {
       if (!target.teacher) {
         // Transitioning admin/bursar -> teacher: build the teacher profile.
         const staffNumber = str(b.staffNumber) ?? (await nextStaffNumber(schoolId, "STF", "teacher"));
@@ -335,7 +369,8 @@ export const staffModule: Module = {
         await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { sections: assignedSections } });
       }
       if (data.role) await prisma.admin.deleteMany({ where: { userId: ctx.id, schoolId } });
-    } else {
+    }
+    if (finalRole !== "TEACHER") {
       if (b.designation) {
         await prisma.admin.updateMany({ where: { userId: ctx.id, schoolId }, data: { designation: String(b.designation) } });
         await prisma.teacher.updateMany({ where: { userId: ctx.id, schoolId }, data: { designation: String(b.designation) } });
@@ -347,11 +382,14 @@ export const staffModule: Module = {
         await prisma.admin.updateMany({ where: { userId: ctx.id, schoolId }, data: { staffNumber: adminStaffNumber } });
       }
       if (!target.admin) await prisma.admin.create({ data: { userId: target.id, schoolId, designation: str(b.designation) ?? "Staff", staffNumber: str(b.staffNumber) ?? (await nextStaffNumber(schoolId, "ADM", "admin")) } });
-      if (b.sections !== undefined) {
+      // b.sections means "teaching sections" when alsoTeaches (already
+      // consumed by the teacher block above) vs. "admin access scope" here —
+      // the same field name serves two different purposes depending on mode.
+      if (b.sections !== undefined && !alsoTeaches) {
         if (ctx.session.user.role !== "OWNER") throw new Error("Only the school owner can assign sections to administrators or bursars");
         await prisma.admin.updateMany({ where: { userId: ctx.id, schoolId }, data: { sections: assignedSections } });
       }
-      if (data.role && target.teacher) {
+      if (data.role && target.teacher && !alsoTeaches) {
         // Teacher profile may have dependencies (class subjects etc.); drop it
         // when possible, otherwise it is kept harmless for history.
         try {
@@ -359,6 +397,16 @@ export const staffModule: Module = {
         } catch {
           /* keep stale teacher profile */
         }
+      }
+    }
+    // Explicitly turning "also teaches" off removes the teacher profile
+    // (best-effort — dependencies like class assignments block it, same
+    // guard as the role-transition cleanup above).
+    if (finalRole === "ADMIN" && !alsoTeaches && bool(b.alsoTeaches) === false && target.teacher) {
+      try {
+        await prisma.teacher.deleteMany({ where: { userId: ctx.id, schoolId } });
+      } catch {
+        /* keep stale teacher profile */
       }
     }
 

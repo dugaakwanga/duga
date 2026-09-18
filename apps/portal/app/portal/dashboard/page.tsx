@@ -17,7 +17,7 @@ interface InvoiceLike {
 
 interface DashboardData {
   role: string;
-  counts?: { studentCount: number; staffCount: number; classCount: number; applications: number; unpaid: number; today: number };
+  counts?: { studentCount: number; staffCount: number; staff?: { teaching: number; admin: number; bursar: number; security: number; total: number }; classCount: number; applications: number; unpaid: number; today: number };
   feeSummary?: { total: number; paid: number; balance: number };
   schoolProgress?: { attendanceRate: number; subjectAverage: number; assessedStudents: number };
   recentAnnouncements?: Array<{ id: string; title: string; audience: string; author: { firstName: string; lastName: string }; createdAt: string }>;
@@ -80,7 +80,10 @@ export default function DashboardPage() {
         <>
           <div className="portal-metrics" style={{ marginBottom: 20 }}>
             <Stat label="Students" value={data.counts?.studentCount} />
-            <Stat label="Teaching staff" value={data.counts?.staffCount} />
+            <Stat label="Teaching staff" value={data.counts?.staff?.teaching ?? data.counts?.staffCount} />
+            <Stat label="Admin staff" value={data.counts?.staff?.admin} />
+            <Stat label="Bursar staff" value={data.counts?.staff?.bursar} />
+            <Stat label="Security staff" value={data.counts?.staff?.security} />
             <Stat label="Classes" value={data.counts?.classCount} />
             {data.feeSummary && <Stat label="Fees collected" value={naira(data.feeSummary.paid)} tone="success" />}
             {data.feeSummary && <Stat label="Outstanding" value={naira(data.feeSummary.balance)} tone="danger" />}

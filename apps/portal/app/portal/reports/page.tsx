@@ -8,7 +8,7 @@ interface ReportsData {
   feeSummary: { _sum: { totalAmount: number | null; paidAmount: number | null; balance: number | null }; _count: number };
   byStatus: Array<{ status: string; _count: number; _sum: { paidAmount: number | null; balance: number | null } }>;
   attendance: Array<{ status: string; _count: number }>;
-  counts: { studentCount: number; staffCount: number; termCount: number; classCount: number };
+  counts: { studentCount: number; staffCount: number; staff: { teaching: number; admin: number; bursar: number; security: number; total: number }; termCount: number; classCount: number };
 }
 
 function naira(v: number | null | undefined): string {
@@ -36,7 +36,10 @@ export default function ReportsPage() {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 14, marginBottom: 20 }}>
         <Stat label="Students" value={data.counts.studentCount} />
-        <Stat label="Staff" value={data.counts.staffCount} />
+        <Stat label="Teaching staff" value={data.counts.staff.teaching} />
+        <Stat label="Admin staff" value={data.counts.staff.admin} />
+        <Stat label="Bursar staff" value={data.counts.staff.bursar} />
+        <Stat label="Security staff" value={data.counts.staff.security} />
         <Stat label="Classes" value={data.counts.classCount} />
         <Stat label="Terms" value={data.counts.termCount} />
         <Stat label="Invoices" value={data.feeSummary._count} />

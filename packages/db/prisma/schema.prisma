@@ -318,6 +318,7 @@ model User {
   auditLogs                AuditLog[]                @relation("AuditActor")
   salaryProfile            StaffSalary?
   payrollEntries           PayrollEntry[]            @relation("PayrollStaff")
+  staffDeductions          StaffDeduction[]
   createdFeeOverrides      FeeOverride[]             @relation("OverrideCreator")
   recordedPtaMeetings      PtaMeeting[]              @relation("PtaMeetingRecorder")
   recordedPtaContributions PtaContribution[]         @relation("PtaContributionRecorder")
@@ -397,6 +398,9 @@ model Student {
   // proration math; these two are what the fee-setting UI shows and edits.
   feeStartDate        DateTime?
   feeEndDate          DateTime?
+  // Past this date, recomputeFeeAccess stops prorating access by amount
+  // paid and requires the fee to be fully settled — see Term.feesDueDate.
+  feesDueDate         DateTime?
   feePaidThrough      DateTime?
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
@@ -521,17 +525,38 @@ model Admin {
 
 // Payroll is tenant-scoped and preserves a monthly snapshot so historical
 // pay slips never change when a staff salary is updated later.
+// Late-coming penalty used to live here per staff member; it's now a single
+// school-wide amount (payrollRules.latePenaltyAmount in payroll.ts), applied
+// uniformly at payroll generation time instead of being set per person.
 model StaffSalary {
   id            String   @id @default(cuid())
   schoolId      String
   userId        String   @unique
   monthlyAmount Decimal  @default(0)
-  latePenalty   Decimal  @default(0)
   rewardAmount  Decimal  @default(0)
   updatedAt     DateTime @updatedAt
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([schoolId])
+}
+
+// A one-off deduction logged against a staff member for a given payroll
+// month (e.g. didn't submit lesson notes) — entered by hand, never
+// auto-generated. Logged any time; payroll.generate() folds unconsumed
+// deductions into that month's PayrollEntry.extraDeduction, and addDeduction
+// also patches an already-generated (not yet PAID) entry immediately.
+model StaffDeduction {
+  id              String   @id @default(cuid())
+  schoolId        String
+  userId          String
+  month           String
+  amount          Decimal
+  reason          String
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, userId, month])
 }
 
 model PayrollEntry {
@@ -696,6 +721,14 @@ model Term {
   name       String
   startDate  DateTime?
   endDate    DateTime?
+  // The date by which the school expects fees to be fully settled (e.g. a
+  // few weeks before exams) — earlier than endDate. Past this date, a
+  // student's fee-access window stops being prorated by amount paid and
+  // becomes binary: fully paid, or fully locked. See recomputeFeeAccess in
+  // apps/portal/lib/server/modules/fees.ts. Defaults new Student.feesDueDate
+  // values the same way startDate/endDate already default feeStartDate/
+  // feeEndDate on the Set Fee screen.
+  feesDueDate DateTime?
   status     TermStatus @default(UPCOMING)
   createdAt  DateTime   @default(now())
 

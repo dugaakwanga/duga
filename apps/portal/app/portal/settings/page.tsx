@@ -12,6 +12,7 @@ interface Term {
   status: string;
   startDate: string | null;
   endDate: string | null;
+  feesDueDate: string | null;
   session: { name: string };
 }
 
@@ -70,7 +71,7 @@ export default function SettingsPage() {
   const [termForm, setTermForm] = useState<Record<string, string>>({});
   const [termBusy, setTermBusy] = useState(false);
   const [datesTarget, setDatesTarget] = useState<Term | null>(null);
-  const [datesForm, setDatesForm] = useState<{ startDate: string; endDate: string }>({ startDate: "", endDate: "" });
+  const [datesForm, setDatesForm] = useState<{ startDate: string; endDate: string; feesDueDate: string }>({ startDate: "", endDate: "", feesDueDate: "" });
   const [datesBusy, setDatesBusy] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -117,7 +118,7 @@ export default function SettingsPage() {
   }
 
   function openDates(t: Term) {
-    setDatesForm({ startDate: t.startDate ? t.startDate.slice(0, 10) : "", endDate: t.endDate ? t.endDate.slice(0, 10) : "" });
+    setDatesForm({ startDate: t.startDate ? t.startDate.slice(0, 10) : "", endDate: t.endDate ? t.endDate.slice(0, 10) : "", feesDueDate: t.feesDueDate ? t.feesDueDate.slice(0, 10) : "" });
     setDatesTarget(t);
   }
 
@@ -125,7 +126,7 @@ export default function SettingsPage() {
     if (!datesTarget) return;
     setDatesBusy(true);
     try {
-      await api("settings/updateTermDates", { method: "POST", body: { termId: datesTarget.id, startDate: datesForm.startDate || undefined, endDate: datesForm.endDate || undefined } });
+      await api("settings/updateTermDates", { method: "POST", body: { termId: datesTarget.id, startDate: datesForm.startDate || undefined, endDate: datesForm.endDate || undefined, feesDueDate: datesForm.feesDueDate || undefined } });
       setDatesTarget(null);
       const d = await api<SettingsData>("settings");
       setData(d);
@@ -449,6 +450,9 @@ export default function SettingsPage() {
                       {t.startDate && t.endDate
                         ? `${new Date(t.startDate).toLocaleDateString()} – ${new Date(t.endDate).toLocaleDateString()}`
                         : <span style={{ color: "var(--duga-muted)" }}>Not set</span>}
+                      {t.feesDueDate && (
+                        <div style={{ fontSize: 12, color: "var(--duga-muted)" }}>Fees due {new Date(t.feesDueDate).toLocaleDateString()}</div>
+                      )}
                     </td>
                     <td>
                       <Badge tone={t.status === "ACTIVE" ? "success" : "neutral"}>{t.status}</Badge>
@@ -498,6 +502,9 @@ export default function SettingsPage() {
             <Input type="date" value={termForm.endDate ?? ""} onChange={(e) => setTermForm({ ...termForm, endDate: e.target.value })} />
           </Field>
         </div>
+        <Field label="Fees due by (optional)" hint="A few weeks before exams, typically. Past this date, a student's fee access stops being prorated by amount paid — it's fully open once fully paid, otherwise fully locked.">
+          <Input type="date" value={termForm.feesDueDate ?? ""} onChange={(e) => setTermForm({ ...termForm, feesDueDate: e.target.value })} />
+        </Field>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <Button variant="ghost" onClick={() => setTermOpen(false)}>Cancel</Button>
           <Button loading={termBusy} onClick={createTerm}>Add term</Button>
@@ -517,6 +524,9 @@ export default function SettingsPage() {
               <Input type="date" value={datesForm.endDate} onChange={(e) => setDatesForm({ ...datesForm, endDate: e.target.value })} />
             </Field>
           </div>
+          <Field label="Fees due by" hint="A few weeks before exams, typically. Past this date, a student's fee access stops being prorated by amount paid — it's fully open once fully paid, otherwise fully locked. Leave blank to keep the existing proportional access all the way to the end date.">
+            <Input type="date" value={datesForm.feesDueDate} onChange={(e) => setDatesForm({ ...datesForm, feesDueDate: e.target.value })} />
+          </Field>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
             <Button variant="ghost" onClick={() => setDatesTarget(null)}>Cancel</Button>
             <Button loading={datesBusy} onClick={saveDates}>Save</Button>

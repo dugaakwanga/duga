@@ -11,6 +11,7 @@ interface FeeInfo {
   feeDays: number;
   feeStartDate: string | null;
   feeEndDate: string | null;
+  feesDueDate: string | null;
   feePaidThrough: string | null;
   usedDays: number;
   daysRemaining: number;
@@ -63,7 +64,7 @@ export default function StudentsPage() {
   const [promoteTarget, setPromoteTarget] = useState<Student | null>(null);
   const [promoteForm, setPromoteForm] = useState<Record<string, string>>({});
   const [levels, setLevels] = useState<{ id: string; name: string; section: string }[]>([]);
-  const [sessions, setSessions] = useState<{ id: string; name: string; terms?: { id: string; status: string; startDate: string | null; endDate: string | null }[] }[]>([]);
+  const [sessions, setSessions] = useState<{ id: string; name: string; terms?: { id: string; status: string; startDate: string | null; endDate: string | null; feesDueDate: string | null }[] }[]>([]);
   const [newClassOpen, setNewClassOpen] = useState(false);
   const [newClass, setNewClass] = useState<Record<string, string>>({});
   const [creatingClass, setCreatingClass] = useState(false);
@@ -133,7 +134,7 @@ export default function StudentsPage() {
   }, [section]);
 
   useEffect(() => {
-    api<{ items: ClassOption[]; levels: { id: string; name: string; section: string }[]; sessions: { id: string; name: string; terms?: { id: string; status: string; startDate: string | null; endDate: string | null }[] }[] }>("classes")
+    api<{ items: ClassOption[]; levels: { id: string; name: string; section: string }[]; sessions: { id: string; name: string; terms?: { id: string; status: string; startDate: string | null; endDate: string | null; feesDueDate: string | null }[] }[] }>("classes")
       .then((d) => { setClasses(d.items); setLevels(d.levels ?? []); setSessions(d.sessions ?? []); })
       .catch(() => setClasses([]));
   }, []);
@@ -146,6 +147,7 @@ export default function StudentsPage() {
     return {
       start: active?.startDate ? active.startDate.slice(0, 10) : "",
       end: active?.endDate ? active.endDate.slice(0, 10) : "",
+      feesDueDate: active?.feesDueDate ? active.feesDueDate.slice(0, 10) : "",
     };
   })();
 
@@ -192,6 +194,7 @@ export default function StudentsPage() {
         ...form,
         feeStartDate: form.feeStartDate ?? activeTermDates.start,
         feeEndDate: form.feeEndDate ?? activeTermDates.end,
+        feesDueDate: form.feesDueDate ?? activeTermDates.feesDueDate,
       };
       await api("students", { method: "POST", body });
       setOpen(false);
@@ -254,6 +257,7 @@ export default function StudentsPage() {
         feeAmount: feeForm.feeAmount ?? feeTarget.fee?.feeAmount ?? "0",
         feeStartDate: feeForm.feeStartDate ?? (feeTarget.fee?.feeStartDate ? feeTarget.fee.feeStartDate.slice(0, 10) : activeTermDates.start),
         feeEndDate: feeForm.feeEndDate ?? (feeTarget.fee?.feeEndDate ? feeTarget.fee.feeEndDate.slice(0, 10) : activeTermDates.end),
+        feesDueDate: feeForm.feesDueDate ?? (feeTarget.fee?.feesDueDate ? feeTarget.fee.feesDueDate.slice(0, 10) : activeTermDates.feesDueDate),
       };
       await api(`students/${feeTarget.id}/setFee`, { method: "POST", body });
 
@@ -764,10 +768,17 @@ export default function StudentsPage() {
               onChange={(e) => setFeeForm({ ...feeForm, feeEndDate: e.target.value })}
             />
           </Field>
+          <Field label="Fees due by (optional)" hint="Defaults to the current term's deadline, if it has one. Past this date, partial payment no longer grants partial access — it's fully open once fully paid, otherwise fully locked.">
+            <Input
+              type="date"
+              value={feeForm.feesDueDate ?? (feeTarget?.fee?.feesDueDate ? feeTarget.fee.feesDueDate.slice(0, 10) : activeTermDates.feesDueDate)}
+              onChange={(e) => setFeeForm({ ...feeForm, feesDueDate: e.target.value })}
+            />
+          </Field>
         </div>
         {(feeForm.feeStartDate ?? feeTarget?.fee?.feeStartDate ?? activeTermDates.start) && (feeForm.feeEndDate ?? feeTarget?.fee?.feeEndDate ?? activeTermDates.end) && (
           <div style={{ marginTop: 10 }}>
-            <Alert tone="info">This updates the fee plan. Access begins only after payment, and a part-payment grants the matching proportion of that period.</Alert>
+            <Alert tone="info">This updates the fee plan. Access begins only after payment, and a part-payment grants the matching proportion of that period — until the fees-due date passes, after which it&apos;s fully open or fully locked.</Alert>
           </div>
         )}
         <div style={{ marginTop: 14 }}>

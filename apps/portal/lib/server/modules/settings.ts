@@ -173,13 +173,15 @@ export const settingsModule: Module = {
       const name = String(ctx.body.name ?? `${["", "First", "Second", "Third"][termNumber] ?? termNumber} Term`);
       const startDate = ctx.body.startDate ? new Date(String(ctx.body.startDate)) : undefined;
       const endDate = ctx.body.endDate ? new Date(String(ctx.body.endDate)) : undefined;
-      return prisma.term.create({ data: { schoolId, sessionId, termNumber, name, startDate, endDate } });
+      const feesDueDate = ctx.body.feesDueDate ? new Date(String(ctx.body.feesDueDate)) : undefined;
+      return prisma.term.create({ data: { schoolId, sessionId, termNumber, name, startDate, endDate, feesDueDate } });
     },
 
-    // Lets an admin set/correct a term's start and end date after creation —
-    // installment plans and printed report cards (term-ends-on, next-term
-    // fees due date) are all computed from these, so they need to stay
-    // editable, not just settable once at term creation.
+    // Lets an admin set/correct a term's start, end and fees-due date after
+    // creation — installment plans, printed report cards (term-ends-on) and
+    // the fee-access hard deadline (see recomputeFeeAccess in fees.ts) are
+    // all computed from these, so they need to stay editable, not just
+    // settable once at term creation.
     updateTermDates: async (ctx) => {
       can(ctx, "settings:manage");
       const schoolId = ctx.session.user.schoolId;
@@ -189,8 +191,11 @@ export const settingsModule: Module = {
       if (!existing) throw new Error("Term not found");
       const startDate = ctx.body.startDate ? new Date(String(ctx.body.startDate)) : null;
       const endDate = ctx.body.endDate ? new Date(String(ctx.body.endDate)) : null;
+      const feesDueDate = ctx.body.feesDueDate ? new Date(String(ctx.body.feesDueDate)) : null;
       if (startDate && endDate && endDate <= startDate) throw new Error("End date must be after start date");
-      return prisma.term.update({ where: { id: termId }, data: { startDate, endDate } });
+      if (feesDueDate && endDate && feesDueDate > endDate) throw new Error("Fees-due date must not be after the term's end date");
+      if (feesDueDate && startDate && feesDueDate < startDate) throw new Error("Fees-due date must not be before the term's start date");
+      return prisma.term.update({ where: { id: termId }, data: { startDate, endDate, feesDueDate } });
     },
 
     saveSchoolDays: async (ctx) => {
