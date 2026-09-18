@@ -25,6 +25,9 @@ export const metadata: Metadata = {
     default: `${school.name} — Akwanga, Nasarawa State`,
     template: `%s | ${school.name}`,
   },
+  // Same school-crest icon as the portal app, so the browser tab matches
+  // across both.
+  icons: { icon: "/icons/icon-192.png", apple: "/icons/icon-192.png" },
   description:
     "De Ultimate Glory Academy is a co-educational primary and secondary school in Akwanga, Nasarawa State, Nigeria, committed to academic excellence and character development.",
   keywords: [
