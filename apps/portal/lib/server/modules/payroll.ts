@@ -69,7 +69,7 @@ export const payrollModule: Module = {
       return { enabled };
     },
     setPayrollRules: async (ctx) => {
-      if (ctx.session.user.role !== "OWNER") throw new Error("Only the owner can set payroll rules");
+      await assertPayrollAccess(ctx, true);
       const lateAfterTime = str(ctx.body.lateAfterTime);
       if (!lateAfterTime || !/^([01]\d|2[0-3]):[0-5]\d$/.test(lateAfterTime)) throw new Error("lateAfterTime must be HH:MM (24-hour)");
       const schoolId = ctx.session.user.schoolId;
@@ -78,7 +78,7 @@ export const payrollModule: Module = {
       return { lateAfterTime };
     },
     setSalary: async (ctx) => {
-      if (ctx.session.user.role !== "OWNER") throw new Error("Only the owner can set staff salaries and rules");
+      await assertPayrollAccess(ctx, true);
       const userId = str(ctx.body.userId); if (!userId) throw new Error("userId required");
       const user = await prisma.user.findFirst({ where: { id: userId, schoolId: ctx.session.user.schoolId, role: { in: ["TEACHER", "ADMIN", "BURSAR"] } } });
       if (!user) throw new Error("Staff member not found");

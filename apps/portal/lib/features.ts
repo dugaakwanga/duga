@@ -158,6 +158,13 @@ export const FEATURES: FeatureDef[] = [
     roles: ["BURSAR"],
   },
   {
+    id: "books",
+    label: "Books (ledgers)",
+    group: "Operations",
+    resources: ["books"],
+    roles: ["BURSAR"],
+  },
+  {
     id: "messaging",
     label: "Messages & notifications",
     group: "Communication",
@@ -231,6 +238,7 @@ export const SUBFEATURE_BY_RESOURCE: Record<string, string> = {
   fees: "finance",
   reports: "finance",
   payroll: "finance",
+  books: "finance",
 };
 
 export function subfeatureById(id: string): SubFeatureDef | undefined {

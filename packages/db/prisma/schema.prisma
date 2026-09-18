@@ -556,6 +556,101 @@ model PayrollEntry {
   @@index([schoolId, month])
 }
 
+// ----------------------------------------------------------------------------
+// Ledger books — the bursar's finance "books" feature. Named LedgerBook* (not
+// Book*) to stay clearly distinct from LibraryBook/BookLoan above, which are
+// physical/e-books, not accounting ledgers.
+//
+// SYSTEM_FEES and SYSTEM_PAYROLL books are read-only and computed live from
+// Payment/Invoice and PayrollEntry — no rows are ever duplicated into
+// LedgerBookRow for them, so there's nothing to keep in sync. SYSTEM_EXPENSE
+// and CUSTOM books are filled by the bursar and store real rows below.
+// ----------------------------------------------------------------------------
+enum LedgerBookKind {
+  CUSTOM
+  SYSTEM_FEES
+  SYSTEM_PAYROLL
+  SYSTEM_EXPENSE
+}
+
+enum LedgerColumnKind {
+  TEXT
+  NUMBER
+  CURRENCY
+  DATE
+  SELECT
+}
+
+model LedgerBook {
+  id              String         @id @default(cuid())
+  schoolId        String
+  name            String
+  description     String?
+  kind            LedgerBookKind @default(CUSTOM)
+  // PRIMARY | SECONDARY | null = applies to both sections.
+  section         String?
+  createdByUserId String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  tabs LedgerBookTab[]
+
+  @@index([schoolId])
+}
+
+model LedgerBookTab {
+  id       String @id @default(cuid())
+  schoolId String
+  bookId   String
+  name     String
+  order    Int    @default(0)
+
+  book    LedgerBook       @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  columns LedgerBookColumn[]
+  rows    LedgerBookRow[]
+
+  @@index([bookId])
+}
+
+model LedgerBookColumn {
+  id          String           @id @default(cuid())
+  schoolId    String
+  tabId       String
+  label       String
+  kind        LedgerColumnKind @default(TEXT)
+  order       Int              @default(0)
+  // A row can't be saved without a value in a required column.
+  required    Boolean          @default(false)
+  // Shows an auto-computed sum row at the bottom of the table for this column.
+  totals      Boolean          @default(false)
+  // Self-relation: a subheading column is grouped visually under its parent
+  // heading column.
+  parentId    String?
+  // Choice list for kind = SELECT.
+  optionsJson Json?
+
+  tab      LedgerBookTab      @relation(fields: [tabId], references: [id], onDelete: Cascade)
+  parent   LedgerBookColumn?  @relation("LedgerColumnGroup", fields: [parentId], references: [id])
+  children LedgerBookColumn[] @relation("LedgerColumnGroup")
+
+  @@index([tabId])
+}
+
+model LedgerBookRow {
+  id              String   @id @default(cuid())
+  schoolId        String
+  tabId           String
+  // { [columnId]: string | number }
+  valuesJson      Json
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tab LedgerBookTab @relation(fields: [tabId], references: [id], onDelete: Cascade)
+
+  @@index([tabId])
+}
+
 model PlacementHistory {
   id               String   @id @default(cuid())
   schoolId         String

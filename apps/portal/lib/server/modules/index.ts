@@ -49,6 +49,7 @@ import { schemeModule } from "./scheme";
 import { paperExamModule } from "./paperExam";
 import { pushModule } from "./push";
 import { emailTemplatesModule } from "./emailTemplates";
+import { booksModule } from "./books";
 
 export const modules: Record<string, Module> = {
   dashboard: dashboardModule,
@@ -89,6 +90,7 @@ export const modules: Record<string, Module> = {
   paperExam: paperExamModule,
   push: pushModule,
   emailTemplates: emailTemplatesModule,
+  books: booksModule,
 };
 
 export type { Ctx };

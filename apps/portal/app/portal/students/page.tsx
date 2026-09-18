@@ -29,6 +29,8 @@ interface Student {
   classGroup: { level: { name: string; section: string }; name: string } | null;
   parentLinks?: Array<{ parent: { user: { firstName: string; lastName: string; email: string; phone: string | null } } }>;
   fee?: FeeInfo;
+  scholarshipOverrideId?: string | null;
+  balance?: { totalAmount: number; paidAmount: number; balance: number } | null;
 }
 
 interface ClassOption {
@@ -254,6 +256,18 @@ export default function StudentsPage() {
         feeEndDate: feeForm.feeEndDate ?? (feeTarget.fee?.feeEndDate ? feeTarget.fee.feeEndDate.slice(0, 10) : activeTermDates.end),
       };
       await api(`students/${feeTarget.id}/setFee`, { method: "POST", body });
+
+      // Scholarship is a separate mechanism (FeeOverride) from the fee
+      // amount/window above, but toggled from this same modal so a bursar
+      // doesn't have to go to a different screen to set it.
+      const wantsScholarship = feeForm.scholarship === "true";
+      const hadScholarship = Boolean(feeTarget.scholarshipOverrideId);
+      if (wantsScholarship && !hadScholarship) {
+        await api("fees/setOverride", { method: "POST", body: { studentId: feeTarget.id, reason: "SCHOLARSHIP" } });
+      } else if (!wantsScholarship && hadScholarship) {
+        await api(`fees/${feeTarget.scholarshipOverrideId}/deactivateOverride`, { method: "POST", body: {} });
+      }
+
       setFeeTarget(null);
       load();
     } catch (e) {
@@ -355,6 +369,21 @@ export default function StudentsPage() {
       <Badge tone={s.fee.daysRemaining <= 7 ? "warning" : "success"}>
         {until ? `Due ${until}` : `${s.fee.daysRemaining} day${s.fee.daysRemaining === 1 ? "" : "s"} left`}
       </Badge>
+    );
+  }
+
+  // The fee-access badge above only reflects the time window — this reflects
+  // the actual ₦ owed from invoices, which can disagree with it (e.g. a
+  // student can still be inside their access window while an invoice for a
+  // different item sits partially paid).
+  function balanceBadge(s: Student) {
+    if (s.scholarshipOverrideId) return <Badge tone="info">Scholarship</Badge>;
+    if (!s.balance || s.balance.balance <= 0) return null;
+    const naira = (v: number) => `₦${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+    return s.balance.paidAmount > 0 ? (
+      <Badge tone="warning">Partly paid — owes {naira(s.balance.balance)}</Badge>
+    ) : (
+      <Badge tone="danger">Owing {naira(s.balance.balance)}</Badge>
     );
   }
 
@@ -473,7 +502,7 @@ export default function StudentsPage() {
                 <Icon name="settings" size={14} /> Customize ID card
               </Button>
             </div>
-            <Table headers={["Adm No.", "Name", "Status", "Fee access", "Actions"]}>
+            <Table headers={["Adm No.", "Name", "Status", "Fee access", "Balance", "Actions"]}>
               {activeClassStudents.map((s) => (
                 <tr key={s.id}>
                   <td>{s.admissionNumber}</td>
@@ -495,6 +524,7 @@ export default function StudentsPage() {
                   </td>
                   <td><Badge tone={s.status === "ACTIVE" ? "success" : "warning"}>{s.status}</Badge></td>
                   <td>{feeBadge(s)}</td>
+                  <td>{balanceBadge(s) ?? <span style={{ color: "var(--duga-muted)", fontSize: 12.5 }}>—</span>}</td>
                   <td>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       {canManage && <Button size="sm" variant="ghost" onClick={() => openEdit(s)}>Edit</Button>}
@@ -740,6 +770,19 @@ export default function StudentsPage() {
             <Alert tone="info">This updates the fee plan. Access begins only after payment, and a part-payment grants the matching proportion of that period.</Alert>
           </div>
         )}
+        <div style={{ marginTop: 14 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}>
+            <input
+              type="checkbox"
+              checked={feeForm.scholarship === "true" || (feeForm.scholarship === undefined && Boolean(feeTarget?.scholarshipOverrideId))}
+              onChange={(e) => setFeeForm({ ...feeForm, scholarship: e.target.checked ? "true" : "false" })}
+            />
+            This student is on scholarship
+          </label>
+          <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginTop: 4, marginLeft: 24 }}>
+            Grants access to every fee-gated feature regardless of the fee window above — no payment required from this family.
+          </div>
+        </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <Button variant="ghost" onClick={() => setFeeTarget(null)}>Cancel</Button>
           <Button onClick={saveFee} loading={saving}>Save fee</Button>

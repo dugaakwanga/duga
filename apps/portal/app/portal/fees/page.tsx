@@ -185,9 +185,14 @@ export default function FeesPage() {
 
   async function generate() {
     try {
-      await api("fees/generateInvoices", { method: "POST", body: form });
+      const result = await api<{ created: number }>("fees/generateInvoices", { method: "POST", body: form });
       setOpen(false);
       await load();
+      alert(
+        result.created > 0
+          ? `${result.created} invoice(s) generated.`
+          : "No invoices were created. Check that a fee structure exists for this term/class, and that these students don't already have an invoice for this term.",
+      );
     } catch (e) {
       alert((e as Error).message);
     }
@@ -653,6 +658,9 @@ export default function FeesPage() {
       {isStaff && (
         <>
           <Card title="Fee types" style={{ marginTop: 20 }}>
+            <div style={{ fontSize: 13, color: "var(--duga-muted)", marginBottom: 12 }}>
+              A fee type is just a named category (e.g. Tuition, Transport) — it has no amount by itself. Attach an actual ₦ amount to it per class/term under &quot;Fee structures&quot; below.
+            </div>
             {feeTypes.length === 0 ? (
               <EmptyState title="No fee types yet" hint="Add fee types (e.g. Tuition, Transport) then attach amounts per class." />
             ) : (
@@ -676,6 +684,9 @@ export default function FeesPage() {
           </Card>
 
           <Card title="Fee structures" style={{ marginTop: 20 }}>
+            <div style={{ fontSize: 13, color: "var(--duga-muted)", marginBottom: 12 }}>
+              This is where the actual ₦ amounts live — each row attaches one fee type to an amount, scoped to a term, class/level/section, and boarding-or-day. &quot;Generate invoices&quot; above bills students using whichever of these rows apply to them.
+            </div>
             {feeStructures.length === 0 ? (
               <EmptyState title="No fee structures yet" hint="Attach an amount to a fee type for a class, level, section or term." />
             ) : (
@@ -710,6 +721,9 @@ export default function FeesPage() {
       )}
 
       <Modal open={open} onClose={() => setOpen(false)} title="Generate invoices">
+        <Alert tone="info">
+          Bills every active student in the selected term (or just one class) using the amounts set up under &quot;Fee structures&quot; below. Students who already have an invoice for this term are skipped, so this is safe to run again later.
+        </Alert>
         <Field label="Term" required>
           <Select value={form.termId ?? ""} onChange={(e) => setForm({ ...form, termId: e.target.value })}>
             <option value="">Select term…</option>
@@ -735,6 +749,7 @@ export default function FeesPage() {
       <Modal open={setupOpen} onClose={() => { setSetupOpen(false); setEditingSetupId(null); }} title={`${editingSetupId ? "Edit" : "Add"} ${setupKind === "type" ? "fee type" : "fee structure"}`}>
         {setupKind === "type" ? (
           <>
+            <Alert tone="info">Just a category — no amount here. After saving, add a &quot;Fee structure&quot; below to attach the actual ₦ amount for a class/term.</Alert>
             <Field label="Name" required>
               <Input value={form.name ?? ""} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Tuition" />
             </Field>

@@ -149,8 +149,39 @@ export const studentsModule: Module = {
       orderBy: { admissionNumber: "asc" },
       take: 300,
     });
+
+    // Real ₦ owing/partial status and scholarship flag, alongside the
+    // time-window fee badge already computed by feeInfoOf — a bursar looking
+    // at this list otherwise only sees "expires in N days", never what's
+    // actually still owed or whether a child is on scholarship.
+    const studentIds = students.map((s) => s.id);
+    const [overrides, invoices] = await Promise.all([
+      prisma.feeOverride.findMany({
+        where: { schoolId, studentId: { in: studentIds }, isActive: true, reason: "SCHOLARSHIP" },
+        select: { id: true, studentId: true },
+      }),
+      prisma.invoice.findMany({
+        where: { schoolId, studentId: { in: studentIds }, status: { in: ["UNPAID", "PARTIAL"] } },
+        select: { studentId: true, totalAmount: true, paidAmount: true, balance: true },
+      }),
+    ]);
+    const scholarshipOverrideByStudent = new Map(overrides.map((o) => [o.studentId, o.id]));
+    const balanceByStudent = new Map<string, { totalAmount: number; paidAmount: number; balance: number }>();
+    for (const inv of invoices) {
+      const agg = balanceByStudent.get(inv.studentId) ?? { totalAmount: 0, paidAmount: 0, balance: 0 };
+      agg.totalAmount += Number(inv.totalAmount);
+      agg.paidAmount += Number(inv.paidAmount);
+      agg.balance += Number(inv.balance);
+      balanceByStudent.set(inv.studentId, agg);
+    }
+
     return {
-      items: students.map((s) => ({ ...s, fee: feeInfoOf(s) })),
+      items: students.map((s) => ({
+        ...s,
+        fee: feeInfoOf(s),
+        scholarshipOverrideId: scholarshipOverrideByStudent.get(s.id) ?? null,
+        balance: balanceByStudent.get(s.id) ?? null,
+      })),
       total: students.length,
       role: ctx.session.user.role,
       canManage: hasPermission(ctx.session.user.role, "students:manage"),

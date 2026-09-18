@@ -45,6 +45,9 @@ export type Permission =
   | "fees:collect"
   | "payments:make"
   | "overrides:manage"
+  // Ledger books (bursar's finance "books" — distinct from library:view/manage)
+  | "ledger:view"
+  | "ledger:manage"
   // Messaging / announcements
   | "messaging:use"
   | "announcements:view"
@@ -134,6 +137,8 @@ export const PERMISSIONS: Permission[] = [
   "fees:collect",
   "payments:make",
   "overrides:manage",
+  "ledger:view",
+  "ledger:manage",
   "messaging:use",
   "announcements:view",
   "announcements:manage",
@@ -202,6 +207,8 @@ const rolePermissions: Record<Role, Permission[]> = {
     "fees:manage",
     "fees:collect",
     "overrides:manage",
+    "ledger:view",
+    "ledger:manage",
     "messaging:use",
     "announcements:view",
     "announcements:manage",
@@ -248,6 +255,8 @@ const rolePermissions: Record<Role, Permission[]> = {
     "fees:manage",
     "fees:collect",
     "overrides:manage",
+    "ledger:view",
+    "ledger:manage",
     "financials:view",
     "payroll:view",
     "payroll:manage",

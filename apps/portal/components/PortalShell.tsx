@@ -104,6 +104,7 @@ const STAFF_NAV: NavSection[] = [
     items: [
       { href: "/portal/fees", label: "Fees & Payments", icon: "fees", perm: "fees:view", feature: "fees", subfeature: "finance", finance: true },
       { href: "/portal/payroll", label: "Payroll", icon: "fees", perm: "payroll:view", feature: "payroll", subfeature: "finance", finance: true },
+      { href: "/portal/books", label: "Books", icon: "reports", perm: "ledger:view", feature: "books", subfeature: "finance", finance: true },
       { href: "/portal/hostel", label: "Hostel", icon: "hostel", perm: "hostel:view", feature: "hostel" },
       { href: "/portal/transport", label: "Transport", icon: "bus", perm: "transport:view", feature: "transport" },
       { href: "/portal/applications", label: "Admissions", icon: "applications", perm: "applications:view", feature: "applications" },
@@ -360,6 +361,7 @@ const TITLES: Array<{ match: string; title: string }> = [
   { match: "/portal/teacher/cbt", title: "CBT Exams" },
   { match: "/portal/teacher/attendance", title: "Take Attendance" },
   { match: "/portal/fees", title: "Fees & Payments" },
+  { match: "/portal/books", title: "Books" },
   { match: "/portal/hostel", title: "Hostel" },
   { match: "/portal/transport", title: "Transport" },
   { match: "/portal/applications/test", title: "Entrance Test Bank" },
