@@ -39,7 +39,7 @@ export const profileModule: Module = {
       }
       await prisma.user.update({
         where: { id: ctx.session.user.id },
-        data: { passwordHash: await bcrypt.hash(next, 10), mustChangePassword: false },
+        data: { passwordHash: await bcrypt.hash(next, 12), mustChangePassword: false, passwordChangedAt: new Date() },
       });
       await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "user.initialPasswordSet", entityType: "User", entityId: ctx.session.user.id });
       return { ok: true };
@@ -56,7 +56,7 @@ export const profileModule: Module = {
       if (!ok) throw new Error("Current password is incorrect");
       await prisma.user.update({
         where: { id: ctx.session.user.id },
-        data: { passwordHash: await bcrypt.hash(next, 10), mustChangePassword: false },
+        data: { passwordHash: await bcrypt.hash(next, 12), mustChangePassword: false, passwordChangedAt: new Date() },
       });
       await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "user.passwordChanged", entityType: "User", entityId: ctx.session.user.id });
       return { ok: true };

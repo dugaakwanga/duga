@@ -94,14 +94,14 @@ export default function ApplicationsPage() {
     if (!admitForm.classGroupId) return alert("Choose a class to admit into");
     setSaving(true);
     try {
-      const d = await api<{ admissionNumber: string }>(`applications/${admitTarget.id}/admit`, {
+      const d = await api<{ admissionNumber: string; tempPassword: string }>(`applications/${admitTarget.id}/admit`, {
         method: "POST",
         body: { classGroupId: admitForm.classGroupId, tempPassword: admitForm.tempPassword },
       });
       setAdmitTarget(null);
       setAdmitForm({ classGroupId: "", tempPassword: "" });
       await refresh();
-      alert(`Admitted successfully — admission number ${d.admissionNumber}`);
+      alert(`Admitted successfully — admission number ${d.admissionNumber}. Temporary password: ${d.tempPassword} — share this directly; the family will be asked to change it once portal access is handed over.`);
     } catch (e) {
       alert((e as Error).message);
     } finally {
@@ -299,8 +299,8 @@ export default function ApplicationsPage() {
                 ))}
               </Select>
             </Field>
-            <Field label="Temp password" hint="The student changes this on first login. Default: password123">
-              <Input value={admitForm.tempPassword} onChange={(e) => setAdmitForm({ ...admitForm, tempPassword: e.target.value })} placeholder="password123" />
+            <Field label="Temp password (optional)" hint="Leave blank to generate a random one — it'll be shown to you after admitting, and the student changes it on first login.">
+              <Input value={admitForm.tempPassword} onChange={(e) => setAdmitForm({ ...admitForm, tempPassword: e.target.value })} placeholder="Auto-generated if left blank" />
             </Field>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
               <Button variant="ghost" onClick={() => setAdmitTarget(null)}>Cancel</Button>

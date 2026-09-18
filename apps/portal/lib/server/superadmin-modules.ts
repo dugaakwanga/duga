@@ -3,6 +3,7 @@ import type { SuperAdminSession } from "./superadmin";
 import bcrypt from "bcryptjs";
 import { FEATURE_SETTING_KEY, getFeatureConfig } from "./features";
 import { getWebsiteConfig, setWebsiteConfig } from "./site-settings";
+import { generateTempPassword } from "./helpers";
 
 export interface SACtx {
   session: SuperAdminSession;
@@ -293,14 +294,14 @@ export const saModules: Record<string, SAModule> = {
           e.status = 409;
           throw e;
         }
-        const password = String(ctx.body.tempPassword ?? "password123");
+        const password = ctx.body.tempPassword ? String(ctx.body.tempPassword) : generateTempPassword();
         const user = await prisma.user.create({
           data: {
             schoolId,
             role: "OWNER",
             email,
             phone: ctx.body.phone ? String(ctx.body.phone) : undefined,
-            passwordHash: await bcrypt.hash(password, 10),
+            passwordHash: await bcrypt.hash(password, 12),
             firstName,
             lastName,
             mustChangePassword: true,
@@ -328,11 +329,11 @@ export const saModules: Record<string, SAModule> = {
       // POST /api/superadmin/owners/resetPassword  { id, tempPassword? }
       resetPassword: async (ctx) => {
         const id = String(ctx.body.id ?? "");
-        const password = String(ctx.body.tempPassword ?? "password123");
+        const password = ctx.body.tempPassword ? String(ctx.body.tempPassword) : generateTempPassword();
         if (!id) throw new Error("id required");
         const user = await prisma.user.update({
           where: { id },
-          data: { passwordHash: await bcrypt.hash(password, 10), mustChangePassword: true },
+          data: { passwordHash: await bcrypt.hash(password, 12), mustChangePassword: true, passwordChangedAt: new Date() },
         });
         await logActivity(ctx, "owner.password.reset", { id });
         return { id: user.id, tempPassword: password };
@@ -404,14 +405,14 @@ export const saModules: Record<string, SAModule> = {
         } else {
           finalEmail = `${firstName.toLowerCase()}.${lastName.toLowerCase()}@duga.local`;
         }
-        const password = String(ctx.body.tempPassword ?? "password123");
+        const password = ctx.body.tempPassword ? String(ctx.body.tempPassword) : generateTempPassword();
         const user = await prisma.user.create({
           data: {
             schoolId,
             role: role as "ADMIN" | "TEACHER" | "STUDENT",
             email: finalEmail,
             phone: ctx.body.phone ? String(ctx.body.phone) : undefined,
-            passwordHash: await bcrypt.hash(password, 10),
+            passwordHash: await bcrypt.hash(password, 12),
             firstName,
             lastName,
             mustChangePassword: true,
@@ -437,11 +438,11 @@ export const saModules: Record<string, SAModule> = {
       // POST /api/superadmin/users/resetPassword  { id, tempPassword? }
       resetPassword: async (ctx) => {
         const id = String(ctx.body.id ?? "");
-        const password = String(ctx.body.tempPassword ?? "password123");
+        const password = ctx.body.tempPassword ? String(ctx.body.tempPassword) : generateTempPassword();
         if (!id) throw new Error("id required");
         const user = await prisma.user.update({
           where: { id },
-          data: { passwordHash: await bcrypt.hash(password, 10), mustChangePassword: true },
+          data: { passwordHash: await bcrypt.hash(password, 12), mustChangePassword: true, passwordChangedAt: new Date() },
         });
         await logActivity(ctx, "user.reset_password", { id });
         return { id: user.id, tempPassword: password };

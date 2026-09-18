@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma, dispatchNotification, dispatchToMany, checkRateLimit } from "@duga/core/server";
-import { verifyGameInviteToken } from "@duga/core";
+import { prisma, dispatchNotification, dispatchToMany, checkRateLimit, verifyGameInviteToken } from "@duga/core/server";
 
 export async function POST(request: NextRequest, ctx: { params: Promise<{ token: string }> }) {
   try {

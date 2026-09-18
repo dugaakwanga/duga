@@ -42,6 +42,13 @@ export function checkRateLimit(key: string, limit: number, windowMs: number): Ra
   return { allowed: true };
 }
 
+// x-forwarded-for is set by the platform's edge/proxy, but nothing here
+// proves a given deployment target strips a client-supplied value before
+// appending its own — treat it as a best-effort identifier, not a hard
+// guarantee. That's why callers protecting login endpoints should also rate
+// limit by the identifier being attempted (see login/route.ts and
+// superadmin/login/route.ts): an attacker who can rotate this header still
+// can't rotate the account they're trying to break into.
 export function clientIp(req: Request): string {
   const forwarded = req.headers.get("x-forwarded-for");
   if (forwarded) return forwarded.split(",")[0]!.trim();

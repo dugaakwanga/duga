@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@duga/core/server";
+import { prisma, checkRateLimit, clientIp } from "@duga/core/server";
 
 export async function POST(request: NextRequest) {
   try {
+    const rl = checkRateLimit(`newsletter:${clientIp(request)}`, 5, 10 * 60_000);
+    if (!rl.allowed) {
+      return cors(NextResponse.json({ ok: false, error: "Too many attempts. Please try again later." }, { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } }));
+    }
+
     const body = await request.json();
     const domain = String(body.domain || "").trim().toLowerCase() || "deultimateglory.com";
     const school = await prisma.school.findFirst({ where: { domain } });

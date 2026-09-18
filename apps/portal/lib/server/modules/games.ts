@@ -1,5 +1,4 @@
-import { prisma, logAudit, checkRateLimit } from "@duga/core/server";
-import { signGameInviteToken } from "@duga/core";
+import { prisma, logAudit, checkRateLimit, signGameInviteToken } from "@duga/core/server";
 import type { Module } from ".";
 import type { Ctx } from "@/app/api/v1/[...path]/route";
 import { can, str, num, idArray, isAssignedTo, resolveTargetStudentIds, ensureTeacher, assertFeeAccess } from "../helpers";

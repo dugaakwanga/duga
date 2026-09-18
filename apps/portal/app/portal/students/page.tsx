@@ -48,6 +48,7 @@ export default function StudentsPage() {
   const [canSetFee, setCanSetFee] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
@@ -196,7 +197,12 @@ export default function StudentsPage() {
         feeEndDate: form.feeEndDate ?? activeTermDates.end,
         feesDueDate: form.feesDueDate ?? activeTermDates.feesDueDate,
       };
-      await api("students", { method: "POST", body });
+      const result = await api<{ tempPassword?: string; parentTempPassword?: string }>("students", { method: "POST", body });
+      const lines = [
+        result.tempPassword ? `Student temporary password: ${result.tempPassword}` : null,
+        result.parentTempPassword ? `Parent temporary password: ${result.parentTempPassword}` : null,
+      ].filter(Boolean);
+      setNotice(lines.length ? `${lines.join(" · ")} — share these directly; each will be asked to change it on first login.` : null);
       setOpen(false);
       setForm({});
       load();
@@ -238,7 +244,8 @@ export default function StudentsPage() {
     if (!editTarget) return;
     setSaving(true);
     try {
-      await api(`students/${editTarget.id}`, { method: "PATCH", body: editForm });
+      const result = await api<{ parentTempPassword?: string }>(`students/${editTarget.id}`, { method: "PATCH", body: editForm });
+      setNotice(result.parentTempPassword ? `Parent temporary password: ${result.parentTempPassword} — share this directly; they'll be asked to change it on first login.` : null);
       setEditTarget(null);
       load();
     } catch (e) {
@@ -411,6 +418,7 @@ export default function StudentsPage() {
       </div>
 
       {error && <Alert tone="danger">{error}</Alert>}
+      {notice && <Alert tone="success">{notice}</Alert>}
       {loading ? (
         <Spinner size={28} />
       ) : items.length === 0 ? (
@@ -620,8 +628,8 @@ export default function StudentsPage() {
           <Field label="Fee period — end date" hint="The portal locks when this date passes and the fee isn't fully paid.">
             <Input type="date" value={form.feeEndDate ?? activeTermDates.end} onChange={(e) => setForm({ ...form, feeEndDate: e.target.value })} />
           </Field>
-          <Field label="Temp password">
-            <Input value={form.tempPassword ?? ""} onChange={(e) => setForm({ ...form, tempPassword: e.target.value })} placeholder="default: password123" />
+          <Field label="Temp password (optional)" hint="Leave blank to generate a random one — it'll be shown after saving.">
+            <Input value={form.tempPassword ?? ""} onChange={(e) => setForm({ ...form, tempPassword: e.target.value })} placeholder="Auto-generated if left blank" />
           </Field>
           <Field label="Boarding">
             <Select value={form.isBoarding ?? "false"} onChange={(e) => setForm({ ...form, isBoarding: e.target.value })}>
@@ -638,8 +646,8 @@ export default function StudentsPage() {
           <Field label="Parent phone">
             <Input value={form.parentPhone ?? ""} onChange={(e) => setForm({ ...form, parentPhone: e.target.value })} placeholder="0803 000 0000" />
           </Field>
-          <Field label="Parent temp password" hint="They sign in with the parent email and this password, and will change it on first login.">
-            <Input value={form.parentTempPassword ?? ""} onChange={(e) => setForm({ ...form, parentTempPassword: e.target.value })} placeholder="default: parent123" />
+          <Field label="Parent temp password (optional)" hint="Leave blank to generate a random one — it'll be shown after saving. They sign in with the parent email and this password, and will change it on first login.">
+            <Input value={form.parentTempPassword ?? ""} onChange={(e) => setForm({ ...form, parentTempPassword: e.target.value })} placeholder="Auto-generated if left blank" />
           </Field>
         </div>
         {(form.feeStartDate ?? activeTermDates.start) && (form.feeEndDate ?? activeTermDates.end) && (

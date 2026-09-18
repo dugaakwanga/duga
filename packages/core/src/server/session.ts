@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
-import { verifyPortalToken, COOKIE_NAMES, type PortalClaims } from "../auth";
+import { COOKIE_NAMES, type PortalClaims } from "../auth";
+import { verifyPortalToken } from "./tokens";
 import { prisma } from "./prisma";
 import { isSchoolRole, assertPermission, ForbiddenError, type Role, type Permission } from "../roles";
 
@@ -65,8 +66,17 @@ export async function getSession(): Promise<SessionUser | null> {
     }),
   ]);
 
+  // A token issued before the user's last password change is stale — even
+  // though the JWT itself is still validly signed and unexpired, the
+  // password that was compromised (or simply changed on purpose) shouldn't
+  // keep an old session alive. Since sessions are stateless JWTs with no
+  // server-side revocation list, this is what makes "change your password"
+  // actually kick out anyone holding an older token.
+  const tokenPredatesPasswordChange =
+    !!user?.passwordChangedAt && !!claims.iat && user.passwordChangedAt.getTime() > claims.iat * 1000;
+
   let result: SessionUser | null = null;
-  if (user && user.status === "ACTIVE" && isSchoolRole(user.role) && school && school.platformStatus === "ACTIVE") {
+  if (user && !tokenPredatesPasswordChange && user.status === "ACTIVE" && isSchoolRole(user.role) && school && school.platformStatus === "ACTIVE") {
     result = { user, claims: { ...claims, role: user.role } };
   }
   sessionCache.set(token, { value: result, expiresAt: Date.now() + SESSION_CACHE_TTL_MS });

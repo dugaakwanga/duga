@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
-import { verifySuperAdminToken, COOKIE_NAMES, ForbiddenError } from "@duga/core";
-import { prisma } from "@duga/core/server";
+import { COOKIE_NAMES, ForbiddenError } from "@duga/core";
+import { prisma, verifySuperAdminToken } from "@duga/core/server";
 
 export interface SuperAdminSession {
   claims: NonNullable<Awaited<ReturnType<typeof verifySuperAdminToken>>>;

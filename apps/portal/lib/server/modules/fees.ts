@@ -144,7 +144,16 @@ export async function sendFeeReminders(schoolId: string): Promise<number> {
 
 async function paystackConfigured(): Promise<boolean> {
   const key = process.env.PAYSTACK_SECRET_KEY;
-  return Boolean(key && !key.startsWith("sk_test_xxx"));
+  const configured = Boolean(key && !key.startsWith("sk_test_xxx"));
+  // The mock-payment path below (treat as SUCCESS with no real charge) only
+  // exists to make local development usable without live Paystack keys. In
+  // production, a missing/placeholder key must fail loudly — silently
+  // falling into "every payment succeeds, no money collected" is exactly
+  // the failure mode a misconfigured env var in a real deploy would trigger.
+  if (!configured && process.env.NODE_ENV === "production") {
+    throw new Error("Payment processing is not configured. Contact support — this must be fixed before any payment can be accepted.");
+  }
+  return configured;
 }
 
 function updateInvoiceFromPayments(invoiceId: string) {

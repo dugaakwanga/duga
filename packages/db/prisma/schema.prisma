@@ -299,6 +299,11 @@ model User {
   avatarUrl          String?
   status             UserStatus @default(ACTIVE)
   mustChangePassword Boolean    @default(true)
+  // Bumped whenever the password is changed/set — checked against the JWT's
+  // issued-at time on every request (see getSession) so a token issued
+  // before a password change is rejected immediately instead of staying
+  // valid until its natural expiry.
+  passwordChangedAt  DateTime?
   lastLoginAt        DateTime?
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt

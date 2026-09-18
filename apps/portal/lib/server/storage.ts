@@ -152,10 +152,14 @@ async function compressIfImage(mime: string, buffer: Buffer): Promise<{ mime: st
       .toBuffer();
     return { mime: "image/webp", buffer: out };
   } catch {
-    // If compression fails for any reason (corrupt image, unsupported
-    // variant), fall back to storing the original rather than failing the
-    // upload outright.
-    return { mime, buffer };
+    // sharp couldn't decode this as a real image despite the claimed
+    // image/* mime type — the client-supplied Content-Type is attacker-
+    // controlled, so a decode failure means the bytes aren't actually what
+    // they're claimed to be. Reject rather than silently storing an
+    // unverified buffer under an image mime type.
+    const err = new Error("This file could not be read as a valid image.") as Error & { status?: number };
+    err.status = 400;
+    throw err;
   }
 }
 

@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { prisma, logAudit, checkRateLimit, clientIp } from "@duga/core/server";
-import { signPortalToken, cookieOptions, getJwtLifetimeSeconds } from "@duga/core";
-import { COOKIE_NAMES } from "@duga/core";
+import { prisma, logAudit, checkRateLimit, clientIp, signPortalToken } from "@duga/core/server";
+import { cookieOptions, getJwtLifetimeSeconds, COOKIE_NAMES } from "@duga/core";
+
+// A real bcrypt hash of a value nobody will ever guess, compared against on
+// every "account not found" path so a nonexistent-identifier request costs
+// the same bcrypt.compare() time as a real one — otherwise the response
+// timing alone reveals whether an account exists, before any credential has
+// actually been verified.
+const DUMMY_HASH = "$2a$10$C6UzMDM.H6dfI/f/IKcEeOgQ5yb2c1IWJlY7RRgAyU9U.Y0e2P1O2";
 
 // Try a handful of common phone formats so "+2348030000000", "2348030000000",
 // "08030000000" and "8030000000" all resolve to the same account.
@@ -43,6 +49,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "Email, phone or ID and password are required" }, { status: 400 });
     }
 
+    // A second, independent throttle keyed on the identifier itself — an
+    // IP-based limit alone can be sidestepped by rotating source IPs (or a
+    // spoofable X-Forwarded-For), but this one keeps biting regardless of
+    // where the requests come from.
+    const idLimit = checkRateLimit(`login:id:${identifier.toLowerCase()}`, 10, 5 * 60_000);
+    if (!idLimit.allowed) {
+      return NextResponse.json(
+        { ok: false, error: "Too many login attempts. Please try again in a few minutes." },
+        { status: 429, headers: { "Retry-After": String(idLimit.retryAfterSeconds) } },
+      );
+    }
+
     // Lookup by email, phone (with variants) or internal user id.
     let user = await prisma.user.findFirst({
       where: {
@@ -70,7 +88,14 @@ export async function POST(request: NextRequest) {
       });
       if (student) user = await prisma.user.findUnique({ where: { id: student.userId } });
     }
-    if (!user) {
+
+    // Password is checked before anything else is revealed about the
+    // account — always via bcrypt.compare (dummy hash when no account
+    // matched at all), so neither the response message nor its timing lets
+    // an attacker learn whether an identifier belongs to a real, suspended,
+    // or nonexistent account without first supplying a correct password.
+    const valid = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
+    if (!user || !valid) {
       return NextResponse.json({ ok: false, error: "Invalid credentials" }, { status: 401 });
     }
     if (user.status !== "ACTIVE") {
@@ -83,10 +108,6 @@ export async function POST(request: NextRequest) {
           ? "This school platform has been shut down by the administrator. Contact support."
           : "This school platform is currently suspended. Contact the administrator.";
       return NextResponse.json({ ok: false, error: message }, { status: 403 });
-    }
-    const valid = await bcrypt.compare(password, user.passwordHash);
-    if (!valid) {
-      return NextResponse.json({ ok: false, error: "Invalid credentials" }, { status: 401 });
     }
 
     // Portal separation: admin & proprietor sign in via the admin portal;

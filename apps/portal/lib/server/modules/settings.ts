@@ -141,8 +141,10 @@ export const settingsModule: Module = {
       const schoolId = ctx.session.user.schoolId;
       const termId = String(ctx.body.termId ?? "");
       if (!termId) throw new Error("termId required");
+      const term = await prisma.term.findFirst({ where: { id: termId, schoolId } });
+      if (!term) throw new Error("Term not found");
       await prisma.term.updateMany({ where: { schoolId }, data: { status: "CLOSED" } });
-      await prisma.term.update({ where: { id: termId }, data: { status: "ACTIVE" } });
+      await prisma.term.update({ where: { id: term.id }, data: { status: "ACTIVE" } });
       return { ok: true };
     },
 
@@ -170,6 +172,8 @@ export const settingsModule: Module = {
       const sessionId = String(ctx.body.sessionId ?? "");
       const termNumber = Number(ctx.body.termNumber);
       if (!sessionId || !termNumber) throw new Error("sessionId and termNumber required");
+      const session = await prisma.academicSession.findFirst({ where: { id: sessionId, schoolId } });
+      if (!session) throw new Error("Session not found");
       const name = String(ctx.body.name ?? `${["", "First", "Second", "Third"][termNumber] ?? termNumber} Term`);
       const startDate = ctx.body.startDate ? new Date(String(ctx.body.startDate)) : undefined;
       const endDate = ctx.body.endDate ? new Date(String(ctx.body.endDate)) : undefined;

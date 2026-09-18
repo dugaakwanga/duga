@@ -1,9 +1,8 @@
 import bcrypt from "bcryptjs";
-import { prisma } from "@duga/core/server";
+import { prisma, signApplicationTestToken } from "@duga/core/server";
 import { logAudit, dispatchNotification, sendRawEmail } from "@duga/core/server";
-import { signApplicationTestToken } from "@duga/core";
 import type { Module } from ".";
-import { can, str } from "../helpers";
+import { can, str, generateTempPassword } from "../helpers";
 
 // Attaches each application's admissions-test attempt (if any) as a light
 // `test` summary — a second query batched across every listed application,
@@ -109,8 +108,8 @@ export const applicationsModule: Module = {
       const nameParts = app.applicantName.trim().split(/\s+/);
       const firstName = nameParts[0] ?? "Student";
       const lastName = nameParts.slice(1).join(" ") || "Applicant";
-      const tempPassword = str(ctx.body.tempPassword) ?? "password123";
-      const passwordHash = await bcrypt.hash(tempPassword, 10);
+      const tempPassword = str(ctx.body.tempPassword) ?? generateTempPassword();
+      const passwordHash = await bcrypt.hash(tempPassword, 12);
 
       // Reuse an existing student user for this email if one already exists.
       let user = app.email ? await prisma.user.findFirst({ where: { schoolId, email: app.email, role: "STUDENT" } }) : null;
@@ -183,7 +182,7 @@ export const applicationsModule: Module = {
         channels: ["IN_APP", "EMAIL", "PUSH"],
       });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "application.admitted", entityType: "Application", entityId: app.id, meta: { admissionNumber } });
-      return { ok: true, studentId: student.id, admissionNumber, tempEmail: user.email };
+      return { ok: true, studentId: student.id, admissionNumber, tempEmail: user.email, tempPassword };
     },
   },
 };

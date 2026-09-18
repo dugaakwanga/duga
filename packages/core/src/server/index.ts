@@ -10,3 +10,4 @@ export * from "./school";
 export * from "./reportCard";
 export * from "./paystack";
 export * from "./rate-limit";
+export * from "./tokens";

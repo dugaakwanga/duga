@@ -7,8 +7,11 @@ export { ProfileApprovalStatusEnum, ProfileApprovalStatusMessages };
 // Re-export auth-related types from the auth module to avoid conflicts
 export type { PortalClaims, SuperAdminClaims } from "../auth";
 
-// Re-export auth-related functions from the auth module to avoid conflicts
-export { cookieOptions, getJwtLifetimeSeconds, signPortalToken, verifyPortalToken, signSuperAdminToken, verifySuperAdminToken } from "../auth";
+// Re-export auth-related functions from the auth module to avoid conflicts.
+// Token sign/verify functions live in ../server/tokens (server-only) now,
+// not here — this file is part of the client-safe root barrel, so it must
+// never re-export them, however convenient it once seemed.
+export { cookieOptions, getJwtLifetimeSeconds } from "../auth";
 
 // Accounts - User approval system
 export interface UserApprovalRequest {

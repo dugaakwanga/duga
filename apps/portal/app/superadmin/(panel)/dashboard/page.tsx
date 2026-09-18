@@ -362,10 +362,10 @@ export default function SuperAdminDashboard() {
   }
 
   async function resetOwnerPassword(row: OwnerRow) {
-    const newPw = prompt(`New temporary password for ${row.firstName} ${row.lastName} (${row.email}):`, "password123");
-    if (!newPw) return;
+    const newPw = prompt(`New temporary password for ${row.firstName} ${row.lastName} (${row.email}) — leave blank to generate a random one:`, "");
+    if (newPw === null) return; // cancelled
     try {
-      const res = await saApi<{ id: string; tempPassword: string }>("owners/resetPassword", { method: "POST", body: { id: row.id, tempPassword: newPw } });
+      const res = await saApi<{ id: string; tempPassword: string }>("owners/resetPassword", { method: "POST", body: { id: row.id, tempPassword: newPw || undefined } });
       await load();
       alert(`Password reset. ${row.email} can now sign in with: ${res.tempPassword}`);
     } catch (e) {
@@ -407,10 +407,10 @@ export default function SuperAdminDashboard() {
   }
 
   async function resetUserPassword(row: UserRow) {
-    const newPw = window.prompt(`New temporary password for ${row.firstName} ${row.lastName} (${row.email})?`, "password123");
-    if (!newPw) return;
+    const newPw = window.prompt(`New temporary password for ${row.firstName} ${row.lastName} (${row.email}) — leave blank to generate a random one:`, "");
+    if (newPw === null) return; // cancelled
     try {
-      const res = await saApi<{ id: string; tempPassword: string }>("users/resetPassword", { method: "POST", body: { id: row.id, tempPassword: newPw } });
+      const res = await saApi<{ id: string; tempPassword: string }>("users/resetPassword", { method: "POST", body: { id: row.id, tempPassword: newPw || undefined } });
       await load();
       alert(`Password reset. ${row.email} can sign in with: ${res.tempPassword}`);
     } catch (e) {
@@ -853,7 +853,7 @@ export default function SuperAdminDashboard() {
         <Field label="Phone">
           <Input value={ownerForm.phone ?? ""} onChange={(e) => setOwnerForm({ ...ownerForm, phone: e.target.value })} />
         </Field>
-        <Field label="Temporary password" hint="Defaults to password123">
+        <Field label="Temporary password (optional)" hint="Leave blank to generate a random one — it'll be shown after saving.">
           <Input value={ownerForm.tempPassword ?? ""} onChange={(e) => setOwnerForm({ ...ownerForm, tempPassword: e.target.value })} />
         </Field>
         {ownerError && <Alert tone="danger">{ownerError}</Alert>}
@@ -918,7 +918,7 @@ export default function SuperAdminDashboard() {
         <Field label="Designation / staff number (optional)">
           <Input value={userForm.designation ?? ""} onChange={(e) => setUserForm({ ...userForm, designation: e.target.value })} placeholder="e.g. Registrar / STF-001" />
         </Field>
-        <Field label="Temporary password" hint="Defaults to password123">
+        <Field label="Temporary password (optional)" hint="Leave blank to generate a random one — it'll be shown after saving.">
           <Input value={userForm.tempPassword ?? ""} onChange={(e) => setUserForm({ ...userForm, tempPassword: e.target.value })} />
         </Field>
         {userError && <Alert tone="danger">{userError}</Alert>}

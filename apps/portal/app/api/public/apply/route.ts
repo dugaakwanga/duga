@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@duga/core/server";
-import { dispatchToMany, sendRawEmail } from "@duga/core/server";
-import { signApplicationTestToken } from "@duga/core";
+import { prisma, dispatchToMany, sendRawEmail, signApplicationTestToken, checkRateLimit, clientIp } from "@duga/core/server";
 
 export async function POST(request: NextRequest) {
   try {
+    const rl = checkRateLimit(`apply:${clientIp(request)}`, 5, 10 * 60_000);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { ok: false, error: "Too many applications submitted. Please try again later." },
+        { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
+      );
+    }
+
     const body = await request.json();
 
     const domain = String(body.domain || "").trim().toLowerCase() || "deultimateglory.com";

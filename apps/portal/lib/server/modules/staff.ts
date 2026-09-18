@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@duga/core/server";
 import { logAudit } from "@duga/core/server";
 import type { Module } from ".";
-import { can, str, num, bool, assertContactFree, resolveSection, sectionArray, sectionsOfAdmin, sectionsOfTeacher } from "../helpers";
+import { can, str, num, bool, assertContactFree, resolveSection, sectionArray, sectionsOfAdmin, sectionsOfTeacher, generateTempPassword } from "../helpers";
 
 function assertStaffTargetAccess(actorRole: string, targetRole: string) {
   if (actorRole !== "OWNER" && ["OWNER", "ADMIN", "BURSAR"].includes(targetRole)) {
@@ -103,6 +103,7 @@ export const staffModule: Module = {
     const phone = str(b.phone);
     const staffNumber = str(b.staffNumber);
     const tempPassword = str(b.tempPassword);
+    const effectiveTempPassword = tempPassword ?? generateTempPassword();
     const assignedSubjectIds = subjectIds(b.subjectIds);
     const assignedSections = teacherSections(b.sections);
     // An admin can also be given subject-teaching duties on top of their
@@ -153,8 +154,12 @@ export const staffModule: Module = {
           lastName,
           email: email ?? null,
           phone,
-          passwordHash: await bcrypt.hash(tempPassword ?? "password123", 10),
+          passwordHash: await bcrypt.hash(effectiveTempPassword, 12),
           mustChangePassword: true,
+          // Invalidates any session token issued before this reset — matters
+          // if this staff member's account was reactivated because it was
+          // compromised, not just routine offboarding/rehiring.
+          passwordChangedAt: new Date(),
         },
       });
       if (role === "TEACHER") {
@@ -220,7 +225,7 @@ export const staffModule: Module = {
         }
       }
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "staff.reactivated", entityType: "User", entityId: existing.id, meta: { role } });
-      return { id: existing.id, email: user.email, reactivated: true };
+      return { id: existing.id, email: user.email, tempPassword: effectiveTempPassword, reactivated: true };
     }
 
     const user = await prisma.user.create({
@@ -229,7 +234,7 @@ export const staffModule: Module = {
         role: role as "TEACHER" | "ADMIN" | "BURSAR" | "SECURITY",
         email: email ?? null,
         phone,
-        passwordHash: await bcrypt.hash(tempPassword ?? "password123", 10),
+        passwordHash: await bcrypt.hash(effectiveTempPassword, 12),
         firstName,
         lastName,
         mustChangePassword: true,
@@ -273,7 +278,7 @@ export const staffModule: Module = {
     }
 
     await logAudit({ schoolId, userId: ctx.session.user.id, action: "staff.created", entityType: "User", entityId: user.id, meta: { role, alsoTeaches } });
-    return { id: user.id, email: user.email };
+    return { id: user.id, email: user.email, tempPassword: effectiveTempPassword };
   },
 
   async update(ctx) {
@@ -445,7 +450,7 @@ export const staffModule: Module = {
       if (target.role === "OWNER" && ctx.session.user.role !== "OWNER") throw new Error("Only the school owner can reset the owner password");
       await prisma.user.update({
         where: { id: target.id },
-        data: { passwordHash: await bcrypt.hash(tempPassword, 10), mustChangePassword: true },
+        data: { passwordHash: await bcrypt.hash(tempPassword, 12), mustChangePassword: true, passwordChangedAt: new Date() },
       });
       await logAudit({
         schoolId: ctx.session.user.schoolId,

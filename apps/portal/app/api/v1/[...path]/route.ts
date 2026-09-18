@@ -27,6 +27,18 @@ async function handle(
     return NextResponse.json({ error: "Unknown resource" }, { status: 404 });
   }
 
+  // A first-login (or freshly-reset) account must set a real password
+  // before touching anything else in the API — the UI already redirects to
+  // /portal/set-password, but that's just a client-side nicety; without this
+  // check here, an account still sitting on its original temp password
+  // could be driven directly via API calls indefinitely, bypassing the
+  // "must change it" screen entirely.
+  const mustChangePasswordAllowlist =
+    resource === "profile" && rest.length === 1 && (rest[0] === "setPassword" || rest[0] === "changePassword");
+  if (session.user.mustChangePassword && !mustChangePasswordAllowlist) {
+    return NextResponse.json({ ok: false, error: "You must set a new password before continuing." }, { status: 403 });
+  }
+
   // Feature gating: if the resource belongs to a feature that is disabled for
   // the caller's school/role, block it here (server-side, not just in the UI).
   const { FEATURE_BY_RESOURCE, SUBFEATURE_BY_RESOURCE } = await import("@/lib/features");

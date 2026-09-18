@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@duga/core/server";
-import { verifyApplicationTestToken } from "@duga/core";
+import { prisma, verifyApplicationTestToken } from "@duga/core/server";
 
 // Public, unauthenticated: an admissions applicant with no portal account
 // opens this via the signed link they were given after applying.

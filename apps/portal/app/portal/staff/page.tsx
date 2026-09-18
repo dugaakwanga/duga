@@ -76,9 +76,9 @@ export default function StaffPage() {
         await api(`staff/${editing.id}`, { method: "PATCH", body: { ...form, subjectIds: selectedSubjectIds, sections: selectedSections } });
         setNotice("Staff member updated.");
       } else {
-        await api("staff", { method: "POST", body: { ...form, subjectIds: selectedSubjectIds, sections: selectedSections } });
-        setNotice(form.tempPassword
-          ? `Staff member added. Temporary password: ${form.tempPassword} — they will be asked to change it on first login.`
+        const result = await api<{ tempPassword?: string }>("staff", { method: "POST", body: { ...form, subjectIds: selectedSubjectIds, sections: selectedSections } });
+        setNotice(result.tempPassword
+          ? `Staff member added. Temporary password: ${result.tempPassword} — share this with them directly; they'll be asked to change it on first login.`
           : "Staff member added. They will be asked to set their own password on first login.");
       }
       setOpen(false);

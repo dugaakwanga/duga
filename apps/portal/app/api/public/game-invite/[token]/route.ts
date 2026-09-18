@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@duga/core/server";
-import { verifyGameInviteToken } from "@duga/core";
+import { prisma, verifyGameInviteToken } from "@duga/core/server";
 
 // Outsider trial-play is always capped at 10 minutes, regardless of the
 // game's own configured duration for enrolled students.

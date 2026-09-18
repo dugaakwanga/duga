@@ -6,6 +6,7 @@ import { can, str, num, pick, idArray, isAssignedTo, ensureTeacher, assertFeeAcc
 import { assertSubfeature } from "../features";
 import { assessmentWindowOpen } from "./calendar";
 import { generate } from "./ai";
+import { sanitizeLessonHtml } from "../sanitizeHtml";
 
 type Kind = "notes" | "assignments" | "tests" | "live";
 
@@ -280,7 +281,7 @@ export const learningModule: Module = {
         data: {
           ...common,
           topic: str(ctx.body.topic) ?? "Untitled",
-          content: str(ctx.body.content) ?? "",
+          content: sanitizeLessonHtml(str(ctx.body.content)) ?? "",
           week: num(ctx.body.week),
           attachments: ctx.body.attachments ? ctx.body.attachments : undefined,
           // Explicit opt-in only — omitting this keeps the column's own
@@ -300,7 +301,7 @@ export const learningModule: Module = {
         data: {
           ...common,
           title: str(ctx.body.title) ?? "Untitled assignment",
-          instructions: str(ctx.body.instructions) ?? "",
+          instructions: sanitizeLessonHtml(str(ctx.body.instructions)) ?? "",
           dueAt: str(ctx.body.dueAt) ? new Date(String(ctx.body.dueAt)) : undefined,
           maxScore: num(ctx.body.maxScore) ?? 100,
           isPublished: ctx.body.isPublished === true || ctx.body.isPublished === "true",
@@ -327,8 +328,8 @@ export const learningModule: Module = {
         data: {
           ...common,
           title: str(ctx.body.title) ?? "Untitled test",
-          description: str(ctx.body.description),
-          instruction: str(ctx.body.instruction),
+          description: sanitizeLessonHtml(str(ctx.body.description)),
+          instruction: sanitizeLessonHtml(str(ctx.body.instruction)),
           passMark: num(ctx.body.passMark),
           targetStudentIds,
           startsAt: str(ctx.body.startsAt) ? new Date(String(ctx.body.startsAt)) : undefined,
@@ -365,7 +366,7 @@ export const learningModule: Module = {
         data: {
           ...common,
           title: str(ctx.body.title) ?? "Live class",
-          description: str(ctx.body.description),
+          description: sanitizeLessonHtml(str(ctx.body.description)),
           scheduledAt,
           durationMinutes: num(ctx.body.durationMinutes) ?? 45,
           provider: "JITSI",
@@ -391,7 +392,9 @@ export const learningModule: Module = {
     if (kind === "notes") {
       const item = await prisma.lessonNote.findFirst({ where: { id: ctx.id, schoolId, ...teacherFilter } });
       if (!item) throw new Error("Note not found");
-      return prisma.lessonNote.update({ where: { id: ctx.id }, data: pick(ctx.body, ["topic", "content", "week", "attachments", "isPublished"]) });
+      const data = pick(ctx.body, ["topic", "content", "week", "attachments", "isPublished"]);
+      if (typeof data.content === "string") data.content = sanitizeLessonHtml(data.content);
+      return prisma.lessonNote.update({ where: { id: ctx.id }, data });
     }
     if (kind === "assignments") {
       const item = await prisma.assignment.findFirst({ where: { id: ctx.id, schoolId, ...teacherFilter } });
@@ -401,6 +404,7 @@ export const learningModule: Module = {
       // input — maxScore is an Int column, so Prisma rejects it unconverted.
       if (data.maxScore !== undefined) data.maxScore = num(data.maxScore) ?? item.maxScore;
       if (data.dueAt !== undefined) data.dueAt = dateOrNull(data.dueAt);
+      if (typeof data.instructions === "string") data.instructions = sanitizeLessonHtml(data.instructions);
       return prisma.assignment.update({ where: { id: ctx.id }, data });
     }
     if (kind === "tests") {
@@ -411,11 +415,15 @@ export const learningModule: Module = {
         const examData = pick(ctx.body, ["title", "description", "instruction", "passMark", "startsAt", "endsAt", "durationMinutes", "shuffleQuestions", "showResults", "targetStudentIds"]);
         if (examData.startsAt !== undefined) examData.startsAt = dateOrNull(examData.startsAt);
         if (examData.endsAt !== undefined) examData.endsAt = dateOrNull(examData.endsAt);
+        if (typeof examData.description === "string") examData.description = sanitizeLessonHtml(examData.description);
+        if (typeof examData.instruction === "string") examData.instruction = sanitizeLessonHtml(examData.instruction);
         return prisma.test.update({ where: { id: ctx.id }, data: examData });
       }
       const data = pick(ctx.body, ["title", "description", "instruction", "passMark", "startsAt", "endsAt", "durationMinutes", "status", "shuffleQuestions", "showResults", "targetStudentIds"]);
       if (data.startsAt !== undefined) data.startsAt = dateOrNull(data.startsAt);
       if (data.endsAt !== undefined) data.endsAt = dateOrNull(data.endsAt);
+      if (typeof data.description === "string") data.description = sanitizeLessonHtml(data.description);
+      if (typeof data.instruction === "string") data.instruction = sanitizeLessonHtml(data.instruction);
       return prisma.test.update({ where: { id: ctx.id }, data });
     }
     throw new Error("Update not supported for this kind");
@@ -533,14 +541,15 @@ export const learningModule: Module = {
       if (!assignment || !isAssignedTo(assignment, student.id, student.currentClassGroupId)) throw new Error("Assignment not found");
       const windowOpen = await assessmentWindowOpen(ctx.session.user.schoolId, "ASSIGNMENT", { classSubjectId: assignment.classSubjectId, section: student.section });
       if (!windowOpen) throw new Error("The submission window for this assignment has closed.");
+      const submissionContent = sanitizeLessonHtml(str(ctx.body.content));
       const submission = await prisma.assignmentSubmission.upsert({
         where: { assignmentId_studentId: { assignmentId: ctx.id!, studentId: student.id } },
-        update: { content: str(ctx.body.content), attachments: ctx.body.attachments ? ctx.body.attachments : undefined, submittedAt: new Date() },
+        update: { content: submissionContent, attachments: ctx.body.attachments ? ctx.body.attachments : undefined, submittedAt: new Date() },
         create: {
           schoolId: ctx.session.user.schoolId,
           assignmentId: ctx.id!,
           studentId: student.id,
-          content: str(ctx.body.content),
+          content: submissionContent,
           attachments: ctx.body.attachments ? ctx.body.attachments : undefined,
         },
       });

@@ -1,7 +1,22 @@
+import { randomBytes } from "crypto";
 import { assertPermission, type Permission, type Role } from "@duga/core";
 import type { Ctx } from "@/app/api/v1/[...path]/route";
 import { prisma } from "@duga/core/server";
 import type { Section } from "@/lib/sections";
+
+// Cryptographically random temp password for a newly created (or reset)
+// account when the caller didn't supply one explicitly — replaces the old
+// fixed "password123"/"parent123" fallback, which made every account whose
+// owner hadn't logged in yet guessable with a single well-known guess.
+// Excludes visually ambiguous characters (0/O, 1/l/I) since this is meant to
+// be read off a screen and typed/relayed by hand.
+const TEMP_PASSWORD_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+export function generateTempPassword(length = 10): string {
+  const bytes = randomBytes(length);
+  let out = "";
+  for (let i = 0; i < length; i++) out += TEMP_PASSWORD_ALPHABET[bytes[i]! % TEMP_PASSWORD_ALPHABET.length];
+  return out;
+}
 
 // Fee-access window logic (feeInfoOf, assertFeeAccess, FeeGatedFeature, ...)
 // now lives in packages/core/src/server/school.ts so resolveResultsAccess

@@ -1,6 +1,5 @@
 import { prisma } from "@duga/core/server";
-import { logAudit, dispatchNotification } from "@duga/core/server";
-import { verifyGateToken, signGateToken } from "@duga/core";
+import { logAudit, dispatchNotification, verifyGateToken, signGateToken } from "@duga/core/server";
 import type { Module } from ".";
 import { can, str, isOwnerOrAdmin } from "../helpers";
 

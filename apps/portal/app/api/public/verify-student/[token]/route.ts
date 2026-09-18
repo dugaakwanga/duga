@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@duga/core/server";
-import { verifyGateToken } from "@duga/core";
+import { prisma, verifyGateToken } from "@duga/core/server";
 
 // Public, unauthenticated: the same signed code printed as the QR on a
 // student's ID card. Scanned inside the DUGA app it drives gate clock-in/out

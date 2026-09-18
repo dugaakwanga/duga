@@ -1,8 +1,17 @@
 import { NextResponse } from "next/server";
+import { checkRateLimit, clientIp } from "@duga/core/server";
 import { portalUrl } from "@/lib/content";
 
 export async function POST(request: Request) {
   try {
+    const rl = checkRateLimit(`web-contact:${clientIp(request)}`, 5, 10 * 60_000);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { ok: false, error: "Too many messages sent. Please try again later." },
+        { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
+      );
+    }
+
     const body = await request.json();
     const { name, email, phone, subject, message, domain } = body ?? {};
     if (!name || !email || !subject || !message) {

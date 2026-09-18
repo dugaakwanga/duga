@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma, dispatchToMany, checkRateLimit } from "@duga/core/server";
-import { verifyApplicationTestToken } from "@duga/core";
+import { prisma, dispatchToMany, checkRateLimit, verifyApplicationTestToken } from "@duga/core/server";
 
 // Public, unauthenticated submission endpoint — grading mirrors
 // learning.ts's submitTest (auto-graded multiple-choice/true-false), but

@@ -39,6 +39,42 @@ function ext(mime: string, purpose: string): string {
   return IMAGE_TYPES[mime] ?? "jpg";
 }
 
+// The browser-supplied `file.type` is attacker-controlled — a request can
+// claim any Content-Type regardless of the actual bytes. JPEG/PNG/WebP are
+// separately verified by actually decoding them (see storage.ts's
+// compressIfImage, which now rejects rather than silently storing an
+// unverified buffer on failure); everything else that isn't run through an
+// image decoder is checked here against its real file signature before
+// it's trusted and stored under the claimed type.
+function matchesSignature(mime: string, buffer: Buffer): boolean {
+  const startsWith = (bytes: number[]) => bytes.every((b, i) => buffer[i] === b);
+  switch (mime) {
+    case "image/gif":
+      return startsWith([0x47, 0x49, 0x46, 0x38]); // "GIF8"
+    case "application/pdf":
+      return startsWith([0x25, 0x50, 0x44, 0x46]); // "%PDF"
+    case "application/msword":
+      // Legacy OLE Compound File header — also covers old .xls/.ppt, but
+      // this mime is only ever reached for the "doc" purpose already.
+      return startsWith([0xd0, 0xcf, 0x11, 0xe0]);
+    // .docx, .epub and the .ibooks variant are all ZIP containers — real
+    // internal-structure disambiguation isn't worth it here, the signature
+    // check exists to block "this isn't even a zip file", not to fully
+    // parse the format.
+    case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+    case "application/epub+zip":
+    case "application/x-ibooks+zip":
+      return startsWith([0x50, 0x4b, 0x03, 0x04]) || startsWith([0x50, 0x4b, 0x05, 0x06]);
+    default:
+      // image/jpeg, image/png, image/webp go through sharp decoding
+      // instead (a stronger check than a signature match); anything else
+      // (e.g. mobi) has no cheap, reliable signature to check — allowed
+      // through unchanged rather than a false sense of security from a
+      // partial check.
+      return true;
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const session = await requireSession();
@@ -109,6 +145,9 @@ export async function POST(request: NextRequest) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
+    if (!matchesSignature(mime, buffer)) {
+      return NextResponse.json({ ok: false, error: "This file's contents don't match its claimed type." }, { status: 400 });
+    }
     const name = `${crypto.randomUUID()}.${ext(mime, purpose)}`;
     const folder = purpose === "library" ? "library" : purpose === "scheme" ? "scheme" : purpose === "lesson-doc" ? "lesson-docs" : purpose === "family-corner-doc" ? "family-corner-docs" : purpose === "paper-exam" ? "paper-exams" : purpose === "avatar" ? "avatars" : purpose === "student-photo" ? "students" : purpose === "school-logo" ? "school" : purpose === "clock-photo" ? "clock" : "gallery";
     const { url: fileUrl, key, bucket } = await uploadPublicFile({

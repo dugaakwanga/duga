@@ -1,8 +1,8 @@
 import bcrypt from "bcryptjs";
-import { prisma } from "@duga/core/server";
-import { signGateToken, hasPermission } from "@duga/core";
+import { prisma, signGateToken } from "@duga/core/server";
+import { hasPermission } from "@duga/core";
 import type { Module } from ".";
-import { can, pick, str, num, bool, idArray, studentScope, feeInfoOf, feeDaysBetween, assertContactFree, resolveSection } from "../helpers";
+import { can, pick, str, num, bool, idArray, studentScope, feeInfoOf, feeDaysBetween, assertContactFree, resolveSection, generateTempPassword } from "../helpers";
 
 const ID_CARD_THEME_KEY = "idCardTheme";
 
@@ -50,11 +50,15 @@ async function readIdCardTheme(schoolId: string): Promise<IdCardConfig> {
 // Create or update the primary linked parent for a student. If an email is
 // given that matches the current parent, only name/phone are updated; otherwise
 // a new (or existing) parent account is linked and made primary.
+// Returns the temp password actually used when a new parent account was
+// created (or an existing one's password was reset) — undefined when
+// neither happened (an existing account was just relinked/updated), so the
+// caller can surface it to the admin/bursar for out-of-band handoff.
 async function upsertParent(
   schoolId: string,
   studentId: string,
   opts: { email?: string; name?: string; phone?: string; tempPassword?: string },
-): Promise<void> {
+): Promise<string | undefined> {
   const email = opts.email ? opts.email.toLowerCase() : undefined;
   const current = await prisma.studentParent.findFirst({
     where: { studentId },
@@ -73,36 +77,40 @@ async function upsertParent(
     if (opts.phone) userData.phone = opts.phone;
     if (opts.tempPassword) {
       if (opts.tempPassword.length < 8) throw new Error("Parent password must be at least 8 characters");
-      userData.passwordHash = await bcrypt.hash(opts.tempPassword, 10);
+      userData.passwordHash = await bcrypt.hash(opts.tempPassword, 12);
       userData.mustChangePassword = true;
+      userData.passwordChangedAt = new Date();
     }
     if (Object.keys(userData).length) await prisma.user.update({ where: { id: current.parent.user.id }, data: userData });
-    return;
+    return opts.tempPassword;
   }
 
   // A parent email is required to link a (new) parent.
-  if (!email) return;
+  if (!email) return undefined;
   let parentUser = await prisma.user.findUnique({ where: { schoolId_email: { schoolId, email } } });
+  let usedTempPassword: string | undefined;
   if (!parentUser) {
     const name = opts.name?.trim() ?? "";
+    usedTempPassword = opts.tempPassword ?? generateTempPassword();
     parentUser = await prisma.user.create({
       data: {
         schoolId,
         role: "PARENT",
         email,
-        passwordHash: await bcrypt.hash(opts.tempPassword ?? "parent123", 10),
+        passwordHash: await bcrypt.hash(usedTempPassword, 12),
         firstName: name.split(/\s+/)[0] ?? "Parent",
         lastName: name.split(/\s+/).slice(1).join(" ") || "Guardian",
         phone: opts.phone || null,
-        mustChangePassword: !opts.tempPassword,
+        mustChangePassword: true,
       },
     });
     await prisma.parent.create({ data: { userId: parentUser.id, schoolId } });
   } else if (opts.tempPassword) {
     if (opts.tempPassword.length < 8) throw new Error("Parent password must be at least 8 characters");
+    usedTempPassword = opts.tempPassword;
     await prisma.user.update({
       where: { id: parentUser.id },
-      data: { passwordHash: await bcrypt.hash(opts.tempPassword, 10), mustChangePassword: true },
+      data: { passwordHash: await bcrypt.hash(opts.tempPassword, 12), mustChangePassword: true, passwordChangedAt: new Date() },
     });
   } else if (opts.phone && !parentUser.phone) {
     await prisma.user.update({ where: { id: parentUser.id }, data: { phone: opts.phone } });
@@ -116,6 +124,7 @@ async function upsertParent(
       create: { parentId: parentProfile.id, studentId, schoolId, relation: "GUARDIAN", isPrimary: true },
     });
   }
+  return usedTempPassword;
 }
 import { logAudit } from "@duga/core/server";
 
@@ -248,7 +257,8 @@ export const studentsModule: Module = {
         (await prisma.student.count({ where: { schoolId } })) + 1,
       ).padStart(4, "0")}`;
 
-    const passwordHash = await bcrypt.hash(str(b.tempPassword) ?? "password123", 10);
+    const studentTempPassword = str(b.tempPassword) ?? generateTempPassword();
+    const passwordHash = await bcrypt.hash(studentTempPassword, 12);
 
     // This config is a price and duration, not a payment. Access begins only
     // when a successful payment is recorded.
@@ -300,8 +310,9 @@ export const studentsModule: Module = {
       return { user, student };
     });
 
+    let parentTempPassword: string | undefined;
     if (b.parentEmail || b.parentName) {
-      await upsertParent(schoolId, student.id, {
+      parentTempPassword = await upsertParent(schoolId, student.id, {
         email: str(b.parentEmail),
         name: str(b.parentName),
         phone: b.parentPhone ? str(b.parentPhone) : undefined,
@@ -318,7 +329,7 @@ export const studentsModule: Module = {
       meta: { admissionNumber },
     });
 
-    return { id: student.id, admissionNumber, tempEmail: user.email };
+    return { id: student.id, admissionNumber, tempEmail: user.email, tempPassword: studentTempPassword, parentTempPassword };
   },
 
   async update(ctx) {
@@ -367,8 +378,9 @@ export const studentsModule: Module = {
     const parentEmail = typeof ctx.body.parentEmail === "string" ? ctx.body.parentEmail : undefined;
     const parentName = typeof ctx.body.parentName === "string" ? ctx.body.parentName : undefined;
     const parentPhone = typeof ctx.body.parentPhone === "string" ? ctx.body.parentPhone : undefined;
+    let parentTempPassword: string | undefined;
     if (parentEmail || parentName || parentPhone) {
-      await upsertParent(schoolId, existing.id, {
+      parentTempPassword = await upsertParent(schoolId, existing.id, {
         email: parentEmail,
         name: parentName,
         phone: parentPhone,
@@ -381,7 +393,7 @@ export const studentsModule: Module = {
       where: { id: ctx.id, schoolId },
       include: { user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, status: true } }, classGroup: { include: { level: true } } },
     });
-    return { ...(updated ?? student), fee: feeInfoOf(updated ?? student) };
+    return { ...(updated ?? student), fee: feeInfoOf(updated ?? student), parentTempPassword };
   },
 
   // Soft delete: deactivate the account so the student can no longer sign in,
@@ -463,7 +475,7 @@ export const studentsModule: Module = {
       if (!student) throw new Error("Student not found");
       await prisma.user.update({
         where: { id: student.userId },
-        data: { passwordHash: await bcrypt.hash(tempPassword, 10), mustChangePassword: true },
+        data: { passwordHash: await bcrypt.hash(tempPassword, 12), mustChangePassword: true, passwordChangedAt: new Date() },
       });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "student.tempPasswordSet", entityType: "Student", entityId: ctx.id });
       return { ok: true };

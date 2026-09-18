@@ -59,6 +59,42 @@ async function assertDirectMessageAllowed(schoolId: string, senderRole: string, 
   }
 }
 
+// The section names (merged Pre-Primary/Primary and every Secondary
+// sub-level into one scope each — see sectionGroupOf) a teacher may reach.
+// Shared by contacts() (search/picker) and create() (the actual write path)
+// so the section boundary is a real authorization check, not just a filter
+// on what the picker happens to show.
+async function teacherAllowedSections(schoolId: string, teacherId: string): Promise<string[]> {
+  const [own, all] = await Promise.all([sectionsOfTeacher(teacherId), schoolSections(schoolId)]);
+  const wanted = new Set(own.map(sectionGroupOf));
+  return all.filter((s) => wanted.has(sectionGroupOf(s)));
+}
+
+// contacts() only filters what a teacher is offered to search/pick from —
+// this is the actual enforcement, called from create() so a teacher can't
+// start a conversation with a student/parent outside their own section(s)
+// just because they obtained that user's id some other way (e.g. observed
+// in a class roster, or guessed).
+async function assertTeacherSectionAllowed(schoolId: string, teacherId: string, recipient: { id: string; role: string }) {
+  const allowed = await teacherAllowedSections(schoolId, teacherId);
+  const deny = () => {
+    const err = new Error("This person is outside the sections you teach") as Error & { status?: number };
+    err.status = 403;
+    throw err;
+  };
+  if (recipient.role === "STUDENT") {
+    const student = await prisma.student.findUnique({ where: { userId: recipient.id }, select: { section: true } });
+    if (!student || !allowed.includes(student.section)) deny();
+  } else if (recipient.role === "PARENT") {
+    const parent = await prisma.parent.findUnique({
+      where: { userId: recipient.id },
+      select: { students: { select: { student: { select: { section: true } } } } },
+    });
+    const reachable = parent?.students.some((link) => allowed.includes(link.student.section)) ?? false;
+    if (!reachable) deny();
+  }
+}
+
 // Number of active users an announcement targets, given its audience.
 async function audienceSize(schoolId: string, a: { audience: string; targetSection?: string | null; targetClassGroupId?: string | null; targetLevelId?: string | null; targetRole?: string | null }): Promise<number> {
   const activeStudents = { status: "ACTIVE" as const };
@@ -183,6 +219,9 @@ export const messagingModule: Module = {
     const other = await prisma.user.findFirst({ where: { id: otherUserId, schoolId: ctx.session.user.schoolId, status: "ACTIVE" } });
     if (!other) throw new Error("User not found");
     await assertDirectMessageAllowed(ctx.session.user.schoolId, ctx.session.user.role, other.role);
+    if (ctx.session.user.role === "TEACHER" && ctx.session.user.teacher) {
+      await assertTeacherSectionAllowed(ctx.session.user.schoolId, ctx.session.user.teacher.id, other);
+    }
 
     // find existing direct conversation
     const existing = await prisma.conversation.findFirst({
@@ -239,9 +278,7 @@ export const messagingModule: Module = {
       // Secondary sub-level are merged into one shared scope each.
       let allowedSectionNames: string[] | null = null;
       if (role === "TEACHER" && ctx.session.user.teacher) {
-        const [own, all] = await Promise.all([sectionsOfTeacher(ctx.session.user.teacher.id), schoolSections(schoolId)]);
-        const wanted = new Set(own.map(sectionGroupOf));
-        allowedSectionNames = all.filter((s) => wanted.has(sectionGroupOf(s)));
+        allowedSectionNames = await teacherAllowedSections(schoolId, ctx.session.user.teacher.id);
       }
       const teacherGroups = role === "TEACHER" && allowedSectionNames ? new Set(allowedSectionNames.map(sectionGroupOf)) : null;
 
