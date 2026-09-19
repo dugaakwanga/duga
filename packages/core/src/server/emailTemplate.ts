@@ -110,7 +110,7 @@ export function renderEmailHtml(opts: {
   paragraphs.push(`<strong>${factHtml}</strong>`);
   if (copy.closing) paragraphs.push(applyName(copy.closing, name));
   paragraphs.push(`Warm regards,<br>${applyName(copy.signOff, name)}`);
-  const bodyHtml = paragraphs.map((p) => `<div style="margin-bottom:12px;">${p}</div>`).join("");
+  const bodyHtml = paragraphs.map((p: string) => `<div style="margin-bottom:12px;">${p}</div>`).join("");
 
   const linkHref = opts.link ? (opts.link.startsWith("http") ? opts.link : `${PORTAL_BASE_URL}${opts.link}`) : null;
   const button = linkHref

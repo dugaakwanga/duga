@@ -77,15 +77,16 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
 
 function normalizeComponents(value: unknown): ResultComponent[] {
   if (!Array.isArray(value)) return DEFAULT_RESULT_COMPONENTS;
-  const comps = (value as Array<{ name?: unknown; category?: unknown; max?: unknown; order?: unknown }>)
-    .filter((c) => typeof c.name === "string" && c.name && (c.category === "CA" || c.category === "EXAM"))
-    .map((c, i) => ({
+  type RawComponent = { name?: unknown; category?: unknown; max?: unknown; order?: unknown };
+  const comps = (value as RawComponent[])
+    .filter((c: RawComponent) => typeof c.name === "string" && c.name && (c.category === "CA" || c.category === "EXAM"))
+    .map((c: RawComponent, i: number) => ({
       name: c.name as string,
       category: c.category as "CA" | "EXAM",
       max: typeof c.max === "number" && c.max >= 0 ? c.max : 0,
       order: typeof c.order === "number" ? c.order : i,
     }))
-    .filter((c) => c.max > 0);
+    .filter((c: ResultComponent) => c.max > 0);
   return comps.length ? comps : DEFAULT_RESULT_COMPONENTS;
 }
 
@@ -204,7 +205,7 @@ export async function collateReportCards(opts: CollateOptions) {
         (!s.section || s.section === student.section),
     );
     if (applicable.length) {
-      nextTermFeesByStudent.set(student.id, applicable.reduce((a, s) => a + Number(s.amount), 0));
+      nextTermFeesByStudent.set(student.id, applicable.reduce((a: number, s: (typeof applicable)[number]) => a + Number(s.amount), 0));
     }
   }
 
@@ -244,7 +245,7 @@ export async function collateReportCards(opts: CollateOptions) {
   }
   const classAverageBySubject: Record<string, number> = {};
   for (const [key, totals] of Object.entries(subjectStudents)) {
-    classAverageBySubject[key] = totals.length ? Math.round((totals.reduce((a, b) => a + b, 0) / totals.length) * 100) / 100 : 0;
+    classAverageBySubject[key] = totals.length ? Math.round((totals.reduce((a: number, b: number) => a + b, 0) / totals.length) * 100) / 100 : 0;
   }
 
   const allAverages = students.map((s: (typeof students)[number]) => {
@@ -252,7 +253,7 @@ export async function collateReportCards(opts: CollateOptions) {
     const count = studentCount[s.id];
     return count ? (total ?? 0) / count : 0;
   });
-  const ranked = [...allAverages].sort((a, b) => b - a);
+  const ranked = [...allAverages].sort((a: number, b: number) => b - a);
 
   const shouldPublish = (studentId: string) => {
     if (!publish) return false;
@@ -321,10 +322,11 @@ export async function collateReportCards(opts: CollateOptions) {
     });
   });
 
-  const itemJobs = students.flatMap((student, i) =>
+  const itemJobs = students.flatMap((student: (typeof students)[number], i: number) =>
     Object.entries(subjectsInReport).map(([subjectKey, info]) => ({ student, reportCard: reportCards[i]!, subjectKey, info })),
   );
-  await mapWithConcurrency(itemJobs, WRITE_CONCURRENCY, async ({ student, reportCard, subjectKey, info }) => {
+  type ItemJob = (typeof itemJobs)[number];
+  await mapWithConcurrency(itemJobs, WRITE_CONCURRENCY, async ({ student, reportCard, subjectKey, info }: ItemJob) => {
     const row = subjectScoreRows[subjectKey]?.get(student.id);
     const ca = row?.ca ?? 0;
     const exam = row?.exam ?? 0;

@@ -139,7 +139,7 @@ export async function effectiveGatedFeatures(schoolId: string): Promise<Set<FeeG
   const obj = restrictions && typeof restrictions === "object" ? (restrictions as Record<string, unknown>) : {};
   const list = new Set<FeeGatedFeature>(
     Array.isArray(obj.feeGatedFeatures)
-      ? (obj.feeGatedFeatures as unknown[]).filter((f): f is FeeGatedFeature => ALL_GATED_FEATURES.includes(f as FeeGatedFeature))
+      ? (obj.feeGatedFeatures as unknown[]).filter((f: unknown): f is FeeGatedFeature => ALL_GATED_FEATURES.includes(f as FeeGatedFeature))
       : DEFAULT_FEE_GATED_FEATURES,
   );
   if (obj.resultsRequirePayment !== false) list.add("results");

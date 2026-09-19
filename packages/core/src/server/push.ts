@@ -70,7 +70,7 @@ export async function sendPush(opts: NotifyOptions): Promise<void> {
     }
 
     const stale: string[] = [];
-    res.responses.forEach((r, i) => {
+    res.responses.forEach((r: { success: boolean; error?: { code?: string } }, i: number) => {
       const id = tokens[i]?.id;
       if (id && !r.success && r.error?.code && STALE_TOKEN_CODES.has(r.error.code)) {
         stale.push(id);
