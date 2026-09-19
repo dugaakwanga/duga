@@ -6,6 +6,7 @@ import Photo from "@/components/Photo";
 import { admissionRequirements } from "@/lib/content";
 import { getPageContent } from "@/lib/site-data";
 import { assertSitePage } from "@/lib/site-gate";
+import type { PageCard } from "@duga/core";
 
 export const metadata: Metadata = {
   title: "Apply for Admission",
@@ -13,8 +14,8 @@ export const metadata: Metadata = {
     "Apply online for admission to De Ultimate Glory Academy, Akwanga, Nasarawa State.",
 };
 
-function strList(value: string | string[] | undefined, fallback: string[]): string[] {
-  return Array.isArray(value) && value.length > 0 ? value : fallback;
+function strList(value: string | string[] | PageCard[] | undefined, fallback: string[]): string[] {
+  return Array.isArray(value) && value.length > 0 && typeof value[0] === "string" ? (value as string[]) : fallback;
 }
 
 export default async function ApplyPage() {
@@ -27,6 +28,8 @@ export default async function ApplyPage() {
   const prepHeading = String(page.prepHeading ?? "");
   const requirements = strList(page.requirements, admissionRequirements);
   const note = String(page.note ?? "");
+  const image1 = String(page.image1 ?? "") || "/images/primarypupil.png";
+  const image2 = String(page.image2 ?? "") || "/images/single sec girl.png";
 
   return (
     <>
@@ -65,8 +68,8 @@ export default async function ApplyPage() {
                   </div>
                 )}
                 <div className="mkt-grid mkt-grid--2" style={{ marginTop: 24, gap: 16 }}>
-                  <Photo src="/images/primarypupil.png" alt="A primary pupil" ratio="wide" caption="Primary" />
-                  <Photo src="/images/single sec girl.png" alt="A secondary student" ratio="wide" caption="Secondary" />
+                  <Photo src={image1} alt="A primary pupil" ratio="wide" caption="Primary" />
+                  <Photo src={image2} alt="A secondary student" ratio="wide" caption="Secondary" />
                 </div>
               </div>
             </Reveal>

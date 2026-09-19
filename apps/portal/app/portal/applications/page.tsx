@@ -23,6 +23,7 @@ interface Application {
   status: string;
   submittedAt: string;
   test: { isSubmitted: boolean; score: number | null; maxScore: number | null; percentage: number | null; submittedAt: string | null } | null;
+  customFields: Record<string, string> | null;
 }
 
 interface ClassOption {
@@ -249,6 +250,17 @@ export default function ApplicationsPage() {
                 <span style={{ fontWeight: 600, textAlign: "right" }}>{v}</span>
               </div>
             ))}
+            {detail.customFields && Object.keys(detail.customFields).length > 0 && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontWeight: 700, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--duga-muted)", marginBottom: 6 }}>Additional details</div>
+                {Object.entries(detail.customFields).map(([k, v]) => (
+                  <div key={k} style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "7px 0", borderBottom: "1px solid var(--duga-border)" }}>
+                    <span style={{ color: "var(--duga-muted)", fontSize: 13 }}>{k}</span>
+                    <span style={{ fontWeight: 600, textAlign: "right" }}>{v || "—"}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             {detail.notes && (
               <div style={{ marginTop: 10 }}>
                 <div style={{ fontWeight: 700, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--duga-muted)", marginBottom: 6 }}>Notes</div>

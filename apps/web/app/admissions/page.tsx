@@ -3,10 +3,11 @@ import Link from "next/link";
 import PageHero from "@/components/PageHero";
 import Photo from "@/components/Photo";
 import { Reveal } from "@/components/motion";
-import { admissionSteps, admissionRequirements } from "@/lib/content";
+import { admissionRequirements } from "@/lib/content";
 import { getPageContent } from "@/lib/site-data";
 import { assertSitePage } from "@/lib/site-gate";
 import { ArrowRight, Spark, Leaf, Cap } from "@/components/icons";
+import type { PageCard } from "@duga/core";
 
 export const metadata: Metadata = {
   title: "Admissions",
@@ -14,8 +15,12 @@ export const metadata: Metadata = {
     "How to apply to De Ultimate Glory Academy — online application, requirements, assessment and resumption.",
 };
 
-function strList(value: string | string[] | undefined, fallback: string[]): string[] {
-  return Array.isArray(value) && value.length > 0 ? value : fallback;
+function strList(value: string | string[] | PageCard[] | undefined, fallback: string[]): string[] {
+  return Array.isArray(value) && value.length > 0 && typeof value[0] === "string" ? (value as string[]) : fallback;
+}
+
+function cards(value: unknown): PageCard[] {
+  return Array.isArray(value) ? (value as PageCard[]) : [];
 }
 
 export default async function AdmissionsPage() {
@@ -40,6 +45,9 @@ export default async function AdmissionsPage() {
   const plan2Text = String(page.plan2Text ?? "");
   const plan3Title = String(page.plan3Title ?? "");
   const plan3Text = String(page.plan3Text ?? "");
+  const steps = cards(page.stepsCards);
+  const feesImage1 = String(page.feesImage1 ?? "") || "/images/group pupils.png";
+  const feesImage2 = String(page.feesImage2 ?? "") || "/images/group 1 sec.png";
 
   return (
     <>
@@ -57,10 +65,10 @@ export default async function AdmissionsPage() {
                 <span className="mkt-kicker">{stepsKicker}</span>
                 <h2 className="mkt-h2" style={{ marginBottom: 34 }}>{stepsHeading}</h2>
                 <div className="mkt-timeline">
-                  {admissionSteps.map((s) => (
-                    <div key={s.step} className="mkt-timeline-item">
+                  {steps.map((s, i) => (
+                    <div key={s.id} className="mkt-timeline-item">
                       <h4>
-                        {String(s.step).padStart(2, "0")}. {s.title}
+                        {String(i + 1).padStart(2, "0")}. {s.title}
                       </h4>
                       <p>{s.text}</p>
                     </div>
@@ -133,8 +141,8 @@ export default async function AdmissionsPage() {
           </div>
           <Reveal delay={120}>
             <div className="mkt-grid mkt-grid--editorial" style={{ marginTop: 44 }}>
-              <Photo src="/images/group pupils.png" alt="Primary pupils smiling" ratio="wide" caption="Primary applicants welcome" />
-              <Photo src="/images/group 1 sec.png" alt="Secondary students together" ratio="wide" caption="Secondary applicants welcome" />
+              <Photo src={feesImage1} alt="Primary pupils smiling" ratio="wide" caption="Primary applicants welcome" />
+              <Photo src={feesImage2} alt="Secondary students together" ratio="wide" caption="Secondary applicants welcome" />
             </div>
           </Reveal>
         </div>

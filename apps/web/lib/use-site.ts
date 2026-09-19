@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { portalUrl } from "@/lib/content";
-import { mergeContent, type SiteContentData, type SiteSchoolInfo } from "@/lib/site-data";
+import { mergeContent, type SiteContentData, type SiteSchoolInfo, type ApplicationFieldDef, DEFAULT_APPLICATION_FORM } from "@/lib/site-data";
 import { WEB_PAGE_SLUGS, WEB_FEATURE_IDS } from "@duga/core";
 
 export interface SiteGalleryItem {
@@ -50,6 +50,7 @@ export interface SiteContent {
   loading: boolean;
   pta: { executives: SitePtaExecutive[]; meetings: SitePtaMeeting[] };
   website: { enabled: boolean; pages: string[]; features: string[] };
+  applicationForm: ApplicationFieldDef[];
 }
 
 export function useSiteContent(): SiteContent {
@@ -61,6 +62,7 @@ export function useSiteContent(): SiteContent {
     loading: true,
     pta: { executives: [], meetings: [] },
     website: { enabled: true, pages: WEB_PAGE_SLUGS, features: WEB_FEATURE_IDS },
+    applicationForm: DEFAULT_APPLICATION_FORM,
   });
 
   useEffect(() => {
@@ -96,6 +98,9 @@ export function useSiteContent(): SiteContent {
                 ? json.data.pta.meetings.map((m: SitePtaMeeting) => ({ ...m, venue: m.venue }))
                 : [],
             },
+            applicationForm: Array.isArray(json.data?.applicationForm) && json.data.applicationForm.length > 0
+              ? json.data.applicationForm
+              : DEFAULT_APPLICATION_FORM,
           });
         }
       })

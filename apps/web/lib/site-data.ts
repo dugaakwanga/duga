@@ -72,6 +72,33 @@ export interface SiteWebsiteConfig {
   features: string[];
 }
 
+export type ApplicationFieldType = "text" | "email" | "tel" | "textarea" | "select" | "date";
+
+export interface ApplicationFieldDef {
+  id: string;
+  key: string;
+  label: string;
+  type: ApplicationFieldType;
+  required: boolean;
+  options?: string[];
+  builtin: boolean;
+  enabled: boolean;
+}
+
+export const DEFAULT_APPLICATION_FORM: ApplicationFieldDef[] = [
+  { id: "f-applicantName", key: "applicantName", label: "Applicant full name", type: "text", required: true, builtin: true, enabled: true },
+  { id: "f-email", key: "email", label: "Email", type: "email", required: true, builtin: true, enabled: true },
+  { id: "f-phone", key: "phone", label: "Phone", type: "tel", required: true, builtin: true, enabled: true },
+  { id: "f-section", key: "section", label: "Section applying for", type: "select", required: true, options: ["PRIMARY", "SECONDARY"], builtin: true, enabled: true },
+  { id: "f-levelApplied", key: "levelApplied", label: "Class / level", type: "select", required: true, builtin: true, enabled: true },
+  { id: "f-gender", key: "gender", label: "Gender", type: "select", required: false, options: ["MALE", "FEMALE"], builtin: true, enabled: true },
+  { id: "f-dateOfBirth", key: "dateOfBirth", label: "Date of birth", type: "date", required: false, builtin: true, enabled: true },
+  { id: "f-previousSchool", key: "previousSchool", label: "Previous school (if any)", type: "text", required: false, builtin: true, enabled: true },
+  { id: "f-guardianName", key: "guardianName", label: "Guardian / parent name", type: "text", required: true, builtin: true, enabled: true },
+  { id: "f-guardianPhone", key: "guardianPhone", label: "Guardian / parent phone", type: "tel", required: true, builtin: true, enabled: true },
+  { id: "f-message", key: "message", label: "Additional notes", type: "textarea", required: false, builtin: true, enabled: true },
+];
+
 export const FALLBACK_CONTENT: SiteContentData = {
   tickerEnabled: true,
   ticker: [

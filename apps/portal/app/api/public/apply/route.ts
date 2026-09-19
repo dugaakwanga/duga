@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, dispatchToMany, sendRawEmail, signApplicationTestToken, checkRateLimit, clientIp } from "@duga/core/server";
+import { loadApplicationForm } from "@/lib/server/modules/applicationForm";
 
 export async function POST(request: NextRequest) {
   try {
@@ -39,6 +40,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "applicantName, email and phone are required" }, { status: 400 });
     }
 
+    // Enforce whatever the admin has currently marked as required — both
+    // builtin fields (e.g. guardianName) and admin-added custom fields.
+    const formFields = await loadApplicationForm(school.id);
+    const rawCustomFields = body.customFields && typeof body.customFields === "object" ? (body.customFields as Record<string, unknown>) : {};
+    const customFields: Record<string, string> = {};
+    for (const f of formFields) {
+      if (!f.enabled) continue;
+      if (f.builtin) {
+        if (f.required && !["applicantName", "email", "phone"].includes(f.key) && !String((body as Record<string, unknown>)[f.key] ?? "").trim()) {
+          return NextResponse.json({ ok: false, error: `${f.label} is required` }, { status: 400 });
+        }
+        continue;
+      }
+      const value = String(rawCustomFields[f.label] ?? "").trim();
+      if (f.required && !value) {
+        return NextResponse.json({ ok: false, error: `${f.label} is required` }, { status: 400 });
+      }
+      if (value) customFields[f.label] = value;
+    }
+
     const section = String(body.section || "SECONDARY").toUpperCase();
     if (!["PRIMARY", "SECONDARY"].includes(section)) {
       return NextResponse.json({ ok: false, error: "Invalid section" }, { status: 400 });
@@ -69,6 +90,7 @@ export async function POST(request: NextRequest) {
         dateOfBirth,
         parentId: existingUser?.parent?.id,
         status: "RECEIVED",
+        customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
       },
     });
 

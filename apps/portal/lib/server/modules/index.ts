@@ -31,6 +31,7 @@ import { profileModule } from "./profile";
 import { galleryModule } from "./gallery";
 import { newsModule } from "./news";
 import { contentModule } from "./content";
+import { applicationFormModule } from "./applicationForm";
 import { teacherModule } from "./teacher";
 import { elearnModule } from "./elearn";
 import { gamesModule } from "./games";
@@ -72,6 +73,7 @@ export const modules: Record<string, Module> = {
   gallery: galleryModule,
   news: newsModule,
   content: contentModule,
+  applicationForm: applicationFormModule,
   teacher: teacherModule,
   elearn: elearnModule,
   games: gamesModule,

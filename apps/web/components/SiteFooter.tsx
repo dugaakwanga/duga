@@ -50,7 +50,7 @@ export default function SiteFooter() {
             <Link href="/" aria-label="De Ultimate Glory Academy home" className="mkt-logo">
               <span className="mkt-logo-badge">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/images/logo.png" alt="" />
+                <img src={school?.logoUrl || "/images/logo.png"} alt="" />
               </span>
               <span>
                 <span className="mkt-logo-name">De Ultimate Glory Academy</span>

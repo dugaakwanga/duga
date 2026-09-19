@@ -102,7 +102,7 @@ export default function SiteHeader() {
 
             <Link href="/" className="mkt-logo mkt-logo--brand" aria-label={schoolInfo.name}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/images/logo.png" alt="" />
+              <img src={school?.logoUrl || "/images/logo.png"} alt="" />
               <span>
                 <span className="mkt-logo-name">
                   De <em>Ultimate</em> Glory <span className="mkt-logo-academy">Academy</span>

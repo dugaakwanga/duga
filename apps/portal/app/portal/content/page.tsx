@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Card, PageHeader, Field, Input, Textarea, Button, Alert, Spinner, Badge } from "@duga/ui";
-import { PAGE_DEFS } from "@duga/core";
+import { Card, PageHeader, Field, Input, Select, Textarea, Button, Alert, Spinner, Badge } from "@duga/ui";
+import { PAGE_DEFS, type SitePages, type PageCard, type CardFieldDef } from "@duga/core";
 import { api } from "@/lib/client/api";
 
 interface StatItem {
@@ -12,7 +12,7 @@ interface StatItem {
 }
 
 interface RowFields {
-  fields: Array<{ key: string; label: string; type?: "text" | "area" | "number" | "image" }>;
+  fields: Array<{ key: string; label: string; type?: "text" | "area" | "number" | "image" | "list" }>;
 }
 
 function ImageField({ value, onChange, hint }: { value: string; onChange: (v: string) => void; hint?: string }) {
@@ -73,6 +73,12 @@ function RowList<T extends Record<string, unknown>>({ rows, fields, onChange, ad
                 <Textarea rows={2} value={String(r[f.key] ?? "")} onChange={(e) => set(i, { [f.key]: e.target.value } as Partial<T>)} />
               ) : f.type === "image" ? (
                 <ImageField value={String(r[f.key] ?? "")} onChange={(v) => set(i, { [f.key]: v } as Partial<T>)} hint={f.label.includes("default") ? "Leave empty to keep the current default photo." : undefined} />
+              ) : f.type === "list" ? (
+                <Textarea
+                  rows={3}
+                  value={Array.isArray(r[f.key]) ? (r[f.key] as unknown as string[]).join("\n") : String(r[f.key] ?? "")}
+                  onChange={(e) => set(i, { [f.key]: e.target.value.split("\n") } as unknown as Partial<T>)}
+                />
               ) : (
                 <Input
                   type={f.type === "number" ? "number" : "text"}
@@ -92,6 +98,86 @@ function RowList<T extends Record<string, unknown>>({ rows, fields, onChange, ad
   );
 }
 
+type ApplicationFieldType = "text" | "email" | "tel" | "textarea" | "select" | "date";
+
+interface ApplicationFieldDef {
+  id: string;
+  key: string;
+  label: string;
+  type: ApplicationFieldType;
+  required: boolean;
+  options?: string[];
+  builtin: boolean;
+  enabled: boolean;
+}
+
+const FIELD_TYPE_OPTIONS: ApplicationFieldType[] = ["text", "email", "tel", "textarea", "select", "date"];
+const ALWAYS_ON_KEYS = new Set(["applicantName", "email", "phone", "section", "levelApplied"]);
+
+function ApplicationFormEditor({ fields, onChange }: { fields: ApplicationFieldDef[]; onChange: (fields: ApplicationFieldDef[]) => void }) {
+  const set = (i: number, patch: Partial<ApplicationFieldDef>) =>
+    onChange(fields.map((f, idx) => (idx === i ? { ...f, ...patch } : f)));
+  const remove = (i: number) => onChange(fields.filter((_, idx) => idx !== i));
+  const addCustom = () =>
+    onChange([
+      ...fields,
+      { id: crypto.randomUUID(), key: "", label: "New field", type: "text", required: false, builtin: false, enabled: true },
+    ]);
+
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      {fields.map((f, i) => {
+        const locked = ALWAYS_ON_KEYS.has(f.key);
+        return (
+          <div key={f.id} style={{ border: "1px solid var(--duga-border)", borderRadius: 12, padding: 12, display: "grid", gap: 8, background: "var(--duga-surface)" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              {f.builtin && <Badge tone="neutral">built-in</Badge>}
+              {locked && <Badge tone="info">always on</Badge>}
+            </div>
+            <Field label="Label">
+              <Input value={f.label} onChange={(e) => set(i, { label: e.target.value })} />
+            </Field>
+            <div className="duga-form-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <Field label="Type">
+                <Select value={f.type} onChange={(e) => set(i, { type: e.target.value as ApplicationFieldType })} disabled={f.builtin}>
+                  {FIELD_TYPE_OPTIONS.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </Select>
+              </Field>
+              <div style={{ display: "flex", alignItems: "center", gap: 16, paddingTop: 22 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: locked ? "default" : "pointer", fontSize: 13.5 }}>
+                  <input type="checkbox" checked={f.required} disabled={locked} onChange={(e) => set(i, { required: e.target.checked })} />
+                  Required
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: locked ? "default" : "pointer", fontSize: 13.5 }}>
+                  <input type="checkbox" checked={f.enabled} disabled={locked} onChange={(e) => set(i, { enabled: e.target.checked })} />
+                  Shown on the form
+                </label>
+              </div>
+            </div>
+            {f.type === "select" && (
+              <Field label="Options (one per line)">
+                <Textarea
+                  rows={3}
+                  value={(f.options ?? []).join("\n")}
+                  onChange={(e) => set(i, { options: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean) })}
+                />
+              </Field>
+            )}
+            {!f.builtin && (
+              <div>
+                <Button variant="danger" size="sm" onClick={() => remove(i)}>Remove</Button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+      <Button size="sm" onClick={addCustom}>Add a custom field</Button>
+    </div>
+  );
+}
+
 interface SiteContent {
   tickerEnabled: boolean;
   ticker: string[];
@@ -105,7 +191,7 @@ interface SiteContent {
   testimonials: Array<{ quote: string; name: string; role: string }>;
   footer: { about: string; tagline: string };
   contact: { motto: string; founded: number; hours: string };
-  pages: Record<string, Record<string, string | string[]>>;
+  pages: SitePages;
 }
 
 export default function ContentPage() {
@@ -114,12 +200,35 @@ export default function ContentPage() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
+  const [formFields, setFormFields] = useState<ApplicationFieldDef[] | null>(null);
+  const [formSaved, setFormSaved] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
   useEffect(() => {
     api<SiteContent>("content")
       .then((d) => setContent(d))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
+    api<{ fields: ApplicationFieldDef[] }>("applicationForm")
+      .then((d) => setFormFields(d.fields))
+      .catch(() => setFormFields([]));
   }, []);
+
+  async function saveApplicationForm() {
+    if (!formFields) return;
+    setFormError(null);
+    setFormSaved(false);
+    try {
+      const d = await api<{ fields: ApplicationFieldDef[] }>("applicationForm/save", {
+        method: "POST",
+        body: { fields: formFields },
+      });
+      setFormFields(d.fields);
+      setFormSaved(true);
+    } catch (e) {
+      setFormError((e as Error).message);
+    }
+  }
 
   async function save() {
     if (!content) return;
@@ -172,7 +281,7 @@ export default function ContentPage() {
 
   const set = (patch: Partial<SiteContent>) => setContent((c) => (c ? { ...c, ...patch } : c));
 
-  const setPage = (slug: string, key: string, value: string | string[]) =>
+  const setPage = (slug: string, key: string, value: string | string[] | PageCard[]) =>
     setContent((c) =>
       c
         ? {
@@ -401,8 +510,8 @@ export default function ContentPage() {
 
         <Card title="Page text (About, Academics, Admissions &amp; more)" style={{ gridColumn: "1 / -1" }}>
           <p style={{ fontSize: 13.5, color: "var(--duga-muted)", margin: "0 0 16px" }}>
-            Edit the written copy for each page of the website. Open a page below, update the fields,
-            then press <strong>Save content</strong>. Headings and body text update immediately; layout and images are fixed.
+            Edit the written copy, photos and cards for each page of the website. Open a page below, add, edit
+            or remove cards and photos as needed, then press <strong>Save content</strong>. Changes update immediately.
           </p>
           {PAGE_DEFS.map((def) => (
             <details
@@ -421,6 +530,34 @@ export default function ContentPage() {
               <div style={{ display: "grid", gap: 12, padding: "8px 0 14px" }}>
                 {def.fields.map((f) => {
                   const val = content.pages[def.slug]?.[f.key];
+
+                  if (f.type === "cards") {
+                    const cardFields: CardFieldDef[] = f.cardFields ?? [];
+                    return (
+                      <Field key={f.key} label={f.label}>
+                        <RowList
+                          rows={(Array.isArray(val) ? val : []) as unknown as Array<Record<string, unknown>>}
+                          fields={cardFields.map((cf) => ({ key: cf.key, label: cf.label, type: cf.type }))}
+                          onChange={(rows) => setPage(def.slug, f.key, rows as unknown as PageCard[])}
+                          addLabel={`Add ${f.cardLabel ?? f.label.toLowerCase()}`}
+                          newRow={() => {
+                            const row: Record<string, unknown> = { id: crypto.randomUUID() };
+                            for (const cf of cardFields) row[cf.key] = cf.type === "list" ? [] : "";
+                            return row;
+                          }}
+                        />
+                      </Field>
+                    );
+                  }
+
+                  if (f.type === "image") {
+                    return (
+                      <Field key={f.key} label={f.label}>
+                        <ImageField value={String(val ?? "")} onChange={(v) => setPage(def.slug, f.key, v)} />
+                      </Field>
+                    );
+                  }
+
                   const isList = f.type === "list" && Array.isArray(val);
                   const text = isList ? (val as string[]).join("\n") : String(val ?? "");
                   return (
@@ -445,6 +582,25 @@ export default function ContentPage() {
         <Button onClick={save}>Save content</Button>
         {saved && <Alert tone="success">Saved.</Alert>}
       </div>
+
+      <Card title="Admission application form" style={{ marginTop: 18 }}>
+        <p style={{ fontSize: 13.5, color: "var(--duga-muted)", margin: "0 0 16px" }}>
+          Edit the fields on the public admissions application form. Built-in fields can be relabelled, marked
+          required, or hidden (except the always-on contact and class fields); add your own custom fields below them.
+        </p>
+        {formFields === null ? (
+          <Spinner size={24} />
+        ) : (
+          <>
+            <ApplicationFormEditor fields={formFields} onChange={setFormFields} />
+            <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 16 }}>
+              <Button onClick={saveApplicationForm}>Save application form</Button>
+              {formSaved && <Alert tone="success">Saved.</Alert>}
+              {formError && <Alert tone="danger">{formError}</Alert>}
+            </div>
+          </>
+        )}
+      </Card>
     </div>
   );
 }

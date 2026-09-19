@@ -3,18 +3,10 @@ import Link from "next/link";
 import PageHero from "@/components/PageHero";
 import Photo from "@/components/Photo";
 import { Reveal } from "@/components/motion";
-import { primaryPrograms, secondaryPrograms } from "@/lib/content";
 import { getPageContent } from "@/lib/site-data";
 import { assertSitePage } from "@/lib/site-gate";
-import {
-  ArrowRight,
-  Beaker,
-  Monitor,
-  Book,
-  Trophy,
-  Users,
-  Ruler,
-} from "@/components/icons";
+import { ArrowRight, Beaker } from "@/components/icons";
+import type { PageCard } from "@duga/core";
 
 export const metadata: Metadata = {
   title: "Academics",
@@ -22,14 +14,9 @@ export const metadata: Metadata = {
     "Overview of the Primary and Secondary academic programmes at De Ultimate Glory Academy, Akwanga.",
 };
 
-const EXTRA = [
-  { icon: Beaker, title: "Science Laboratory", text: "Hands-on practical work in biology, chemistry and physics." },
-  { icon: Monitor, title: "ICT & Computer Studies", text: "Digital literacy from primary through senior secondary." },
-  { icon: Book, title: "Library & Reading Culture", text: "A well-stocked library and weekly reading periods." },
-  { icon: Users, title: "Clubs & Societies", text: "Debate, press, JETS, sports, literary and drama clubs." },
-  { icon: Trophy, title: "Quizzes & Competitions", text: "Abacus, spelling bees, science fairs and maths olympiads." },
-  { icon: Ruler, title: "Sports & Athletics", text: "Inter-house sports, football, athletics and PE." },
-];
+function cards(value: unknown): PageCard[] {
+  return Array.isArray(value) ? (value as PageCard[]) : [];
+}
 
 const SUBJECTS_PRIMARY = [
   "English Studies", "Mathematics", "Basic Science & Technology", "Computer Studies",
@@ -47,28 +34,22 @@ const SUBJECTS_SSS = [
   "Economics", "Commerce", "Literature-in-English", "Government", "CRS", "Geography", "Computer Studies",
 ];
 
-function strList(value: string | string[] | undefined, fallback: string[]): string[] {
-  return Array.isArray(value) && value.length > 0 ? value : fallback;
+function strList(value: string | string[] | PageCard[] | undefined, fallback: string[]): string[] {
+  return Array.isArray(value) && value.length > 0 && typeof value[0] === "string" ? (value as string[]) : fallback;
 }
 
-function ProgramCards({
-  programs,
-  delayBase,
-}: {
-  programs: typeof primaryPrograms;
-  delayBase: number;
-}) {
+function ProgramCards({ programs, delayBase }: { programs: PageCard[]; delayBase: number }) {
   return (
     <div className="mkt-grid mkt-grid--3">
       {programs.map((p, i) => (
-        <Reveal key={p.title} delay={delayBase + i * 90}>
+        <Reveal key={p.id} delay={delayBase + i * 90}>
           <div className="mkt-card">
             <span className="mkt-kicker" style={{ marginBottom: 10, display: "inline-flex" }}>
-              {p.range}
+              {p.subtitle}
             </span>
             <h3 style={{ fontSize: 19 }}>{p.title}</h3>
             <ul className="mkt-check-list" style={{ marginTop: 14 }}>
-              {p.points.map((pt) => (
+              {(p.list ?? []).map((pt) => (
                 <li key={pt}>{pt}</li>
               ))}
             </ul>
@@ -101,6 +82,15 @@ export default async function AcademicsPage() {
   const ctaKicker = String(page.ctaKicker ?? "");
   const ctaHeading = String(page.ctaHeading ?? "");
   const ctaLabel = String(page.ctaLabel ?? "");
+  const primaryPrograms = cards(page.primaryProgramCards);
+  const secondaryPrograms = cards(page.secondaryProgramCards);
+  const extraCards = cards(page.extraCards);
+  const primaryImage1 = String(page.primaryImage1 ?? "") || "/images/pupil hands up.png";
+  const primaryImage2 = String(page.primaryImage2 ?? "") || "/images/single pupil.png";
+  const secondaryImage1 = String(page.secondaryImage1 ?? "") || "/images/sec reading.png";
+  const secondaryImage2 = String(page.secondaryImage2 ?? "") || "/images/single sec girl.png";
+  const extraImage1 = String(page.extraImage1 ?? "") || "/images/single sec boy.png";
+  const extraImage2 = String(page.extraImage2 ?? "") || "/images/sec reading.png";
 
   return (
     <>
@@ -123,8 +113,8 @@ export default async function AcademicsPage() {
           <ProgramCards programs={primaryPrograms} delayBase={0} />
           <Reveal delay={80}>
             <div className="mkt-grid mkt-grid--editorial" style={{ marginTop: 40 }}>
-              <Photo src="/images/pupil hands up.png" alt="Primary pupils raising their hands" ratio="wide" caption="Engaged, eager learners" fit />
-              <Photo src="/images/single pupil.png" alt="A primary pupil concentrating" ratio="wide" caption="Focused learning" fit />
+              <Photo src={primaryImage1} alt="Primary pupils raising their hands" ratio="wide" caption="Engaged, eager learners" fit />
+              <Photo src={primaryImage2} alt="A primary pupil concentrating" ratio="wide" caption="Focused learning" fit />
             </div>
           </Reveal>
         </div>
@@ -143,8 +133,8 @@ export default async function AcademicsPage() {
           <ProgramCards programs={secondaryPrograms} delayBase={0} />
           <Reveal delay={80}>
             <div className="mkt-grid mkt-grid--editorial" style={{ marginTop: 40 }}>
-              <Photo src="/images/sec reading.png" alt="A secondary student reading" ratio="wide" caption="Independent study" fit />
-              <Photo src="/images/single sec girl.png" alt="A secondary school girl" ratio="wide" caption="Ambition, daily" fit />
+              <Photo src={secondaryImage1} alt="A secondary student reading" ratio="wide" caption="Independent study" fit />
+              <Photo src={secondaryImage2} alt="A secondary school girl" ratio="wide" caption="Ambition, daily" fit />
             </div>
           </Reveal>
         </div>
@@ -191,23 +181,20 @@ export default async function AcademicsPage() {
             </Reveal>
           </div>
           <div className="mkt-grid mkt-grid--3">
-            {EXTRA.map((e, i) => {
-              const Icon = e.icon;
-              return (
-                <Reveal key={e.title} delay={(i % 3) * 90}>
-                  <div className="mkt-card">
-                    <div className="mkt-icon"><Icon size={23} /></div>
-                    <h3>{e.title}</h3>
-                    <p>{e.text}</p>
-                  </div>
-                </Reveal>
-              );
-            })}
+            {extraCards.map((e, i) => (
+              <Reveal key={e.id} delay={(i % 3) * 90}>
+                <div className="mkt-card">
+                  <div className="mkt-icon"><Beaker size={23} /></div>
+                  <h3>{e.title}</h3>
+                  <p>{e.text}</p>
+                </div>
+              </Reveal>
+            ))}
           </div>
           <Reveal delay={100}>
             <div className="mkt-grid mkt-grid--editorial" style={{ marginTop: 44 }}>
-              <Photo src="/images/single sec boy.png" alt="A secondary school boy in uniform" ratio="wide" caption="Pride in uniform" fit />
-              <Photo src="/images/sec reading.png" alt="A secondary student reading" ratio="wide" caption="The joy of learning" fit />
+              <Photo src={extraImage1} alt="A secondary school boy in uniform" ratio="wide" caption="Pride in uniform" fit />
+              <Photo src={extraImage2} alt="A secondary student reading" ratio="wide" caption="The joy of learning" fit />
             </div>
           </Reveal>
         </div>

@@ -6,12 +6,36 @@
 // agree on keys and defaults without duplication.
 // ---------------------------------------------------------------------------
 
-export type PageFieldType = "text" | "area" | "list";
+export type PageFieldType = "text" | "area" | "list" | "image" | "cards";
+
+/** One generic card shape, reused by every "cards" field across every page. */
+export interface PageCard {
+  id: string;
+  title?: string;
+  subtitle?: string;
+  text?: string;
+  image?: string;
+  meta?: string;
+  href?: string;
+  list?: string[];
+}
+
+export type CardFieldKey = "title" | "subtitle" | "text" | "image" | "meta" | "href" | "list";
+
+export interface CardFieldDef {
+  key: CardFieldKey;
+  label: string;
+  type?: "text" | "area" | "image" | "list";
+}
 
 export interface PageFieldDef {
   key: string;
   label: string;
   type: PageFieldType;
+  /** Only present when type === "cards" — which slots of PageCard this field exposes. */
+  cardFields?: CardFieldDef[];
+  /** Only present when type === "cards" — label for the "Add …" button. */
+  cardLabel?: string;
 }
 
 export interface PageDef {
@@ -20,7 +44,7 @@ export interface PageDef {
   fields: PageFieldDef[];
 }
 
-export type PageFields = Record<string, string | string[]>;
+export type PageFields = Record<string, string | string[] | PageCard[]>;
 export type SitePages = Record<string, PageFields>;
 
 export const PAGE_DEFS: PageDef[] = [
@@ -47,6 +71,50 @@ export const PAGE_DEFS: PageDef[] = [
       { key: "accreditKicker", label: "Accreditation kicker", type: "text" },
       { key: "accreditHeading", label: "Accreditation heading", type: "text" },
       { key: "ctaLabel", label: "Call-to-action label", type: "text" },
+      { key: "storyImage", label: "Story photo", type: "image" },
+      { key: "teamImage", label: "Leadership team photo", type: "image" },
+      {
+        key: "valuesCards",
+        label: "Core values",
+        type: "cards",
+        cardLabel: "value",
+        cardFields: [
+          { key: "title", label: "Title", type: "text" },
+          { key: "text", label: "Text", type: "area" },
+        ],
+      },
+      {
+        key: "timelineCards",
+        label: "Milestones",
+        type: "cards",
+        cardLabel: "milestone",
+        cardFields: [
+          { key: "meta", label: "Year", type: "text" },
+          { key: "title", label: "Milestone", type: "text" },
+          { key: "text", label: "Description", type: "area" },
+        ],
+      },
+      {
+        key: "leadershipCards",
+        label: "Leadership team",
+        type: "cards",
+        cardLabel: "leader",
+        cardFields: [
+          { key: "title", label: "Name / title", type: "text" },
+          { key: "subtitle", label: "Role", type: "text" },
+          { key: "image", label: "Photo", type: "image" },
+        ],
+      },
+      {
+        key: "accreditCards",
+        label: "Accreditation",
+        type: "cards",
+        cardLabel: "accreditation",
+        cardFields: [
+          { key: "title", label: "Accreditation", type: "text" },
+          { key: "image", label: "Badge / logo (optional)", type: "image" },
+        ],
+      },
     ],
   },
   {
@@ -72,6 +140,44 @@ export const PAGE_DEFS: PageDef[] = [
       { key: "ctaKicker", label: "CTA kicker", type: "text" },
       { key: "ctaHeading", label: "CTA heading", type: "text" },
       { key: "ctaLabel", label: "CTA button label", type: "text" },
+      { key: "primaryImage1", label: "Primary section photo 1", type: "image" },
+      { key: "primaryImage2", label: "Primary section photo 2", type: "image" },
+      { key: "secondaryImage1", label: "Secondary section photo 1", type: "image" },
+      { key: "secondaryImage2", label: "Secondary section photo 2", type: "image" },
+      { key: "extraImage1", label: "Beyond-the-classroom photo 1", type: "image" },
+      { key: "extraImage2", label: "Beyond-the-classroom photo 2", type: "image" },
+      {
+        key: "primaryProgramCards",
+        label: "Primary programmes",
+        type: "cards",
+        cardLabel: "programme",
+        cardFields: [
+          { key: "title", label: "Title", type: "text" },
+          { key: "subtitle", label: "Age range", type: "text" },
+          { key: "list", label: "Highlights (one per line)", type: "list" },
+        ],
+      },
+      {
+        key: "secondaryProgramCards",
+        label: "Secondary programmes",
+        type: "cards",
+        cardLabel: "programme",
+        cardFields: [
+          { key: "title", label: "Title", type: "text" },
+          { key: "subtitle", label: "Age range", type: "text" },
+          { key: "list", label: "Highlights (one per line)", type: "list" },
+        ],
+      },
+      {
+        key: "extraCards",
+        label: "Beyond the classroom",
+        type: "cards",
+        cardLabel: "item",
+        cardFields: [
+          { key: "title", label: "Title", type: "text" },
+          { key: "text", label: "Text", type: "area" },
+        ],
+      },
     ],
   },
   {
@@ -97,6 +203,18 @@ export const PAGE_DEFS: PageDef[] = [
       { key: "plan2Text", label: "Payment option 2 text", type: "area" },
       { key: "plan3Title", label: "Payment option 3 title", type: "text" },
       { key: "plan3Text", label: "Payment option 3 text", type: "area" },
+      { key: "feesImage1", label: "Fees section photo 1", type: "image" },
+      { key: "feesImage2", label: "Fees section photo 2", type: "image" },
+      {
+        key: "stepsCards",
+        label: "How to apply — steps",
+        type: "cards",
+        cardLabel: "step",
+        cardFields: [
+          { key: "title", label: "Step title", type: "text" },
+          { key: "text", label: "Step text", type: "area" },
+        ],
+      },
     ],
   },
   {
@@ -120,6 +238,8 @@ export const PAGE_DEFS: PageDef[] = [
       { key: "prepHeading", label: "Before-you-begin heading", type: "text" },
       { key: "requirements", label: "Admission requirements (one per line)", type: "list" },
       { key: "note", label: "After-submit note", type: "area" },
+      { key: "image1", label: "Photo 1", type: "image" },
+      { key: "image2", label: "Photo 2", type: "image" },
     ],
   },
   {
@@ -130,6 +250,39 @@ export const PAGE_DEFS: PageDef[] = [
       { key: "heroSubtitle", label: "Hero subtitle", type: "area" },
       { key: "alumniKicker", label: "Alumni voices kicker", type: "text" },
       { key: "alumniHeading", label: "Alumni voices heading", type: "text" },
+      {
+        key: "statsCards",
+        label: "Stat band",
+        type: "cards",
+        cardLabel: "stat",
+        cardFields: [
+          { key: "title", label: "Value (e.g. 20+)", type: "text" },
+          { key: "subtitle", label: "Label", type: "text" },
+        ],
+      },
+      {
+        key: "graduateCards",
+        label: "Recent graduates",
+        type: "cards",
+        cardLabel: "graduate",
+        cardFields: [
+          { key: "title", label: "Name", type: "text" },
+          { key: "subtitle", label: "Class & year (e.g. SSS 3 · 2025)", type: "text" },
+          { key: "text", label: "Achievement", type: "area" },
+          { key: "meta", label: "University (optional)", type: "text" },
+        ],
+      },
+      {
+        key: "voiceCards",
+        label: "Alumni voices",
+        type: "cards",
+        cardLabel: "voice",
+        cardFields: [
+          { key: "title", label: "Name", type: "text" },
+          { key: "subtitle", label: "Role", type: "text" },
+          { key: "text", label: "Quote", type: "area" },
+        ],
+      },
     ],
   },
   {
@@ -196,6 +349,33 @@ export const DEFAULT_PAGES: SitePages = {
     accreditKicker: "Accreditation",
     accreditHeading: "Recognised & accredited",
     ctaLabel: "Begin your child's journey",
+    storyImage: "/images/group pupils.png",
+    teamImage: "/images/staff.png",
+    valuesCards: [
+      { id: "values-1", title: "Academic Excellence", text: "We set high standards and support every learner to meet them." },
+      { id: "values-2", title: "Integrity", text: "We teach honesty, fairness and accountability in all things." },
+      { id: "values-3", title: "Character", text: "Discipline, respect and godly values shape our daily life." },
+      { id: "values-4", title: "Service", text: "We raise leaders who serve their communities and nation." },
+    ],
+    timelineCards: [
+      { id: "timeline-1", meta: "2006", title: "Foundation", text: "De Ultimate Glory Academy opens its gates with a small nursery/primary class." },
+      { id: "timeline-2", meta: "2013", title: "Secondary Section Launched", text: "The JSS arm begins, expanding the school into full primary and secondary education." },
+      { id: "timeline-3", meta: "2018", title: "Boarding & Laboratories", text: "Hostel facilities and an integrated science laboratory are commissioned." },
+      { id: "timeline-4", meta: "2024", title: "Digital Transformation", text: "Launch of the school portal with online results, fees and communication." },
+      { id: "timeline-5", meta: "Today", title: "1,200+ Students", text: "A growing family of students, staff and alumni whose results speak for themselves." },
+    ],
+    leadershipCards: [
+      { id: "leader-1", title: "Proprietor", subtitle: "Founder & Owner", image: "" },
+      { id: "leader-2", title: "Principal", subtitle: "Head of School", image: "" },
+      { id: "leader-3", title: "Registrar", subtitle: "Admissions & Records", image: "" },
+      { id: "leader-4", title: "ICT Officer", subtitle: "Digital & e-learning", image: "" },
+    ],
+    accreditCards: [
+      { id: "accredit-1", title: "Ministry of Education — Nasarawa State", image: "" },
+      { id: "accredit-2", title: "Nigerian Basic Education Curriculum (BEC)", image: "" },
+      { id: "accredit-3", title: "Accredited NECO & WAEC Candidate School", image: "" },
+      { id: "accredit-4", title: "National Examinations Registration", image: "" },
+    ],
   },
   academics: {
     heroTitle: "From first steps to final exams",
@@ -229,6 +409,30 @@ export const DEFAULT_PAGES: SitePages = {
     ctaKicker: "Ready to join us?",
     ctaHeading: "Give your child access to an education that truly prepares them",
     ctaLabel: "Apply for Admission",
+    primaryImage1: "/images/pupil hands up.png",
+    primaryImage2: "/images/single pupil.png",
+    secondaryImage1: "/images/sec reading.png",
+    secondaryImage2: "/images/single sec girl.png",
+    extraImage1: "/images/single sec boy.png",
+    extraImage2: "/images/sec reading.png",
+    primaryProgramCards: [
+      { id: "pp-1", title: "Pre-School & Foundation", subtitle: "Nursery – Primary 1", list: ["Early literacy & numeracy", "Phonics-based reading", "Play-based learning", "Character formation"] },
+      { id: "pp-2", title: "Middle Primary", subtitle: "Primary 2 – Primary 4", list: ["Strong English & Maths foundations", "Introduction to sciences", "Moral & civic education", "Creative arts & music"] },
+      { id: "pp-3", title: "Upper Primary", subtitle: "Primary 5 – Primary 6", list: ["Preparation for common entrance", "ICT & computer studies", "Project-based learning", "Leadership training"] },
+    ],
+    secondaryProgramCards: [
+      { id: "sp-1", title: "Junior Secondary (JSS 1 – 3)", subtitle: "JSS 1 – JSS 3", list: ["9-year basic education curriculum", "BECE preparation", "Clubs & societies", "Career exploration"] },
+      { id: "sp-2", title: "Senior Secondary (SSS 1 – 3)", subtitle: "SSS 1 – SSS 3", list: ["Preparation for national examinations", "Science, Arts & Commercial streams", "Mock examinations & tutorials", "University counselling"] },
+      { id: "sp-3", title: "Boarding & Pastoral Care", subtitle: "Optional boarding", list: ["Safe, supervised hostels", "Night study & tutorials", "Welfare & mentorship", "24/7 staff supervision"] },
+    ],
+    extraCards: [
+      { id: "extra-1", title: "Science Laboratory", text: "Hands-on practical work in biology, chemistry and physics." },
+      { id: "extra-2", title: "ICT & Computer Studies", text: "Digital literacy from primary through senior secondary." },
+      { id: "extra-3", title: "Library & Reading Culture", text: "A well-stocked library and weekly reading periods." },
+      { id: "extra-4", title: "Clubs & Societies", text: "Debate, press, JETS, sports, literary and drama clubs." },
+      { id: "extra-5", title: "Quizzes & Competitions", text: "Abacus, spelling bees, science fairs and maths olympiads." },
+      { id: "extra-6", title: "Sports & Athletics", text: "Inter-house sports, football, athletics and PE." },
+    ],
   },
   admissions: {
     heroTitle: "Joining our family is simple",
@@ -258,6 +462,15 @@ export const DEFAULT_PAGES: SitePages = {
     plan2Text: "Pay tuition, hostel and transport fees securely via Paystack — card, transfer or USSD.",
     plan3Title: "Scholarships",
     plan3Text: "Outstanding students and siblings may qualify for discounts and scholarships.",
+    feesImage1: "/images/group pupils.png",
+    feesImage2: "/images/group 1 sec.png",
+    stepsCards: [
+      { id: "step-1", title: "Fill the application form", text: "Complete the online application form or pick up a physical form at the school office." },
+      { id: "step-2", title: "Submit required documents", text: "Birth certificate, previous school report card, passport photograph and guardian ID." },
+      { id: "step-3", title: "Assessment / interview", text: "Candidates sit a short entrance assessment; parents meet with the admissions team." },
+      { id: "step-4", title: "Acceptance & payment", text: "Successful applicants receive an acceptance letter and fee schedule." },
+      { id: "step-5", title: "Resumption", text: "Confirm your admission on the portal and resume on the announced date." },
+    ],
   },
   contact: {
     heroTitle: "We would love to hear from you",
@@ -281,6 +494,8 @@ export const DEFAULT_PAGES: SitePages = {
       "BECE result (for JSS 1 & SSS 1 applicants, if available)",
     ],
     note: "After submitting, you will receive a confirmation reference. Keep it safe — you'll need it to track your application.",
+    image1: "/images/primarypupil.png",
+    image2: "/images/single sec girl.png",
   },
   graduates: {
     heroTitle: "Proud of every single one",
@@ -288,6 +503,29 @@ export const DEFAULT_PAGES: SitePages = {
       "Two decades of young people who passed through DUGA and went on to great things. This is their story.",
     alumniKicker: "Alumni Voices",
     alumniHeading: "What our alumni say",
+    statsCards: [
+      { id: "stat-1", title: "20+", subtitle: "Years of excellence" },
+      { id: "stat-2", title: "1,500+", subtitle: "Graduates & counting" },
+      { id: "stat-3", title: "96%", subtitle: "National exam credit pass" },
+      { id: "stat-4", title: "88%", subtitle: "Furthering to higher education" },
+    ],
+    graduateCards: [
+      { id: "grad-1", title: "Grace Adama", subtitle: "SSS 3 · 2025", text: "8 distinctions in WAEC", meta: "University of Jos" },
+      { id: "grad-2", title: "Emeka Okafor", subtitle: "SSS 3 · 2025", text: "Best student in Mathematics", meta: "Ahmadu Bello University" },
+      { id: "grad-3", title: "Fatima Yusuf", subtitle: "SSS 3 · 2024", text: "School dux", meta: "Nasarawa State University" },
+      { id: "grad-4", title: "David Musa", subtitle: "SSS 3 · 2024", text: "Outstanding in sciences", meta: "University of Nigeria, Nsukka" },
+      { id: "grad-5", title: "Blessing Adewale", subtitle: "SSS 3 · 2023", text: "Head girl & JAMB merit award", meta: "University of Lagos" },
+      { id: "grad-6", title: "Joseph Okon", subtitle: "SSS 3 · 2023", text: "National maths competition finalist", meta: "Federal University of Technology, Minna" },
+      { id: "grad-7", title: "Sarah Ibrahim", subtitle: "SSS 3 · 2022", text: "Distinctions in all subjects", meta: "Bayero University Kano" },
+      { id: "grad-8", title: "Peter Uche", subtitle: "SSS 3 · 2022", text: "Best in Physics", meta: "University of Benin" },
+      { id: "grad-9", title: "Esther Danladi", subtitle: "SSS 3 · 2021", text: "School dux & model student", meta: "University of Abuja" },
+      { id: "grad-10", title: "Samuel Nwosu", subtitle: "SSS 3 · 2021", text: "Top scorer in WAEC", meta: "Covenant University" },
+    ],
+    voiceCards: [
+      { id: "voice-1", title: "Grace Adama", subtitle: "DUGA 2025 · University of Jos", text: "DUGA gave me more than grades — it gave me discipline and the confidence to dream bigger." },
+      { id: "voice-2", title: "Emeka Okafor", subtitle: "DUGA 2025 · Ahmadu Bello University", text: "The teachers believed in me when I doubted myself. That support carried me through WAEC." },
+      { id: "voice-3", title: "Blessing Adewale", subtitle: "DUGA 2023 · University of Lagos", text: "As head girl I learnt leadership early. DUGA's boarding life shaped my character for life." },
+    ],
   },
   gallery: {
     heroTitle: "School life, in pictures",
@@ -322,6 +560,30 @@ export function isPageList(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((v) => typeof v === "string");
 }
 
+function randomId(): string {
+  const c = globalThis.crypto as Crypto | undefined;
+  if (c?.randomUUID) return c.randomUUID();
+  return `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function sanitizeCardRow(row: unknown, cardFields: CardFieldDef[]): PageCard {
+  const src = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+  const card: Record<string, unknown> = { id: typeof src.id === "string" && src.id ? src.id : randomId() };
+  for (const cf of cardFields) {
+    const v = src[cf.key];
+    if (cf.type === "list") {
+      card[cf.key] = Array.isArray(v)
+        ? v.map(String).filter(Boolean)
+        : typeof v === "string"
+          ? v.split("\n").map((s) => s.trim()).filter(Boolean)
+          : [];
+    } else {
+      card[cf.key] = typeof v === "string" ? v : "";
+    }
+  }
+  return card as unknown as PageCard;
+}
+
 /** Ensure a page object only contains known fields of the right shapes. */
 export function sanitizePage(incoming: Record<string, unknown> | undefined, def: PageDef): PageFields {
   const page: PageFields = {};
@@ -333,7 +595,12 @@ export function sanitizePage(incoming: Record<string, unknown> | undefined, def:
         : typeof val === "string"
           ? val.split("\n").map((s) => s.trim()).filter(Boolean)
           : (DEFAULT_PAGES[def.slug]?.[f.key] as string[] | undefined) ?? [];
+    } else if (f.type === "cards") {
+      page[f.key] = Array.isArray(val)
+        ? val.map((row) => sanitizeCardRow(row, f.cardFields ?? []))
+        : (DEFAULT_PAGES[def.slug]?.[f.key] as PageCard[] | undefined) ?? [];
     } else {
+      // "text", "area" and "image" all persist as a plain string.
       page[f.key] = typeof val === "string" ? val : (DEFAULT_PAGES[def.slug]?.[f.key] as string | undefined) ?? "";
     }
   }

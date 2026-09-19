@@ -3,30 +3,14 @@ import Link from "next/link";
 import PageHero from "@/components/PageHero";
 import Photo from "@/components/Photo";
 import { Reveal } from "@/components/motion";
-import { Book, Shield, Heart, Globe, ArrowRight, Target, Spark, Users, Cap } from "@/components/icons";
+import { Shield, ArrowRight, Target, Spark } from "@/components/icons";
 import { getPageContent } from "@/lib/site-data";
 import { assertSitePage } from "@/lib/site-gate";
+import type { PageCard } from "@duga/core";
 
-export const metadata: Metadata = {
-  title: "About Us",
-  description:
-    "The history, mission, vision, leadership and accreditation of De Ultimate Glory Academy, Akwanga, Nasarawa State.",
-};
-
-const VALUES = [
-  { icon: Book, title: "Academic Excellence", text: "We set high standards and support every learner to meet them." },
-  { icon: Shield, title: "Integrity", text: "We teach honesty, fairness and accountability in all things." },
-  { icon: Heart, title: "Character", text: "Discipline, respect and godly values shape our daily life." },
-  { icon: Globe, title: "Service", text: "We raise leaders who serve their communities and nation." },
-];
-
-const TIMELINE = [
-  { year: "2006", title: "Foundation", text: "De Ultimate Glory Academy opens its gates with a small nursery/primary class." },
-  { year: "2013", title: "Secondary Section Launched", text: "The JSS arm begins, expanding the school into full primary and secondary education." },
-  { year: "2018", title: "Boarding & Laboratories", text: "Hostel facilities and an integrated science laboratory are commissioned." },
-  { year: "2024", title: "Digital Transformation", text: "Launch of the school portal with online results, fees and communication." },
-  { year: "Today", title: "1,200+ Students", text: "A growing family of students, staff and alumni whose results speak for themselves." },
-];
+function cards(value: unknown): PageCard[] {
+  return Array.isArray(value) ? (value as PageCard[]) : [];
+}
 
 export default async function AboutPage() {
   await assertSitePage("about");
@@ -50,6 +34,12 @@ export default async function AboutPage() {
   const accreditKicker = String(page.accreditKicker ?? "");
   const accreditHeading = String(page.accreditHeading ?? "");
   const ctaLabel = String(page.ctaLabel ?? "");
+  const storyImage = String(page.storyImage ?? "") || "/images/group pupils.png";
+  const teamImage = String(page.teamImage ?? "") || "/images/staff.png";
+  const values = cards(page.valuesCards);
+  const timeline = cards(page.timelineCards);
+  const leadership = cards(page.leadershipCards);
+  const accreditations = cards(page.accreditCards);
 
   return (
     <>
@@ -79,7 +69,7 @@ export default async function AboutPage() {
               </div>
             </Reveal>
             <Reveal variant="right" delay={100}>
-              <Photo src="/images/group pupils.png" alt="Pupils of De Ultimate Glory Academy" ratio="tall" caption="Our campus family" />
+              <Photo src={storyImage} alt="Pupils of De Ultimate Glory Academy" ratio="tall" caption="Our campus family" />
             </Reveal>
           </div>
         </div>
@@ -117,18 +107,15 @@ export default async function AboutPage() {
             </Reveal>
           </div>
           <div className="mkt-grid mkt-grid--4">
-            {VALUES.map((v, i) => {
-              const Icon = v.icon;
-              return (
-                <Reveal key={v.title} delay={i * 80}>
-                  <div className="mkt-card" style={{ textAlign: "center" }}>
-                    <div className="mkt-icon" style={{ margin: "0 auto 16px" }}><Icon size={24} /></div>
-                    <h3>{v.title}</h3>
-                    <p>{v.text}</p>
-                  </div>
-                </Reveal>
-              );
-            })}
+            {values.map((v, i) => (
+              <Reveal key={v.id} delay={i * 80}>
+                <div className="mkt-card" style={{ textAlign: "center" }}>
+                  <div className="mkt-icon" style={{ margin: "0 auto 16px" }}><Shield size={24} /></div>
+                  <h3>{v.title}</h3>
+                  <p>{v.text}</p>
+                </div>
+              </Reveal>
+            ))}
           </div>
         </div>
       </section>
@@ -142,10 +129,10 @@ export default async function AboutPage() {
                 <span className="mkt-kicker">{timelineKicker}</span>
                 <h2 className="mkt-h2" style={{ marginBottom: 30 }}>{timelineHeading}</h2>
                 <div className="mkt-timeline">
-                  {TIMELINE.map((t) => (
-                    <div key={t.year} className="mkt-timeline-item">
+                  {timeline.map((t) => (
+                    <div key={t.id} className="mkt-timeline-item">
                       <h4>
-                        {t.year} — {t.title}
+                        {t.meta} — {t.title}
                       </h4>
                       <p>{t.text}</p>
                     </div>
@@ -158,21 +145,29 @@ export default async function AboutPage() {
                 <span className="mkt-kicker">{leadershipKicker}</span>
                 <h2 className="mkt-h2" style={{ marginBottom: 30 }}>{leadershipHeading}</h2>
                 <div style={{ marginBottom: 30 }}>
-                  <Photo src="/images/staff.png" alt="The staff of De Ultimate Glory Academy" ratio="wide" caption="Our dedicated team" />
+                  <Photo src={teamImage} alt="The staff of De Ultimate Glory Academy" ratio="wide" caption="Our dedicated team" />
                 </div>
                 <div className="mkt-grid mkt-grid--2">
-                  {[
-                    { initials: "PD", title: "Proprietor", role: "Founder & Owner" },
-                    { initials: "PR", title: "Principal", role: "Head of School" },
-                    { initials: "RG", title: "Registrar", role: "Admissions & Records" },
-                    { initials: "IT", title: "ICT Officer", role: "Digital & e-learning" },
-                  ].map((p) => (
-                    <div key={p.title} className="mkt-card" style={{ textAlign: "center" }}>
-                      <div className="duga-avatar" style={{ width: 62, height: 62, fontSize: 22, margin: "0 auto 14px", background: "var(--duga-primary)", color: "#fff" }}>
-                        {p.initials}
-                      </div>
+                  {leadership.map((p) => (
+                    <div key={p.id} className="mkt-card" style={{ textAlign: "center" }}>
+                      {p.image ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={p.image}
+                          alt=""
+                          style={{ width: 62, height: 62, borderRadius: "50%", objectFit: "cover", margin: "0 auto 14px", display: "block" }}
+                        />
+                      ) : (
+                        <div className="duga-avatar" style={{ width: 62, height: 62, fontSize: 22, margin: "0 auto 14px", background: "var(--duga-primary)", color: "#fff" }}>
+                          {(p.title ?? "")
+                            .split(" ")
+                            .map((w) => w[0])
+                            .slice(0, 2)
+                            .join("")}
+                        </div>
+                      )}
                       <h3>{p.title}</h3>
-                      <p style={{ fontSize: 13 }}>{p.role}</p>
+                      <p style={{ fontSize: 13 }}>{p.subtitle}</p>
                     </div>
                   ))}
                 </div>
@@ -192,22 +187,19 @@ export default async function AboutPage() {
             </Reveal>
           </div>
           <div className="mkt-grid mkt-grid--4">
-            {[
-              { icon: Shield, label: "Ministry of Education — Nasarawa State" },
-              { icon: Book, label: "Nigerian Basic Education Curriculum (BEC)" },
-              { icon: Users, label: "Accredited NECO & WAEC Candidate School" },
-              { icon: Cap, label: "National Examinations Registration" },
-            ].map((a, i) => {
-              const Icon = a.icon;
-              return (
-                <Reveal key={a.label} delay={i * 80}>
-                  <div className="mkt-card" style={{ textAlign: "center", padding: "24px 18px" }}>
-                    <div className="mkt-icon" style={{ margin: "0 auto 14px" }}><Icon size={24} /></div>
-                    <p style={{ fontSize: 14, fontWeight: 600, color: "var(--duga-primary-ink)", lineHeight: 1.5 }}>{a.label}</p>
-                  </div>
-                </Reveal>
-              );
-            })}
+            {accreditations.map((a, i) => (
+              <Reveal key={a.id} delay={i * 80}>
+                <div className="mkt-card" style={{ textAlign: "center", padding: "24px 18px" }}>
+                  {a.image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={a.image} alt="" style={{ height: 40, margin: "0 auto 14px", display: "block" }} />
+                  ) : (
+                    <div className="mkt-icon" style={{ margin: "0 auto 14px" }}><Shield size={24} /></div>
+                  )}
+                  <p style={{ fontSize: 14, fontWeight: 600, color: "var(--duga-primary-ink)", lineHeight: 1.5 }}>{a.title}</p>
+                </div>
+              </Reveal>
+            ))}
           </div>
           <Reveal>
             <div style={{ textAlign: "center", marginTop: 44 }}>

@@ -2655,6 +2655,7 @@ model Application {
   status           ApplicationStatus @default(RECEIVED)
   notes            String?
   parentId         String?
+  customFields     Json?
   submittedAt      DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 

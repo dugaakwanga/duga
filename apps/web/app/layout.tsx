@@ -5,7 +5,7 @@ import "./sleek.css";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import { school, siteUrl } from "@/lib/content";
-import { getWebsiteStatus } from "@/lib/site-data";
+import { getSiteData } from "@/lib/site-data";
 
 const manrope = Manrope({
   subsets: ["latin"],
@@ -48,7 +48,8 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const website = await getWebsiteStatus();
+  const { website, school: schoolInfo } = await getSiteData();
+  const logoUrl = schoolInfo?.logoUrl || "/images/logo.png";
 
   return (
     <html lang="en" className={`${manrope.variable} ${baloo.variable}`}>
@@ -65,7 +66,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <div className="mkt-maintenance-card">
               <span className="mkt-logo-badge">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/images/logo.png" alt="" />
+                <img src={logoUrl} alt="" />
               </span>
               <h1>{school.name}</h1>
               <p>{website.notice || "This website is currently offline. Please check back soon."}</p>
