@@ -1,7 +1,18 @@
 import { prisma } from "./prisma";
 import { computeGrade } from "../grading";
 import { getDefaultGradingScale } from "./school";
-import type { Student, StudentAttendance, Invoice, FeeStructure, SubjectScore, ReportCard as ReportCardRow } from "@duga/db";
+
+// Derived directly from the prisma client instance's own method signatures
+// rather than imported model type names — @duga/db's top-level generated
+// exports (Student, Invoice, ...) have proven unreliable to import by name
+// across environments, but the client instance itself has always typed
+// correctly everywhere, so anchoring to it here is the more portable choice.
+type ArrayElement<T> = T extends (infer U)[] ? U : never;
+type Student = ArrayElement<Awaited<ReturnType<typeof prisma.student.findMany>>>;
+type Invoice = ArrayElement<Awaited<ReturnType<typeof prisma.invoice.findMany>>>;
+type FeeStructure = ArrayElement<Awaited<ReturnType<typeof prisma.feeStructure.findMany>>>;
+type SubjectScore = ArrayElement<Awaited<ReturnType<typeof prisma.subjectScore.findMany>>>;
+type ReportCardRow = ArrayElement<Awaited<ReturnType<typeof prisma.reportCard.findMany>>>;
 
 export interface ResultComponent {
   name: string;
