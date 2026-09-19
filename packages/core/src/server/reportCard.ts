@@ -177,7 +177,7 @@ export async function collateReportCards(opts: CollateOptions) {
     where: { schoolId, classGroupId, termId },
     select: { date: true, studentId: true, status: true },
   });
-  const schoolDaysOpened = new Set(attendanceRows.map((r) => r.date.toISOString().slice(0, 10))).size;
+  const schoolDaysOpened = new Set(attendanceRows.map((r: { date: Date }) => r.date.toISOString().slice(0, 10))).size;
   const daysPresentByStudent = new Map<string, number>();
   for (const row of attendanceRows) {
     if (row.status === "PRESENT" || row.status === "LATE") {
@@ -189,16 +189,16 @@ export async function collateReportCards(opts: CollateOptions) {
   // applicable fee structures ("next term's fees"), same most-specific-wins
   // matching fees.ts uses when generating invoices.
   const [invoices, nextTermStructures] = await Promise.all([
-    prisma.invoice.findMany({ where: { schoolId, termId, studentId: { in: students.map((s) => s.id) } } }),
+    prisma.invoice.findMany({ where: { schoolId, termId, studentId: { in: students.map((s: (typeof students)[number]) => s.id) } } }),
     nextTerm
       ? prisma.feeStructure.findMany({ where: { schoolId, termId: nextTerm.id } })
       : Promise.resolve([]),
   ]);
-  const invoiceByStudent = new Map(invoices.map((inv) => [inv.studentId, inv]));
+  const invoiceByStudent = new Map(invoices.map((inv: (typeof invoices)[number]) => [inv.studentId, inv]));
   const nextTermFeesByStudent = new Map<string, number>();
   for (const student of students) {
     const applicable = nextTermStructures.filter(
-      (s) =>
+      (s: (typeof nextTermStructures)[number]) =>
         (!s.classGroupId || s.classGroupId === classGroupId) &&
         (!s.levelId || s.levelId === classGroup.levelId) &&
         (!s.section || s.section === student.section),
@@ -232,7 +232,7 @@ export async function collateReportCards(opts: CollateOptions) {
     subjectStudents[key] = [];
 
     const rows = await prisma.subjectScore.findMany({ where: { classSubjectId: cs.id, termId } });
-    const byStudent = new Map(rows.map((r) => [r.studentId, { ca: r.caTotal, exam: r.examTotal, total: r.total, scores: r.scores }]));
+    const byStudent = new Map(rows.map((r: (typeof rows)[number]) => [r.studentId, { ca: r.caTotal, exam: r.examTotal, total: r.total, scores: r.scores }]));
     subjectScoreRows[key] = byStudent;
 
     for (const student of students) {
@@ -247,7 +247,7 @@ export async function collateReportCards(opts: CollateOptions) {
     classAverageBySubject[key] = totals.length ? Math.round((totals.reduce((a, b) => a + b, 0) / totals.length) * 100) / 100 : 0;
   }
 
-  const allAverages = students.map((s) => {
+  const allAverages = students.map((s: (typeof students)[number]) => {
     const total = studentTotals[s.id];
     const count = studentCount[s.id];
     return count ? (total ?? 0) / count : 0;
@@ -263,8 +263,8 @@ export async function collateReportCards(opts: CollateOptions) {
   // One batch read for every student's existing card (instead of one query
   // per student) — needed only to preserve `psychomotor`/`publishedAt` state
   // that an upsert's `update` branch can't conditionally read for itself.
-  const existingCards = await prisma.reportCard.findMany({ where: { termId, studentId: { in: students.map((s) => s.id) } } });
-  const existingByStudent = new Map(existingCards.map((c) => [c.studentId, c]));
+  const existingCards = await prisma.reportCard.findMany({ where: { termId, studentId: { in: students.map((s: (typeof students)[number]) => s.id) } } });
+  const existingByStudent = new Map(existingCards.map((c: (typeof existingCards)[number]) => [c.studentId, c]));
 
   // A remote Supabase pooler connection is the bottleneck here, not CPU —
   // cap how many upserts run at once instead of firing them all together.
