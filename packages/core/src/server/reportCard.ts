@@ -195,7 +195,7 @@ export async function collateReportCards(opts: CollateOptions) {
       ? prisma.feeStructure.findMany({ where: { schoolId, termId: nextTerm.id } })
       : Promise.resolve([]),
   ]);
-  const invoiceByStudent = new Map(invoices.map((inv: (typeof invoices)[number]) => [inv.studentId, inv]));
+  const invoiceByStudent = new Map(invoices.map((inv: (typeof invoices)[number]) => [inv.studentId, inv] as const));
   const nextTermFeesByStudent = new Map<string, number>();
   for (const student of students) {
     const applicable = nextTermStructures.filter(
@@ -233,7 +233,7 @@ export async function collateReportCards(opts: CollateOptions) {
     subjectStudents[key] = [];
 
     const rows = await prisma.subjectScore.findMany({ where: { classSubjectId: cs.id, termId } });
-    const byStudent = new Map(rows.map((r: (typeof rows)[number]) => [r.studentId, { ca: r.caTotal, exam: r.examTotal, total: r.total, scores: r.scores }]));
+    const byStudent = new Map(rows.map((r: (typeof rows)[number]) => [r.studentId, { ca: r.caTotal, exam: r.examTotal, total: r.total, scores: r.scores }] as const));
     subjectScoreRows[key] = byStudent;
 
     for (const student of students) {
@@ -265,7 +265,7 @@ export async function collateReportCards(opts: CollateOptions) {
   // per student) — needed only to preserve `psychomotor`/`publishedAt` state
   // that an upsert's `update` branch can't conditionally read for itself.
   const existingCards = await prisma.reportCard.findMany({ where: { termId, studentId: { in: students.map((s: (typeof students)[number]) => s.id) } } });
-  const existingByStudent = new Map(existingCards.map((c: (typeof existingCards)[number]) => [c.studentId, c]));
+  const existingByStudent = new Map(existingCards.map((c: (typeof existingCards)[number]) => [c.studentId, c] as const));
 
   // A remote Supabase pooler connection is the bottleneck here, not CPU —
   // cap how many upserts run at once instead of firing them all together.
