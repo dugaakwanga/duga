@@ -1,5 +1,33 @@
 import type { NextConfig } from "next";
 import path from "node:path";
+import { execSync } from "node:child_process";
+import fs from "node:fs";
+
+// Belt-and-braces: regenerate the Prisma Client here, at the one point
+// Next.js always runs before anything else (config module evaluation),
+// regardless of what actually invoked the build (vercel.json's buildCommand,
+// a Vercel dashboard build-command override, `npm run build`, or `next
+// build` called directly — all of them load this file first). This exists
+// because multiple deploys failed with "@prisma/client did not initialize
+// yet" despite vercel.json running `prisma generate` and a postinstall
+// script doing the same — neither's output ever appeared in the build log,
+// so something in that pipeline was silently skipping both. Skipped when
+// the generated client is already present and newer than the schema, so
+// local `next dev` restarts stay fast.
+(function ensurePrismaClientGenerated() {
+  const schemaPath = path.join(__dirname, "../../packages/db/prisma/schema.prisma");
+  const clientEntry = path.join(__dirname, "../../node_modules/.prisma/client/index.js");
+  try {
+    const needsGenerate =
+      !fs.existsSync(clientEntry) || fs.statSync(clientEntry).mtimeMs < fs.statSync(schemaPath).mtimeMs;
+    if (needsGenerate) {
+      execSync(`npx prisma generate --schema "${schemaPath}"`, { stdio: "inherit", cwd: __dirname });
+    }
+  } catch (e) {
+    console.error("[next.config.ts] Prisma Client generation failed:", e);
+    throw e;
+  }
+})();
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: path.join(__dirname, "../.."),
