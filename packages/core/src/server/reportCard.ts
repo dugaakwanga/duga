@@ -2,17 +2,48 @@ import { prisma } from "./prisma";
 import { computeGrade } from "../grading";
 import { getDefaultGradingScale } from "./school";
 
-// Derived directly from the prisma client instance's own method signatures
-// rather than imported model type names — @duga/db's top-level generated
-// exports (Student, Invoice, ...) have proven unreliable to import by name
-// across environments, but the client instance itself has always typed
-// correctly everywhere, so anchoring to it here is the more portable choice.
-type ArrayElement<T> = T extends (infer U)[] ? U : never;
-type Student = ArrayElement<Awaited<ReturnType<typeof prisma.student.findMany>>>;
-type Invoice = ArrayElement<Awaited<ReturnType<typeof prisma.invoice.findMany>>>;
-type FeeStructure = ArrayElement<Awaited<ReturnType<typeof prisma.feeStructure.findMany>>>;
-type SubjectScore = ArrayElement<Awaited<ReturnType<typeof prisma.subjectScore.findMany>>>;
-type ReportCardRow = ArrayElement<Awaited<ReturnType<typeof prisma.reportCard.findMany>>>;
+// Hand-written, minimal row shapes (only the fields this file actually
+// reads) instead of any Prisma-derived type — every attempt to reference a
+// Prisma-generated type here, whether via a local variable's inferred type,
+// an imported model name, or the client instance's own method signature,
+// has resolved differently (or to unknown/never) in Vercel's build
+// environment than it does locally. Plain hand-written interfaces have been
+// the one approach that's held up everywhere (see push.ts), so every row
+// type in this file now follows that same pattern.
+interface StudentRow {
+  id: string;
+  section: string;
+  dateOfBirth: Date | null;
+}
+interface InvoiceRow {
+  studentId: string;
+  // Prisma's Decimal type — left as `any` so it can flow straight through
+  // to another Prisma write (feesOwed) or into Number(...) without needing
+  // to reference Prisma's own Decimal export.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  balance: any;
+}
+interface FeeStructureRow {
+  classGroupId: string | null;
+  levelId: string | null;
+  section: string | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  amount: any;
+}
+interface SubjectScoreRow {
+  studentId: string;
+  caTotal: number;
+  examTotal: number;
+  total: number;
+  scores: unknown;
+}
+interface ReportCardRow {
+  id: string;
+  studentId: string;
+  isPublished: boolean;
+  publishedAt: Date | null;
+  publishedBy: string | null;
+}
 
 export interface ResultComponent {
   name: string;
@@ -202,24 +233,24 @@ export async function collateReportCards(opts: CollateOptions) {
   // applicable fee structures ("next term's fees"), same most-specific-wins
   // matching fees.ts uses when generating invoices.
   const [invoices, nextTermStructures] = await Promise.all([
-    prisma.invoice.findMany({ where: { schoolId, termId, studentId: { in: students.map((s: Student) => s.id) } } }),
+    prisma.invoice.findMany({ where: { schoolId, termId, studentId: { in: students.map((s: StudentRow) => s.id) } } }),
     nextTerm
       ? prisma.feeStructure.findMany({ where: { schoolId, termId: nextTerm.id } })
       : Promise.resolve([]),
   ]);
-  const invoiceByStudent = new Map<string, Invoice>(
-    invoices.map((inv: Invoice): [string, Invoice] => [inv.studentId, inv]),
+  const invoiceByStudent = new Map<string, InvoiceRow>(
+    invoices.map((inv: InvoiceRow): [string, InvoiceRow] => [inv.studentId, inv]),
   );
   const nextTermFeesByStudent = new Map<string, number>();
   for (const student of students) {
     const applicable = nextTermStructures.filter(
-      (s: FeeStructure) =>
+      (s: FeeStructureRow) =>
         (!s.classGroupId || s.classGroupId === classGroupId) &&
         (!s.levelId || s.levelId === classGroup.levelId) &&
         (!s.section || s.section === student.section),
     );
     if (applicable.length) {
-      nextTermFeesByStudent.set(student.id, applicable.reduce((a: number, s: FeeStructure) => a + Number(s.amount), 0));
+      nextTermFeesByStudent.set(student.id, applicable.reduce((a: number, s: FeeStructureRow) => a + Number(s.amount), 0));
     }
   }
 
@@ -248,7 +279,7 @@ export async function collateReportCards(opts: CollateOptions) {
 
     const rows = await prisma.subjectScore.findMany({ where: { classSubjectId: cs.id, termId } });
     const byStudent = new Map<string, { ca: number; exam: number; total: number; scores: unknown }>(
-      rows.map((r: SubjectScore): [string, { ca: number; exam: number; total: number; scores: unknown }] => [
+      rows.map((r: SubjectScoreRow): [string, { ca: number; exam: number; total: number; scores: unknown }] => [
         r.studentId,
         { ca: r.caTotal, exam: r.examTotal, total: r.total, scores: r.scores },
       ]),
@@ -267,7 +298,7 @@ export async function collateReportCards(opts: CollateOptions) {
     classAverageBySubject[key] = totals.length ? Math.round((totals.reduce((a: number, b: number) => a + b, 0) / totals.length) * 100) / 100 : 0;
   }
 
-  const allAverages = students.map((s: Student) => {
+  const allAverages = students.map((s: StudentRow) => {
     const total = studentTotals[s.id];
     const count = studentCount[s.id];
     return count ? (total ?? 0) / count : 0;
@@ -283,7 +314,7 @@ export async function collateReportCards(opts: CollateOptions) {
   // One batch read for every student's existing card (instead of one query
   // per student) — needed only to preserve `psychomotor`/`publishedAt` state
   // that an upsert's `update` branch can't conditionally read for itself.
-  const existingCards = await prisma.reportCard.findMany({ where: { termId, studentId: { in: students.map((s: Student) => s.id) } } });
+  const existingCards = await prisma.reportCard.findMany({ where: { termId, studentId: { in: students.map((s: StudentRow) => s.id) } } });
   const existingByStudent = new Map<string, ReportCardRow>(
     existingCards.map((c: ReportCardRow): [string, ReportCardRow] => [c.studentId, c]),
   );
@@ -292,7 +323,7 @@ export async function collateReportCards(opts: CollateOptions) {
   // cap how many upserts run at once instead of firing them all together.
   const WRITE_CONCURRENCY = 4;
 
-  const reportCards = await mapWithConcurrency(students, WRITE_CONCURRENCY, async (student: Student) => {
+  const reportCards = await mapWithConcurrency(students, WRITE_CONCURRENCY, async (student: StudentRow) => {
     const total = studentTotals[student.id];
     const count = studentCount[student.id];
     const average = count ? (total ?? 0) / count : 0;
@@ -344,12 +375,12 @@ export async function collateReportCards(opts: CollateOptions) {
   });
 
   interface ItemJob {
-    student: Student;
+    student: StudentRow;
     reportCard: ReportCardRow;
     subjectKey: string;
     info: { id: string; name: string; classSubjectId: string };
   }
-  const itemJobs: ItemJob[] = students.flatMap((student: Student, i: number) =>
+  const itemJobs: ItemJob[] = students.flatMap((student: StudentRow, i: number) =>
     Object.entries(subjectsInReport).map(([subjectKey, info]) => ({ student, reportCard: reportCards[i]!, subjectKey, info })),
   );
   await mapWithConcurrency(itemJobs, WRITE_CONCURRENCY, async ({ student, reportCard, subjectKey, info }: ItemJob) => {
