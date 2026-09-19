@@ -51,7 +51,7 @@ export async function sendPush(opts: NotifyOptions): Promise<void> {
     // handler — and its showNotification() call — runs every time, on
     // every platform.
     const payload = {
-      tokens: tokens.map((t) => t.token),
+      tokens: tokens.map((t: { id: string; token: string }) => t.token),
       data: {
         title: opts.title,
         body: opts.body || "",

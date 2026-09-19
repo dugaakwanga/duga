@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
 
-    const domain = String(body.domain || "").trim().toLowerCase() || "deultimateglory.com";
+    const domain = String(body.domain || "").trim().toLowerCase() || "dugaakwanga.com";
     const school = await prisma.school.findFirst({
       where: { domain },
       include: { subscription: true },

@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const domain = String(body.domain || "").trim().toLowerCase() || "deultimateglory.com";
+    const domain = String(body.domain || "").trim().toLowerCase() || "dugaakwanga.com";
     const school = await prisma.school.findFirst({ where: { domain } });
     if (!school) {
       return cors(NextResponse.json({ ok: false, error: "School not found" }, { status: 404 }));

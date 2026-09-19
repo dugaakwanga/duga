@@ -28,7 +28,7 @@ async function loadPta(schoolId: string) {
 
 export async function GET(request: NextRequest) {
   try {
-    const domain = String(request.nextUrl.searchParams.get("domain") || "").trim().toLowerCase() || "deultimateglory.com";
+    const domain = String(request.nextUrl.searchParams.get("domain") || "").trim().toLowerCase() || "dugaakwanga.com";
     const school = await prisma.school.findFirst({
       where: { domain },
       select: {

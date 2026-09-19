@@ -406,6 +406,16 @@ function sectionLabel(s: Section): string {
   return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
 }
 
+// Remounts the whole page subtree whenever the active section changes, so
+// every page's data-fetching effects (almost always `useEffect(fn, [])`,
+// mount-only) run again against the new section instead of leaving stale,
+// unfiltered data on screen — switching the section pill alone previously
+// updated the pill but not any page that had already fetched its data.
+function SectionKeyedContent({ children }: { children: React.ReactNode }) {
+  const { section } = useSection();
+  return <main className="portal-content" key={section ?? "all"}>{children}</main>;
+}
+
 // Section navigator for the topbar. Admins/bursars get a dropdown to switch
 // between the school sections; teachers see an auto-scoped locked pill.
 // Owners also get a quick "+" to add another school section.
@@ -680,7 +690,7 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
           </div>
         </header>
 
-        <main className="portal-content">{children}</main>
+        <SectionKeyedContent>{children}</SectionKeyedContent>
       </div>
 
       {/* AI assistant floating panel */}
