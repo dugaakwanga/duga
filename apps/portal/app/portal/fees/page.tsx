@@ -136,6 +136,18 @@ export default function FeesPage() {
   const [chargeTarget, setChargeTarget] = useState<Invoice | null>(null);
   const [chargeForm, setChargeForm] = useState({ description: "", amount: "" });
   const [chargeBusy, setChargeBusy] = useState(false);
+  // Record a payment directly against a student with no invoice yet — the
+  // server's recordManual action already supports this (see fees.ts), but
+  // until now the only UI entry point was the "Record payment" button on an
+  // existing invoice row, so a bursar had nothing to click for a student who
+  // doesn't have one yet.
+  const [standalonePayOpen, setStandalonePayOpen] = useState(false);
+  const [studentSearch, setStudentSearch] = useState("");
+  const [studentResults, setStudentResults] = useState<Array<{ id: string; admissionNumber: string; user: { firstName: string; lastName: string } }>>([]);
+  const [studentSearchBusy, setStudentSearchBusy] = useState(false);
+  const [standaloneStudent, setStandaloneStudent] = useState<{ id: string; name: string } | null>(null);
+  const [standaloneForm, setStandaloneForm] = useState({ amount: "", method: "CASH", coversTo: "" });
+  const [standaloneBusy, setStandaloneBusy] = useState(false);
   const isStaff = role === "OWNER" || role === "BURSAR";
   const { section } = useSection();
 
@@ -232,6 +244,49 @@ export default function FeesPage() {
       alert((e as Error).message);
     } finally {
       setPaying(null);
+    }
+  }
+
+  function openStandalonePayment() {
+    setStandalonePayOpen(true);
+    setStudentSearch("");
+    setStudentResults([]);
+    setStandaloneStudent(null);
+    setStandaloneForm({ amount: "", method: "CASH", coversTo: "" });
+  }
+
+  async function searchStudentsForPayment() {
+    if (!studentSearch.trim()) return setStudentResults([]);
+    setStudentSearchBusy(true);
+    try {
+      const d = await api<{ items: Array<{ id: string; admissionNumber: string; user: { firstName: string; lastName: string } }> }>("students", {
+        query: { search: studentSearch.trim() },
+      });
+      setStudentResults(d.items);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setStudentSearchBusy(false);
+    }
+  }
+
+  async function submitStandalonePayment() {
+    if (!standaloneStudent) return;
+    const amount = Number(standaloneForm.amount);
+    if (!amount || amount <= 0) return alert("Enter a valid amount");
+    setStandaloneBusy(true);
+    try {
+      await api("fees/recordManual", {
+        method: "POST",
+        body: { studentId: standaloneStudent.id, amount, method: standaloneForm.method, coversTo: standaloneForm.coversTo || undefined },
+      });
+      setStandalonePayOpen(false);
+      await load();
+      alert(`Payment recorded for ${standaloneStudent.name}.`);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setStandaloneBusy(false);
     }
   }
 
@@ -474,6 +529,7 @@ export default function FeesPage() {
             <div style={{ display: "flex", gap: 8 }}>
               <Button variant="outline" onClick={() => openSetup("type")}><Icon name="plus" size={16} /> Add fee type</Button>
               <Button variant="outline" onClick={sendReminders}><Icon name="notifications" size={16} /> Send reminders</Button>
+              <Button variant="outline" onClick={openStandalonePayment}><Icon name="plus" size={16} /> Record a payment</Button>
               <Button onClick={() => setOpen(true)}><Icon name="plus" size={16} /> Generate invoices</Button>
             </div>
           ) : undefined
@@ -836,6 +892,69 @@ export default function FeesPage() {
           <Button variant="ghost" onClick={() => setPayTarget(null)}>Cancel</Button>
           <Button onClick={submitRecordPayment} loading={paying === payTarget}>Record payment</Button>
         </div>
+      </Modal>
+
+      <Modal open={standalonePayOpen} onClose={() => setStandalonePayOpen(false)} title="Record a payment">
+        <Alert tone="info">For cash, bank transfer or any payment taken outside the app — works even if this student has no invoice yet.</Alert>
+        {!standaloneStudent ? (
+          <>
+            <Field label="Find student" hint="Search by name or admission number.">
+              <div style={{ display: "flex", gap: 8 }}>
+                <Input
+                  value={studentSearch}
+                  onChange={(e) => setStudentSearch(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && searchStudentsForPayment()}
+                  placeholder="e.g. Chidi or DUGA/2026/001"
+                />
+                <Button variant="outline" onClick={searchStudentsForPayment} loading={studentSearchBusy}>Search</Button>
+              </div>
+            </Field>
+            {studentResults.length > 0 && (
+              <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
+                {studentResults.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setStandaloneStudent({ id: s.id, name: `${s.user.firstName} ${s.user.lastName}` })}
+                    style={{
+                      display: "flex", justifyContent: "space-between", padding: "10px 12px",
+                      border: "1px solid var(--duga-border)", borderRadius: 8, background: "transparent",
+                      cursor: "pointer", textAlign: "left", fontSize: 13.5,
+                    }}
+                  >
+                    <span style={{ fontWeight: 600 }}>{s.user.firstName} {s.user.lastName}</span>
+                    <span style={{ color: "var(--duga-muted)" }}>{s.admissionNumber}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <span style={{ fontWeight: 600 }}>{standaloneStudent.name}</span>
+              <Button variant="ghost" size="sm" onClick={() => setStandaloneStudent(null)}>Change student</Button>
+            </div>
+            <Field label="Amount received (₦)" required>
+              <Input type="number" min={0} value={standaloneForm.amount} onChange={(e) => setStandaloneForm({ ...standaloneForm, amount: e.target.value })} />
+            </Field>
+            <Field label="Method">
+              <Select value={standaloneForm.method} onChange={(e) => setStandaloneForm({ ...standaloneForm, method: e.target.value })}>
+                <option value="CASH">Cash</option>
+                <option value="BANK_TRANSFER">Bank transfer</option>
+                <option value="TRANSFER">Transfer</option>
+                <option value="USSD">USSD</option>
+              </Select>
+            </Field>
+            <Field label="This payment covers up to (optional)" hint="Declare exactly what period this payment covers, e.g. the end of a term.">
+              <Input type="date" value={standaloneForm.coversTo} onChange={(e) => setStandaloneForm({ ...standaloneForm, coversTo: e.target.value })} />
+            </Field>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+              <Button variant="ghost" onClick={() => setStandalonePayOpen(false)}>Cancel</Button>
+              <Button onClick={submitStandalonePayment} loading={standaloneBusy}>Record payment</Button>
+            </div>
+          </>
+        )}
       </Modal>
 
       <Modal open={!!grantTarget} onClose={() => setGrantTarget(null)} title={grantTarget ? `Grant exception — ${grantTarget.name}` : ""}>
