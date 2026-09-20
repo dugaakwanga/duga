@@ -1,6 +1,6 @@
 import { prisma } from "@duga/core/server";
 import { withinRadiusMeters, schoolConfig } from "@duga/core";
-import { logAudit } from "@duga/core/server";
+import { logAudit, getSetting } from "@duga/core/server";
 import type { Module } from ".";
 import { can, todayUTC, isoDay, str, num, resolveSection, sectionsOfTeacher } from "../helpers";
 import type { Ctx } from "@/app/api/v1/[...path]/route";
@@ -52,6 +52,23 @@ function parseAttendanceDate(value: string) {
   const date = new Date(`${value}T00:00:00Z`);
   if (Number.isNaN(date.getTime())) throw new Error("Use a valid attendance date");
   return date;
+}
+
+// A teacher may only take/correct attendance for today unless the owner/
+// admin has explicitly turned on "allow teachers to record attendance for
+// past dates" (Settings → Restrictions). An owner/admin can always backdate
+// regardless — this only gates a TEACHER caller. Previously this was only
+// enforced by the teacher-facing UI hiding the date picker; nothing stopped
+// a teacher from backdating via a direct API call.
+async function assertCanBackdate(schoolId: string, role: string, dateObj: Date): Promise<void> {
+  if (role !== "TEACHER" || dateObj.getTime() >= todayUTC().getTime()) return;
+  const restrictions = await getSetting(schoolId, "restrictions");
+  const allowed = !!restrictions && typeof restrictions === "object" && (restrictions as Record<string, unknown>).allowTeacherBackdatedAttendance === true;
+  if (!allowed) {
+    const err = new Error("Ask an admin to turn on \"Allow teachers to record attendance for past dates\" in Settings first") as Error & { status?: number };
+    err.status = 403;
+    throw err;
+  }
 }
 
 // Who may mark/edit a given class's attendance: a teacher only for a class
@@ -160,6 +177,7 @@ export const attendanceModule: Module = {
     if (section && classGroup.level.section !== section) throw new Error("You can only take attendance in your active section");
 
     const dateObj = parseAttendanceDate(date);
+    await assertCanBackdate(schoolId, role, dateObj);
     const roster = await prisma.student.findMany({ where: { schoolId, currentClassGroupId: classGroupId, status: "ACTIVE" }, select: { id: true } });
     const rosterIds = new Set(roster.map((student) => student.id));
     if (entries.some((entry) => !rosterIds.has(entry.studentId))) throw new Error("Attendance can only be recorded for active students in this class");
@@ -211,6 +229,7 @@ export const attendanceModule: Module = {
       const classGroup = await resolveMarkableClass(schoolId, classGroupId, role, ctx.session.user.teacher?.id);
       const section = await resolveSection(ctx);
       if (section && classGroup.level.section !== section) throw new Error("You can only take attendance in your active section");
+      await assertCanBackdate(schoolId, role, dateObj);
 
       const students = await prisma.student.findMany({
         where: { schoolId, currentClassGroupId: classGroupId, status: "ACTIVE" },
@@ -220,6 +239,10 @@ export const attendanceModule: Module = {
       const existing = await prisma.studentAttendance.findMany({ where: { schoolId, classGroupId, date: dateObj } });
       const byStudent = new Map(existing.map((r) => [r.studentId, r]));
 
+      // "UNMARKED" for a student not yet enrolled on this date is deliberate
+      // — the client must not default them to PRESENT the way it does for a
+      // genuinely-unmarked-but-enrolled student, so a backdated roster never
+      // silently invents attendance for someone who wasn't at the school yet.
       const roster = students.map((s) => {
         const row = byStudent.get(s.id);
         return {
@@ -228,6 +251,7 @@ export const attendanceModule: Module = {
           name: `${s.user.firstName} ${s.user.lastName}`,
           status: row?.status ?? "UNMARKED",
           remark: row?.remark ?? null,
+          enrolledOnDate: s.enrollmentDate <= dateObj,
         };
       });
       return { classGroupId, date, roster, summary: existing.reduce<Record<string, number>>((acc, r) => { acc[r.status] = (acc[r.status] ?? 0) + 1; return acc; }, {}) };

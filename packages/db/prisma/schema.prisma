@@ -1685,6 +1685,13 @@ model ReportCard {
   studentAge         Int?
   schoolDaysOpened   Int?
   daysPresent        Int?
+  // How many times attendance was actually recorded for THIS student (any
+  // status) — the denominator for their own attendance percentage. Deliberately
+  // separate from schoolDaysOpened (the whole class's calendar-aware count,
+  // shown as context) so a student who joined mid-term, or whose teacher
+  // hasn't backdated every day yet, is never judged against days nobody
+  // ever recorded for them.
+  daysRecorded       Int?
   feesOwed           Decimal?
   nextTermFees       Decimal?
   feesPayableBy      DateTime?

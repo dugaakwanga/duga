@@ -51,6 +51,7 @@ interface StudentCard {
     studentAge: number | null;
     schoolDaysOpened: number | null;
     daysPresent: number | null;
+    daysRecorded: number | null;
     feesOwed: number | string | null;
     nextTermFees: number | string | null;
     feesPayableBy: string | null;
@@ -138,6 +139,7 @@ export default function MyClassPage() {
           studentAge: studentCard.reportCard.studentAge,
           schoolDaysOpened: studentCard.reportCard.schoolDaysOpened,
           daysPresent: studentCard.reportCard.daysPresent,
+          daysRecorded: studentCard.reportCard.daysRecorded,
           feesOwed: studentCard.reportCard.feesOwed !== null && studentCard.reportCard.feesOwed !== undefined ? Number(studentCard.reportCard.feesOwed) : null,
           nextTermFees: studentCard.reportCard.nextTermFees !== null && studentCard.reportCard.nextTermFees !== undefined ? Number(studentCard.reportCard.nextTermFees) : null,
           feesPayableBy: studentCard.reportCard.feesPayableBy,

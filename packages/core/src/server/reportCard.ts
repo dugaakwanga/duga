@@ -1,6 +1,6 @@
 import { prisma } from "./prisma";
 import { computeGrade } from "../grading";
-import { getDefaultGradingScale } from "./school";
+import { getDefaultGradingScale, computeDaysSchoolOpened } from "./school";
 
 // Hand-written, minimal row shapes (only the fields this file actually
 // reads) instead of any Prisma-derived type — every attempt to reference a
@@ -214,16 +214,29 @@ export async function collateReportCards(opts: CollateOptions) {
     where: { schoolId, sessionId: term.sessionId, termNumber: term.termNumber + 1 },
   });
 
-  // Attendance: how many distinct days this class took attendance this term
-  // ("No. of times school opened"), and how many of those each student was
-  // marked present for.
-  const attendanceRows = await prisma.studentAttendance.findMany({
-    where: { schoolId, classGroupId, termId },
-    select: { date: true, studentId: true, status: true },
-  });
-  const schoolDaysOpened = new Set(attendanceRows.map((r: { date: Date }) => r.date.toISOString().slice(0, 10))).size;
+  // Attendance has two distinct numbers, deliberately not divided by each
+  // other:
+  // - schoolDaysOpened: this class's own calendar-aware "days opened" this
+  //   term (school-day weekdays, minus declared holidays, among days
+  //   attendance was actually taken) — shown on the card as context, not as
+  //   a percentage denominator. See computeDaysSchoolOpened.
+  // - daysRecorded / daysPresent: purely this student's own attendance rows
+  //   — how many times a teacher actually recorded THEM (any status), and
+  //   how many of those were PRESENT/LATE. A student who enrolled mid-term,
+  //   or whose earlier days haven't been backdated yet, is judged only
+  //   against days someone actually recorded for them — never against days
+  //   nobody marked them at all, backdated or not.
+  const [{ daysOpened: schoolDaysOpened }, attendanceRows] = await Promise.all([
+    computeDaysSchoolOpened(schoolId, termId, classGroupId),
+    prisma.studentAttendance.findMany({
+      where: { schoolId, classGroupId, termId },
+      select: { studentId: true, status: true },
+    }),
+  ]);
   const daysPresentByStudent = new Map<string, number>();
+  const daysRecordedByStudent = new Map<string, number>();
   for (const row of attendanceRows) {
+    daysRecordedByStudent.set(row.studentId, (daysRecordedByStudent.get(row.studentId) ?? 0) + 1);
     if (row.status === "PRESENT" || row.status === "LATE") {
       daysPresentByStudent.set(row.studentId, (daysPresentByStudent.get(row.studentId) ?? 0) + 1);
     }
@@ -344,6 +357,7 @@ export async function collateReportCards(opts: CollateOptions) {
       studentAge: ageAsOf(student.dateOfBirth),
       schoolDaysOpened,
       daysPresent: daysPresentByStudent.get(student.id) ?? 0,
+      daysRecorded: daysRecordedByStudent.get(student.id) ?? 0,
       feesOwed: invoice ? invoice.balance : undefined,
       nextTermFees: nextTermFees !== undefined ? nextTermFees : undefined,
       feesPayableBy: nextTerm?.startDate ?? undefined,

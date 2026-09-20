@@ -24,6 +24,7 @@ interface SessionOpt {
 interface SchoolDaysConfig {
   weekdays: Record<string, boolean>;
   holidays: Array<{ date: string; name: string }>;
+  sessionsPerDay: 1 | 2;
 }
 
 interface RestrictionsConfig {
@@ -31,6 +32,7 @@ interface RestrictionsConfig {
   applicationsOpen: boolean;
   feeGatedFeatures: string[];
   allowStudentToStudentChat: boolean;
+  allowTeacherBackdatedAttendance: boolean;
 }
 
 interface SettingsData {
@@ -65,8 +67,9 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [days, setDays] = useState<Record<string, boolean>>(DEFAULT_DAYS);
   const [holidays, setHolidays] = useState<Array<{ date: string; name: string }>>([]);
+  const [sessionsPerDay, setSessionsPerDay] = useState<1 | 2>(1);
   const [holidayForm, setHolidayForm] = useState<{ date: string; name: string }>({ date: "", name: "" });
-  const [restrictions, setRestrictions] = useState<RestrictionsConfig>({ resultsRequirePayment: true, applicationsOpen: true, feeGatedFeatures: ["tests", "assignments", "elearn", "games", "live", "results"], allowStudentToStudentChat: false });
+  const [restrictions, setRestrictions] = useState<RestrictionsConfig>({ resultsRequirePayment: true, applicationsOpen: true, feeGatedFeatures: ["tests", "assignments", "elearn", "games", "live", "results"], allowStudentToStudentChat: false, allowTeacherBackdatedAttendance: false });
   const [termOpen, setTermOpen] = useState(false);
   const [termForm, setTermForm] = useState<Record<string, string>>({});
   const [termBusy, setTermBusy] = useState(false);
@@ -91,6 +94,7 @@ export default function SettingsPage() {
         if (d.schoolDays) {
           setDays({ ...DEFAULT_DAYS, ...d.schoolDays.weekdays });
           setHolidays(d.schoolDays.holidays ?? []);
+          setSessionsPerDay(d.schoolDays.sessionsPerDay === 2 ? 2 : 1);
         }
         if (d.restrictions) {
           setRestrictions({ ...d.restrictions });
@@ -140,7 +144,7 @@ export default function SettingsPage() {
   async function saveSchoolDays() {
     setError(null);
     try {
-      await api("settings/saveSchoolDays", { method: "POST", body: { weekdays: days, holidays } });
+      await api("settings/saveSchoolDays", { method: "POST", body: { weekdays: days, holidays, sessionsPerDay } });
       setSaved(true);
     } catch (e) {
       setError((e as Error).message);
@@ -297,6 +301,32 @@ export default function SettingsPage() {
                 ))}
               </Table>
             )}
+            <div style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--duga-muted)", marginTop: 18, marginBottom: 8 }}>
+              Attendance sessions
+            </div>
+            <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginBottom: 10 }}>
+              Does the school count a day as one attendance session, or two (morning and afternoon)? This only changes
+              how &quot;days school opened&quot; is counted on report cards and the calendar stat — attendance is still
+              taken once per student per day either way.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {([1, 2] as const).map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setSessionsPerDay(n)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8, padding: "8px 14px",
+                    border: `1px solid ${sessionsPerDay === n ? "var(--duga-primary)" : "var(--duga-border)"}`,
+                    borderRadius: 10,
+                    background: sessionsPerDay === n ? "var(--duga-primary-soft, rgba(26,115,232,0.08))" : "transparent",
+                    cursor: "pointer", fontSize: 13, fontWeight: 600,
+                  }}
+                >
+                  {n === 1 ? "Once a day" : "Twice a day (AM + PM)"}
+                </button>
+              ))}
+            </div>
             <Button onClick={saveSchoolDays} style={{ marginTop: 14 }}>Save school days</Button>
           </Card>
         </div>
@@ -341,6 +371,17 @@ export default function SettingsPage() {
               </button>
               <div style={{ fontSize: 12, color: "var(--duga-muted)", marginTop: -4 }}>
                 By default a student can only message a teacher or admin. Turning this on also lets students message each other — students can never message a parent, in either direction, regardless of this setting.
+              </div>
+              <button
+                type="button"
+                onClick={() => setRestrictions({ ...restrictions, allowTeacherBackdatedAttendance: !restrictions.allowTeacherBackdatedAttendance })}
+                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", border: "1px solid var(--duga-border)", borderRadius: 10, cursor: "pointer", textAlign: "left", background: "transparent" }}
+              >
+                <span style={{ fontSize: 13.5, fontWeight: 600 }}>Allow teachers to record attendance for past dates</span>
+                <Badge tone={restrictions.allowTeacherBackdatedAttendance ? "success" : "neutral"}>{restrictions.allowTeacherBackdatedAttendance ? "On" : "Off"}</Badge>
+              </button>
+              <div style={{ fontSize: 12, color: "var(--duga-muted)", marginTop: -4 }}>
+                By default a teacher may only take or correct attendance for today; an owner/admin can always backdate. Turn this on to let teachers also record a past date — useful when a new intake enrolls mid-term and needs historical attendance caught up.
               </div>
             </div>
 

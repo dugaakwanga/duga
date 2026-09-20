@@ -24,6 +24,8 @@ interface CalendarData {
   role: string;
   events: CalendarEvent[];
   terms: TermOption[];
+  statsTermId: string | null;
+  daysOpened: { daysOpened: number; sessionsPerDay: number } | null;
 }
 
 const TYPE_LABEL: Record<CalendarEvent["type"], string> = {
@@ -138,6 +140,22 @@ export default function CalendarPage() {
         subtitle={canManage ? "Term dates, holidays and assessment windows." : "Upcoming term dates, holidays and assessment windows."}
         actions={canManage ? <Button onClick={openCreate}><Icon name="plus" size={16} /> Add event</Button> : undefined}
       />
+
+      {!loading && data?.daysOpened && (
+        <Card style={{ marginBottom: 18 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ fontWeight: 700, fontSize: 24 }}>{data.daysOpened.daysOpened}</div>
+            <div style={{ fontSize: 13.5, color: "var(--duga-muted)" }}>
+              times school has opened this term, school-wide
+              {data.daysOpened.sessionsPerDay === 2 && " (morning + afternoon counted separately)"}
+            </div>
+          </div>
+          <div style={{ fontSize: 12, color: "var(--duga-muted)", marginTop: 4 }}>
+            Counts school-day weekdays that aren&apos;t a declared holiday and had attendance actually recorded — a day
+            nobody took attendance on is never counted.
+          </div>
+        </Card>
+      )}
 
       {loading ? (
         <Spinner size={28} />

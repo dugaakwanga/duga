@@ -33,6 +33,7 @@ interface RosterRow {
   name: string;
   status: string;
   remark: string | null;
+  enrolledOnDate: boolean;
 }
 
 type MarkStatus = "PRESENT" | "ABSENT" | "LATE" | "EXCUSED";
@@ -96,9 +97,13 @@ function MarkPanel({ scope, onSaved }: { scope: "admin" | "teacher"; onSaved: ()
       setRows(res.roster);
       setHasExistingRecords(res.roster.some((r) => r.status && r.status !== "UNMARKED"));
       setConfirmedNoData(false);
+      // A not-yet-enrolled student is left out of the map entirely (not
+      // defaulted to PRESENT) — save() only submits an entry for them if a
+      // marker explicitly clicks a status for that row.
       const st: Record<string, MarkStatus> = {};
       res.roster.forEach((r) => {
-        st[r.studentId] = r.status && r.status !== "UNMARKED" ? (r.status as MarkStatus) : "PRESENT";
+        if (r.status && r.status !== "UNMARKED") st[r.studentId] = r.status as MarkStatus;
+        else if (r.enrolledOnDate) st[r.studentId] = "PRESENT";
       });
       setStatuses(st);
     } catch (e) {
@@ -114,7 +119,13 @@ function MarkPanel({ scope, onSaved }: { scope: "admin" | "teacher"; onSaved: ()
     setMessage(null);
     setError(null);
     try {
-      const entries = rows.map((r) => ({ studentId: r.studentId, status: statuses[r.studentId] ?? "PRESENT" }));
+      // Only students who have either a real existing status or were
+      // explicitly clicked this session get submitted — a not-yet-enrolled
+      // student the marker never touched is left out entirely rather than
+      // silently defaulted to PRESENT.
+      const entries = rows
+        .filter((r) => statuses[r.studentId] !== undefined)
+        .map((r) => ({ studentId: r.studentId, status: statuses[r.studentId] }));
       const res = await api<{ count: number }>("attendance", { method: "POST", body: { date, classGroupId, entries } });
       setMessage(`Saved attendance for ${res.count} student(s) on ${date}.`);
       onSaved();
@@ -144,7 +155,7 @@ function MarkPanel({ scope, onSaved }: { scope: "admin" | "teacher"; onSaved: ()
     }
   }
 
-  const isPast = scope === "admin" && date < todayIso();
+  const isPast = date < todayIso();
 
   return (
     <Card title={scope === "admin" ? "Mark or correct attendance" : "Mark or edit today's attendance"} pad={false} style={{ marginBottom: 20 }}>
@@ -156,16 +167,13 @@ function MarkPanel({ scope, onSaved }: { scope: "admin" | "teacher"; onSaved: ()
               <option key={c.id} value={c.id}>{c.level.name} {c.name} ({c._count.students} students)</option>
             ))}
           </Select>
-          {scope === "admin" ? (
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          ) : (
-            <div style={{ display: "flex", alignItems: "center", fontSize: 13, color: "var(--duga-muted)", fontWeight: 600 }}>Today, {date}</div>
-          )}
+          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           <Button onClick={loadRoster} loading={loading}>Load roster</Button>
         </div>
         {scope === "teacher" && (
           <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginTop: 6 }}>
-            You can mark or change today&apos;s attendance any time. To correct an earlier date, ask an admin.
+            You can always mark or change today&apos;s attendance. Picking an earlier date only works if an admin has
+            turned on &quot;Allow teachers to record attendance for past dates&quot; in Settings.
           </div>
         )}
 
@@ -201,7 +209,14 @@ function MarkPanel({ scope, onSaved }: { scope: "admin" | "teacher"; onSaved: ()
                 <tbody>
                   {rows.map((r) => (
                     <tr key={r.studentId}>
-                      <td style={{ fontWeight: 600 }}>{r.name}</td>
+                      <td style={{ fontWeight: 600 }}>
+                        {r.name}
+                        {!r.enrolledOnDate && (
+                          <div style={{ marginTop: 2 }}>
+                            <Badge tone="warning">Not yet enrolled on this date</Badge>
+                          </div>
+                        )}
+                      </td>
                       <td>{r.admissionNumber}</td>
                       <td colSpan={4}>
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>

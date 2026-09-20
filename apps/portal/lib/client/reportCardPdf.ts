@@ -75,6 +75,7 @@ export interface ReportCardPdfData {
   studentAge?: number | null;
   schoolDaysOpened?: number | null;
   daysPresent?: number | null;
+  daysRecorded?: number | null;
   feesOwed?: number | null;
   nextTermFees?: number | null;
   feesPayableBy?: string | null;
@@ -445,8 +446,13 @@ function buildSheetHtml(
   photoDataUrl: string | null,
 ): string {
   const genderLabel = card.student.gender === "MALE" ? "Male" : card.student.gender === "FEMALE" ? "Female" : "";
+  // The percentage is this student's own present-count over how many times
+  // attendance was actually recorded FOR THEM — never over schoolDaysOpened
+  // (the whole class's calendar-wide count), so a student who joined
+  // mid-term or has un-backdated gaps is never judged against days nobody
+  // recorded for them.
   const pctAttendance =
-    config.showAttendance && card.schoolDaysOpened ? `${Math.round(((card.daysPresent ?? 0) / card.schoolDaysOpened) * 100)}%` : "";
+    config.showAttendance && card.daysRecorded ? `${Math.round(((card.daysPresent ?? 0) / card.daysRecorded) * 100)}%` : "";
 
   const fields: Array<[string, string]> = [
     ["Town", config.town ?? ""],
@@ -464,6 +470,7 @@ function buildSheetHtml(
   if (config.showAttendance) {
     fields.push(
       ["No. of Times School Opened", card.schoolDaysOpened !== null && card.schoolDaysOpened !== undefined ? String(card.schoolDaysOpened) : ""],
+      ["Times Recorded", card.daysRecorded !== null && card.daysRecorded !== undefined ? String(card.daysRecorded) : ""],
       ["Total Attendance", card.daysPresent !== null && card.daysPresent !== undefined ? String(card.daysPresent) : ""],
       ["% Attendance", pctAttendance],
     );
@@ -634,6 +641,7 @@ export const SAMPLE_REPORT_CARD: ReportCardPdfData = {
   studentAge: 12,
   schoolDaysOpened: 60,
   daysPresent: 58,
+  daysRecorded: 59,
   feesOwed: 0,
   nextTermFees: 85000,
   feesPayableBy: "2027-01-12",

@@ -77,6 +77,7 @@ interface ReportCard {
   studentAge?: number | null;
   schoolDaysOpened?: number | null;
   daysPresent?: number | null;
+  daysRecorded?: number | null;
   feesOwed?: number | string | null;
   nextTermFees?: number | string | null;
   feesPayableBy?: string | null;
@@ -265,6 +266,7 @@ export default function ResultsPage() {
           studentAge: rc.studentAge ?? null,
           schoolDaysOpened: rc.schoolDaysOpened ?? null,
           daysPresent: rc.daysPresent ?? null,
+          daysRecorded: rc.daysRecorded ?? null,
           feesOwed: rc.feesOwed !== undefined && rc.feesOwed !== null ? Number(rc.feesOwed) : null,
           nextTermFees: rc.nextTermFees !== undefined && rc.nextTermFees !== null ? Number(rc.nextTermFees) : null,
           feesPayableBy: rc.feesPayableBy ?? null,

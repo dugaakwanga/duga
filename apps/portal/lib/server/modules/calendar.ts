@@ -1,4 +1,4 @@
-import { prisma, logAudit } from "@duga/core/server";
+import { prisma, logAudit, computeDaysSchoolOpened } from "@duga/core/server";
 import type { Module } from ".";
 import { can, str, resolveSection } from "../helpers";
 
@@ -58,7 +58,15 @@ export const calendarModule: Module = {
       orderBy: { startDate: "asc" },
     });
     const terms = await prisma.term.findMany({ where: { schoolId }, orderBy: { name: "asc" }, take: 100 });
-    return { role: ctx.session.user.role, events, terms };
+
+    // School-wide "days opened" for the selected term (or the active term
+    // when none is selected) — every class combined, not scoped to one.
+    // Purely informational context here; a student's own attendance
+    // percentage is never computed against this figure (see reportCard.ts).
+    const statsTermId = termId ?? terms.find((t) => t.status === "ACTIVE")?.id;
+    const daysOpened = statsTermId ? await computeDaysSchoolOpened(schoolId, statsTermId) : null;
+
+    return { role: ctx.session.user.role, events, terms, statsTermId: statsTermId ?? null, daysOpened };
   },
 
   async create(ctx) {

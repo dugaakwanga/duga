@@ -54,6 +54,76 @@ export async function getSetting(schoolId: string, key: string): Promise<unknown
   return row?.value ?? null;
 }
 
+const WEEKDAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+const DEFAULT_SCHOOL_WEEKDAY: Record<string, boolean> = {
+  monday: true,
+  tuesday: true,
+  wednesday: true,
+  thursday: true,
+  friday: true,
+  saturday: false,
+  sunday: false,
+};
+
+export interface DaysOpenedResult {
+  /** Distinct eligible days attendance was actually taken, × sessionsPerDay. */
+  daysOpened: number;
+  sessionsPerDay: number;
+}
+
+// "Days school opened": every distinct day within the term that (a) falls on
+// a configured school day of the week (Settings → School days), (b) isn't a
+// declared holiday there, AND (c) attendance was actually recorded that day
+// — for the whole school when classGroupId is omitted, or scoped to one
+// class when given. A day nobody took attendance on is never counted,
+// holiday or not; the calendar only ever narrows the count down, it never
+// invents a day. Multiplied by the admin's configured sessions-per-day
+// (e.g. a school marking morning + afternoon separately counts each
+// calendar day twice).
+export async function computeDaysSchoolOpened(
+  schoolId: string,
+  termId: string,
+  classGroupId?: string,
+): Promise<DaysOpenedResult> {
+  const term = await prisma.term.findFirst({ where: { id: termId, schoolId } });
+  if (!term) return { daysOpened: 0, sessionsPerDay: 1 };
+
+  const [schoolDaysRaw, attendanceDays] = await Promise.all([
+    getSetting(schoolId, "schoolDays"),
+    prisma.studentAttendance.findMany({
+      where: { schoolId, termId, ...(classGroupId ? { classGroupId } : {}) },
+      select: { date: true },
+      distinct: ["date"],
+    }),
+  ]);
+
+  const cfg = schoolDaysRaw && typeof schoolDaysRaw === "object" ? (schoolDaysRaw as Record<string, unknown>) : {};
+  const weekdaysCfg = cfg.weekdays && typeof cfg.weekdays === "object" ? (cfg.weekdays as Record<string, unknown>) : {};
+  const sessionsPerDay = cfg.sessionsPerDay === 2 ? 2 : 1;
+  const holidayDates = new Set(
+    Array.isArray(cfg.holidays)
+      ? (cfg.holidays as unknown[])
+          .map((h) => (h && typeof h === "object" ? String((h as Record<string, unknown>).date ?? "") : ""))
+          .filter(Boolean)
+      : [],
+  );
+
+  const isSchoolWeekday = (d: Date) => {
+    const name = WEEKDAY_NAMES[d.getUTCDay()]!;
+    const configured = weekdaysCfg[name];
+    return typeof configured === "boolean" ? configured : DEFAULT_SCHOOL_WEEKDAY[name];
+  };
+
+  let count = 0;
+  for (const { date } of attendanceDays) {
+    if ((term.startDate && date < term.startDate) || (term.endDate && date > term.endDate)) continue;
+    if (!isSchoolWeekday(date)) continue;
+    if (holidayDates.has(date.toISOString().slice(0, 10))) continue;
+    count++;
+  }
+  return { daysOpened: count * sessionsPerDay, sessionsPerDay };
+}
+
 // ---------------------------------------------------------------------------
 // Per-child fee / access window.
 // The bursar sets a fee amount and a start/end date (typically a term's

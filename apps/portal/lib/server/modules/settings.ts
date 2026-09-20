@@ -12,6 +12,12 @@ export interface SchoolDaysConfig {
   weekdays: Record<string, boolean>;
   /** One-off closures, e.g. public holidays. */
   holidays: Array<{ date: string; name: string }>;
+  /** 1 (default) or 2 — whether the school takes attendance once a day or
+   * twice (morning + afternoon). Purely a counting convention: attendance is
+   * still recorded once per student per day either way, but "days school
+   * opened" on report cards and the school-wide stat is doubled when this is
+   * 2, matching how the school itself counts a day. */
+  sessionsPerDay: 1 | 2;
 }
 
 export interface RestrictionsConfig {
@@ -31,6 +37,11 @@ export interface RestrictionsConfig {
    * — student-to-parent messaging is never allowed regardless of this
    * setting, in either direction. */
   allowStudentToStudentChat: boolean;
+  /** Off by default: a teacher may only take/correct student attendance for
+   * today. An admin can open this to let teachers also record a past date —
+   * e.g. to catch up a new intake's historical attendance mid-term. An
+   * owner/admin can always backdate regardless of this setting. */
+  allowTeacherBackdatedAttendance: boolean;
 }
 
 const DEFAULT_RESTRICTIONS: RestrictionsConfig = {
@@ -38,6 +49,7 @@ const DEFAULT_RESTRICTIONS: RestrictionsConfig = {
   applicationsOpen: true,
   feeGatedFeatures: ["tests", "assignments", "elearn", "games", "live", "results"],
   allowStudentToStudentChat: false,
+  allowTeacherBackdatedAttendance: false,
 };
 
 // Read by messaging.ts to decide whether student-to-student chat is open
@@ -80,6 +92,7 @@ export const settingsModule: Module = {
       readSetting<SchoolDaysConfig>(ctx.session.user.schoolId, SCHOOL_DAYS_KEY, {
         weekdays: { monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: false, sunday: false },
         holidays: [],
+        sessionsPerDay: 1,
       }),
       readSetting<RestrictionsConfig>(ctx.session.user.schoolId, RESTRICTIONS_KEY, DEFAULT_RESTRICTIONS),
       effectiveGatedFeatures(ctx.session.user.schoolId),
@@ -205,7 +218,7 @@ export const settingsModule: Module = {
     saveSchoolDays: async (ctx) => {
       can(ctx, "settings:manage");
       const schoolId = ctx.session.user.schoolId;
-      const current = await readSetting<SchoolDaysConfig>(schoolId, SCHOOL_DAYS_KEY, { weekdays: {}, holidays: [] });
+      const current = await readSetting<SchoolDaysConfig>(schoolId, SCHOOL_DAYS_KEY, { weekdays: {}, holidays: [], sessionsPerDay: 1 });
       const raw = ctx.body.weekdays && typeof ctx.body.weekdays === "object" ? (ctx.body.weekdays as Record<string, unknown>) : current.weekdays;
       const holidaysRaw = Array.isArray(ctx.body.holidays) ? ctx.body.holidays : current.holidays;
       const holidays = holidaysRaw
@@ -218,9 +231,10 @@ export const settingsModule: Module = {
       for (const day of ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]) {
         weekdays[day] = typeof raw[day] === "boolean" ? raw[day] : typeof raw[day] === "string" ? raw[day] === "true" : Boolean(current.weekdays[day]);
       }
-      const cfg: SchoolDaysConfig = { weekdays, holidays };
+      const sessionsPerDay: 1 | 2 = ctx.body.sessionsPerDay === 2 ? 2 : ctx.body.sessionsPerDay === 1 ? 1 : current.sessionsPerDay;
+      const cfg: SchoolDaysConfig = { weekdays, holidays, sessionsPerDay };
       await writeSetting(schoolId, SCHOOL_DAYS_KEY, cfg);
-      await logAudit({ schoolId, userId: ctx.session.user.id, action: "settings.schoolDaysUpdated", entityType: "School", entityId: schoolId, meta: { weekdays, holidayCount: holidays.length } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "settings.schoolDaysUpdated", entityType: "School", entityId: schoolId, meta: { weekdays, holidayCount: holidays.length, sessionsPerDay } });
       return cfg;
     },
 
@@ -240,6 +254,7 @@ export const settingsModule: Module = {
         applicationsOpen: typeof ctx.body.applicationsOpen === "boolean" ? ctx.body.applicationsOpen : current.applicationsOpen,
         feeGatedFeatures,
         allowStudentToStudentChat: typeof ctx.body.allowStudentToStudentChat === "boolean" ? ctx.body.allowStudentToStudentChat : current.allowStudentToStudentChat,
+        allowTeacherBackdatedAttendance: typeof ctx.body.allowTeacherBackdatedAttendance === "boolean" ? ctx.body.allowTeacherBackdatedAttendance : current.allowTeacherBackdatedAttendance,
       };
       await writeSetting(schoolId, RESTRICTIONS_KEY, cfg);
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "settings.restrictionsUpdated", entityType: "School", entityId: schoolId, meta: cfg as unknown as Record<string, unknown> });

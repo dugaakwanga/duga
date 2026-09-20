@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { PageHeader, Card, Button, Select, Input, Alert, EmptyState } from "@duga/ui";
+import { PageHeader, Card, Button, Select, Input, Alert, EmptyState, Badge } from "@duga/ui";
 import { api } from "@/lib/client/api";
 
 interface ClassOption {
@@ -17,6 +17,7 @@ interface RosterRow {
   name: string;
   status: string;
   remark: string | null;
+  enrolledOnDate: boolean;
 }
 
 type Status = "PRESENT" | "ABSENT" | "LATE" | "EXCUSED";
@@ -68,10 +69,13 @@ export default function TeacherAttendancePage() {
       setRows(res.roster);
       setHasExistingRecords(res.roster.some((r) => r.status && r.status !== "UNMARKED"));
       setConfirmedNoData(false);
+      // A not-yet-enrolled student is left out of the map entirely (not
+      // defaulted to PRESENT) — save() only submits an entry for them if
+      // explicitly clicked.
       const st: Record<string, Status> = {};
       res.roster.forEach((r) => {
         if (r.status && r.status !== "UNMARKED") st[r.studentId] = r.status as Status;
-        else st[r.studentId] = "PRESENT";
+        else if (r.enrolledOnDate) st[r.studentId] = "PRESENT";
       });
       setStatuses(st);
     } catch (e) {
@@ -86,7 +90,9 @@ export default function TeacherAttendancePage() {
     setSaving(true);
     setMessage(null);
     try {
-      const entries = rows.map((r) => ({ studentId: r.studentId, status: statuses[r.studentId] ?? "PRESENT" }));
+      const entries = rows
+        .filter((r) => statuses[r.studentId] !== undefined)
+        .map((r) => ({ studentId: r.studentId, status: statuses[r.studentId] }));
       const res = await api<{ count: number }>("attendance", { method: "POST", body: { date, classGroupId, entries } });
       setMessage(`Saved attendance for ${res.count} student(s) on ${date}.`);
       loadRoster();
@@ -168,7 +174,14 @@ export default function TeacherAttendancePage() {
                   <tbody>
                     {rows.map((r) => (
                       <tr key={r.studentId}>
-                        <td style={{ fontWeight: 600 }}>{r.name}</td>
+                        <td style={{ fontWeight: 600 }}>
+                          {r.name}
+                          {!r.enrolledOnDate && (
+                            <div style={{ marginTop: 2 }}>
+                              <Badge tone="warning">Not yet enrolled on this date</Badge>
+                            </div>
+                          )}
+                        </td>
                         <td>{r.admissionNumber}</td>
                         <td colSpan={4}>
                           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
