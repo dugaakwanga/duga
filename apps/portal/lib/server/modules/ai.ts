@@ -495,6 +495,7 @@ export const aiModule: Module = {
       const grade = str(ctx.body.grade);
       const classInfo = str(ctx.body.className);
       const focus = str(ctx.body.focus); // optional area to improve/mention
+      const voice = str(ctx.body.voice) === "principal" ? "principal" : "teacher";
 
       const detail = [
         subject ? `Subject: ${subject}` : "",
@@ -507,11 +508,16 @@ export const aiModule: Module = {
         .join("\n");
 
       const system =
-        "You write warm, professional Nigerian school report card remarks. " +
-        "Output ONLY the remark (2-4 sentences), first-person teacher voice, no greeting or signature.";
+        voice === "principal"
+          ? "You write warm, professional Nigerian school report card remarks from the school Principal's perspective — a brief, dignified overall comment on the term, not a subject-by-subject breakdown. " +
+            "Output ONLY the remark (2-3 sentences), first-person principal voice, no greeting or signature."
+          : "You write warm, professional Nigerian school report card remarks. " +
+            "Output ONLY the remark (2-4 sentences), first-person teacher voice, no greeting or signature.";
       const reply = await generate(
         system,
-        `Write a report card remark for ${student}.\n${detail}\n\nMake it encouraging, mention strengths and one specific area to improve.`,
+        voice === "principal"
+          ? `Write the Principal's overall comment for ${student}'s report card.\n${detail}\n\nKeep it brief and encouraging, reflecting the student's overall performance.`
+          : `Write a report card remark for ${student}.\n${detail}\n\nMake it encouraging, mention strengths and one specific area to improve.`,
         0.8,
         400,
       );

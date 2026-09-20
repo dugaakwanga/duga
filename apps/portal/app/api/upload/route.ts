@@ -102,6 +102,13 @@ export async function POST(request: NextRequest) {
       if (session.user.role === "STUDENT") {
         throw new ForbiddenError("Students cannot change their profile photo");
       }
+    } else if (purpose === "signature") {
+      // Self-service: a teacher uploads their own signature (auto-attached
+      // to every report card for their class), an admin/owner uploads the
+      // one used as the school's Principal signatory — see profile.ts.
+      if (!["TEACHER", "ADMIN", "OWNER"].includes(session.user.role)) {
+        throw new ForbiddenError("Only teachers and admins can upload a signature");
+      }
     } else if (purpose === "clock-photo") {
       assertPermission(session.user.role, "staff:clock");
     } else if (purpose === "paper-exam") {
@@ -151,7 +158,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "This file's contents don't match its claimed type." }, { status: 400 });
     }
     const name = `${crypto.randomUUID()}.${ext(mime, purpose)}`;
-    const folder = purpose === "library" ? "library" : purpose === "scheme" ? "scheme" : purpose === "textbook" ? "textbooks" : purpose === "lesson-doc" ? "lesson-docs" : purpose === "family-corner-doc" ? "family-corner-docs" : purpose === "paper-exam" ? "paper-exams" : purpose === "avatar" ? "avatars" : purpose === "student-photo" ? "students" : purpose === "school-logo" ? "school" : purpose === "clock-photo" ? "clock" : "gallery";
+    const folder = purpose === "library" ? "library" : purpose === "scheme" ? "scheme" : purpose === "textbook" ? "textbooks" : purpose === "lesson-doc" ? "lesson-docs" : purpose === "family-corner-doc" ? "family-corner-docs" : purpose === "paper-exam" ? "paper-exams" : purpose === "avatar" ? "avatars" : purpose === "student-photo" ? "students" : purpose === "school-logo" ? "school" : purpose === "clock-photo" ? "clock" : purpose === "signature" ? "signatures" : "gallery";
     const { url: fileUrl, key, bucket } = await uploadPublicFile({
       folder,
       name,

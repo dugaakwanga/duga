@@ -24,6 +24,7 @@ async function loadUser(claims: PortalClaims) {
           staffNumber: true,
           specialty: true,
           designation: true,
+          signatureUrl: true,
         },
       },
       parent: { include: { students: { include: { student: { include: { classGroup: { include: { level: true } } } } } } } },

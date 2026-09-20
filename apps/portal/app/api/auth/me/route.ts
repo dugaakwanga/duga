@@ -24,6 +24,9 @@ export async function GET() {
       studentId: user.student?.id ?? null,
       teacherId: user.teacher?.id ?? null,
       parentId: user.parent?.id ?? null,
+      teacherSignatureUrl: user.teacher?.signatureUrl ?? null,
+      adminDesignation: user.admin?.designation ?? null,
+      adminSignatureUrl: user.admin?.signatureUrl ?? null,
     },
   });
 }

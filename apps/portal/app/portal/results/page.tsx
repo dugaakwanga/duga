@@ -82,8 +82,11 @@ interface ReportCard {
   nextTermFees?: number | string | null;
   feesPayableBy?: string | null;
   formMasterName?: string | null;
+  formMasterSignatureUrl?: string | null;
   principalComment?: string | null;
   principalName?: string | null;
+  principalDesignation?: string | null;
+  principalSignatureUrl?: string | null;
 }
 
 interface TeacherClassSubject {
@@ -117,6 +120,8 @@ interface EntryRow {
   examTotal?: number | null;
   total?: number | null;
   submitted?: boolean;
+  blocked?: boolean;
+  blockedReason?: string | null;
 }
 
 interface EntrySheet {
@@ -162,16 +167,23 @@ function classNameCompare(a: string, b: string): number {
   return 0;
 }
 
-function gradeOf(score: number): string {
-  if (score >= 75) return "A1";
-  if (score >= 70) return "B2";
-  if (score >= 65) return "B3";
-  if (score >= 60) return "C4";
-  if (score >= 55) return "C5";
-  if (score >= 50) return "C6";
-  if (score >= 45) return "D7";
-  if (score >= 40) return "E8";
-  return "F9";
+// Looks up a score's letter grade from the school's own configured scale
+// (already loaded as `gradingScale`) rather than a hardcoded guess — stays
+// correct whatever bands/labels this school actually uses.
+function gradeFromScale(score: number, scale: ReportCardPdfGradeBand[]): string {
+  const band = scale.find((b) => score >= b.min && score <= b.max);
+  return band?.grade ?? "";
+}
+
+// A 6-step green -> red gradient keyed to a band's rank among the school's
+// configured grade bands (best band first) — mirrors reportCardPdf.ts's own
+// gradientColorForRank so the on-screen grade badges match the printed card.
+function gradeBandColor(score: number | null | undefined, scale: ReportCardPdfGradeBand[]): string | undefined {
+  if (score === null || score === undefined || score <= 0 || scale.length === 0) return undefined;
+  const rank = scale.findIndex((b) => score >= b.min && score <= b.max);
+  if (rank === -1) return undefined;
+  const t = scale.length <= 1 ? 0 : rank / (scale.length - 1);
+  return `hsl(${120 - 120 * t}, 62%, 88%)`;
 }
 
 export default function ResultsPage() {
@@ -200,13 +212,11 @@ export default function ResultsPage() {
     psychomotor: Record<string, string>;
     coCurricular: Record<string, string>;
     remark: string;
-    formMasterName: string;
     principalComment: string;
-    principalName: string;
     feesOwed: string;
     nextTermFees: string;
     feesPayableBy: string;
-  }>({ psychomotor: {}, coCurricular: {}, remark: "", formMasterName: "", principalComment: "", principalName: "", feesOwed: "", nextTermFees: "", feesPayableBy: "" });
+  }>({ psychomotor: {}, coCurricular: {}, remark: "", principalComment: "", feesOwed: "", nextTermFees: "", feesPayableBy: "" });
   const [detailsSaving, setDetailsSaving] = useState(false);
 
   // Admin: mark all draft report cards ready (flag to show publish buttons)
@@ -272,8 +282,11 @@ export default function ResultsPage() {
           feesPayableBy: rc.feesPayableBy ?? null,
           remark: rc.remark ?? null,
           formMasterName: rc.formMasterName ?? null,
+          formMasterSignatureUrl: rc.formMasterSignatureUrl ?? null,
           principalComment: rc.principalComment ?? null,
           principalName: rc.principalName ?? null,
+          principalDesignation: rc.principalDesignation ?? null,
+          principalSignatureUrl: rc.principalSignatureUrl ?? null,
         },
         config?.components,
         gradingScale.length ? gradingScale : undefined,
@@ -303,7 +316,6 @@ export default function ResultsPage() {
         town: null,
         state: null,
         sectionLabel: null,
-        signatureLabels: ["Class Teacher", "Principal"],
       },
     );
     closePreview();
@@ -361,9 +373,7 @@ export default function ResultsPage() {
       psychomotor,
       coCurricular,
       remark: remarkOverride ?? rc.remark ?? "",
-      formMasterName: rc.formMasterName ?? "",
       principalComment: rc.principalComment ?? "",
-      principalName: rc.principalName ?? "",
       feesOwed: rc.feesOwed !== undefined && rc.feesOwed !== null ? String(rc.feesOwed) : "",
       nextTermFees: rc.nextTermFees !== undefined && rc.nextTermFees !== null ? String(rc.nextTermFees) : "",
       feesPayableBy: rc.feesPayableBy ? rc.feesPayableBy.slice(0, 10) : "",
@@ -383,9 +393,7 @@ export default function ResultsPage() {
         psychomotor: detailsForm.psychomotor,
         coCurricular: detailsForm.coCurricular,
         remark: detailsForm.remark,
-        formMasterName: detailsForm.formMasterName,
         principalComment: detailsForm.principalComment,
-        principalName: detailsForm.principalName,
         feesOwed: detailsForm.feesOwed === "" ? undefined : Number(detailsForm.feesOwed),
         nextTermFees: detailsForm.nextTermFees === "" ? undefined : Number(detailsForm.nextTermFees),
         feesPayableBy: detailsForm.feesPayableBy || undefined,
@@ -408,7 +416,7 @@ export default function ResultsPage() {
           studentName: `${rc.student.user.firstName} ${rc.student.user.lastName}`,
           className: rc.classGroup ? `${rc.classGroup.level.name} ${rc.classGroup.name}` : undefined,
           average: rc.average != null ? String(Number(rc.average).toFixed(1)) : undefined,
-          grade: rc.average != null ? gradeOf(Number(rc.average)) : undefined,
+          grade: rc.average != null ? gradeFromScale(Number(rc.average), gradingScale) : undefined,
         },
       });
       // Open the same details editor pre-filled with the AI draft so the
@@ -416,6 +424,45 @@ export default function ResultsPage() {
       // instead of a blind window.prompt.
       setDetailsForm(detailsFormFrom(rc, d.reply));
       setDetailsTarget(rc);
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
+  // Same idea as draftRemark, but fills the field in place while the
+  // details modal is already open, rather than reopening it.
+  async function draftClassTeacherComment() {
+    if (!detailsTarget) return;
+    try {
+      const d = await api<{ reply: string }>("ai/remark", {
+        method: "POST",
+        body: {
+          studentName: `${detailsTarget.student.user.firstName} ${detailsTarget.student.user.lastName}`,
+          className: detailsTarget.classGroup ? `${detailsTarget.classGroup.level.name} ${detailsTarget.classGroup.name}` : undefined,
+          average: detailsTarget.average != null ? String(Number(detailsTarget.average).toFixed(1)) : undefined,
+          grade: detailsTarget.average != null ? gradeFromScale(Number(detailsTarget.average), gradingScale) : undefined,
+        },
+      });
+      setDetailsForm((f) => ({ ...f, remark: d.reply }));
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
+  async function draftPrincipalComment() {
+    if (!detailsTarget) return;
+    try {
+      const d = await api<{ reply: string }>("ai/remark", {
+        method: "POST",
+        body: {
+          studentName: `${detailsTarget.student.user.firstName} ${detailsTarget.student.user.lastName}`,
+          className: detailsTarget.classGroup ? `${detailsTarget.classGroup.level.name} ${detailsTarget.classGroup.name}` : undefined,
+          average: detailsTarget.average != null ? String(Number(detailsTarget.average).toFixed(1)) : undefined,
+          grade: detailsTarget.average != null ? gradeFromScale(Number(detailsTarget.average), gradingScale) : undefined,
+          voice: "principal",
+        },
+      });
+      setDetailsForm((f) => ({ ...f, principalComment: d.reply }));
     } catch (e) {
       alert((e as Error).message);
     }
@@ -797,6 +844,11 @@ export default function ResultsPage() {
                         <td>
                           <div style={{ fontWeight: 600 }}>{r.name}</div>
                           <div style={{ fontSize: 12, color: "var(--duga-muted)" }}>{r.admissionNumber ?? ""}</div>
+                          {r.blocked && (
+                            <div title={r.blockedReason ?? "Blocked by admin"} style={{ marginTop: 3 }}>
+                              <Badge tone="danger">🔒 Result entry blocked</Badge>
+                            </div>
+                          )}
                         </td>
                         {sheet.config.components.map((c) => (
                           <td key={c.name}>
@@ -804,7 +856,7 @@ export default function ResultsPage() {
                               type="number"
                               min={0}
                               max={c.max}
-                              disabled={sheet.lockedComponents.includes(c.name) || role === "ADMIN"}
+                              disabled={sheet.lockedComponents.includes(c.name) || role === "ADMIN" || r.blocked}
                               style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--duga-border)", borderRadius: 8, fontSize: 14 }}
                               value={r.scores[c.name] ?? ""}
                               onChange={(e) => setRow(r, c.name, String(e.target.valueAsNumber ?? ""))}
@@ -990,7 +1042,11 @@ export default function ResultsPage() {
                       <td>{i.ca ?? "—"}</td>
                       <td>{i.exam ?? "—"}</td>
                       <td>{i.total ?? "—"}</td>
-                      <td><Badge tone="neutral">{i.grade ?? "—"}</Badge></td>
+                      <td>
+                        <span style={{ display: "inline-block", padding: "2px 10px", borderRadius: 999, fontWeight: 700, fontSize: 12.5, background: gradeBandColor(i.total, gradingScale) ?? "var(--duga-chip-bg, #eee)" }}>
+                          {i.grade ?? "—"}
+                        </span>
+                      </td>
                     </tr>
                   ))}
                 </Table>
@@ -1169,13 +1225,9 @@ export default function ResultsPage() {
             ))}
           </div>
           <div style={{ marginTop: 14 }}>
-            <Field label="Signature lines" hint="Up to 4, in order — e.g. Class Teacher, Principal.">
-              <Input
-                value={builderDraft.signatureLabels.join(", ")}
-                onChange={(e) => setBuilderDraft({ ...builderDraft, signatureLabels: e.target.value.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 4) })}
-                placeholder="Class Teacher, Principal"
-              />
-            </Field>
+            <Alert tone="info">
+              Signatures are handled automatically: each class teacher and the school&apos;s Principal upload their signature once on their own Profile page, and it&apos;s attached to every report card that applies to them.
+            </Alert>
           </div>
           {previewUrl && (
             <div style={{ marginTop: 18 }}>
@@ -1235,17 +1287,23 @@ export default function ResultsPage() {
               ))}
             </div>
           </Field>
-          <Field label="Form Master's Comment">
-            <Textarea rows={2} value={detailsForm.remark} onChange={(e) => setDetailsForm({ ...detailsForm, remark: e.target.value })} />
+          <Field
+            label="Class Teacher's Comment"
+            hint={detailsTarget.formMasterName ? `Signed by ${detailsTarget.formMasterName} (this class's form teacher).` : "Assign a form teacher to this class to have their name and signature attached."}
+          >
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <Textarea rows={2} value={detailsForm.remark} onChange={(e) => setDetailsForm({ ...detailsForm, remark: e.target.value })} style={{ flexGrow: 1 }} />
+              <Button variant="outline" size="sm" onClick={draftClassTeacherComment}>Draft</Button>
+            </div>
           </Field>
-          <Field label="Form Master's Name">
-            <Input value={detailsForm.formMasterName} onChange={(e) => setDetailsForm({ ...detailsForm, formMasterName: e.target.value })} />
-          </Field>
-          <Field label="Principal's Comment">
-            <Textarea rows={2} value={detailsForm.principalComment} onChange={(e) => setDetailsForm({ ...detailsForm, principalComment: e.target.value })} />
-          </Field>
-          <Field label="Principal's Name">
-            <Input value={detailsForm.principalName} onChange={(e) => setDetailsForm({ ...detailsForm, principalName: e.target.value })} />
+          <Field
+            label={`${detailsTarget.principalDesignation || "Principal"}'s Comment`}
+            hint={detailsTarget.principalName ? `Signed by ${detailsTarget.principalName}.` : "Set a designation and signature on an admin's Profile page to have their name attached."}
+          >
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <Textarea rows={2} value={detailsForm.principalComment} onChange={(e) => setDetailsForm({ ...detailsForm, principalComment: e.target.value })} style={{ flexGrow: 1 }} />
+              <Button variant="outline" size="sm" onClick={draftPrincipalComment}>Draft</Button>
+            </div>
           </Field>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 10 }}>
             <Field label="Fees owed (₦)" hint="Auto-computed from this term's invoice; override if needed.">

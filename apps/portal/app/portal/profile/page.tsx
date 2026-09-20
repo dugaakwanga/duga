@@ -17,6 +17,9 @@ interface Me {
   avatarUrl: string | null;
   photoUrl?: string | null;
   mustChangePassword: boolean;
+  teacherSignatureUrl?: string | null;
+  adminDesignation?: string | null;
+  adminSignatureUrl?: string | null;
 }
 
 export default function ProfilePage() {
@@ -27,6 +30,9 @@ export default function ProfilePage() {
   const [phone, setPhone] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [signatureUrl, setSignatureUrl] = useState("");
+  const [designation, setDesignation] = useState("");
+  const [uploadingSig, setUploadingSig] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [pw, setPw] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
@@ -34,6 +40,8 @@ export default function ProfilePage() {
 
   const canEditPhoto = me ? me.role !== "STUDENT" : false;
   const photo = canEditPhoto ? avatarUrl : (me?.photoUrl ?? me?.avatarUrl ?? "");
+  const isSignatory = me ? me.role === "TEACHER" || me.role === "ADMIN" || me.role === "OWNER" : false;
+  const isPrincipalCandidate = me ? me.role === "ADMIN" || me.role === "OWNER" : false;
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -45,6 +53,8 @@ export default function ProfilePage() {
         setLastName(j.user.lastName ?? "");
         setPhone(j.user.phone ?? "");
         setAvatarUrl(j.user.avatarUrl ?? "");
+        setSignatureUrl(j.user.teacherSignatureUrl ?? j.user.adminSignatureUrl ?? "");
+        setDesignation(j.user.adminDesignation ?? "");
       })
       .catch((e) => setError(e.message));
   }, []);
@@ -70,11 +80,32 @@ export default function ProfilePage() {
     }
   }
 
+  async function uploadSignature(file: File | undefined) {
+    if (!file) return;
+    setUploadingSig(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/upload?purpose=signature", { method: "POST", body: fd });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Upload failed");
+      setSignatureUrl(json.data.url);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setUploadingSig(false);
+    }
+  }
+
   async function saveProfile() {
     setError(null);
     setSaved(false);
     try {
-      await api("profile", { method: "PATCH", body: { firstName, lastName, phone, avatarUrl: avatarUrl || null } });
+      const body: Record<string, unknown> = { firstName, lastName, phone, avatarUrl: avatarUrl || null };
+      if (isSignatory) body.signatureUrl = signatureUrl || "";
+      if (me?.role === "ADMIN" || me?.role === "OWNER") body.designation = designation || "";
+      await api("profile", { method: "PATCH", body });
       setSaved(true);
       router.refresh();
     } catch (e) {
@@ -153,6 +184,37 @@ export default function ProfilePage() {
             </Field>
           ) : (
             <Alert tone="info">Your profile photo is set by the school. Contact the office if it needs to change.</Alert>
+          )}
+          {isSignatory && (
+            <>
+              {isPrincipalCandidate && (
+                <Field label="Designation" hint={'Printed on every report card — e.g. "Principal" or "Head Teacher". The admin whose designation contains "Principal" is used as the school-wide signatory.'}>
+                  <Input value={designation} onChange={(e) => setDesignation(e.target.value)} placeholder="Principal" />
+                </Field>
+              )}
+              <Field
+                label="Signature"
+                hint={
+                  me.role === "TEACHER"
+                    ? "Uploaded once, auto-attached to every report card for your class."
+                    : "Uploaded once, auto-attached to every report card school-wide if your designation above is Principal."
+                }
+              >
+                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  {signatureUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={signatureUrl} alt="Signature" style={{ height: 40, maxWidth: 140, objectFit: "contain", border: "1px solid var(--duga-border)", borderRadius: 6, background: "#fff" }} />
+                  )}
+                  <label className="duga-btn duga-btn--outline duga-btn--sm" style={{ flexShrink: 0, cursor: "pointer", margin: 0 }}>
+                    <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={(e) => uploadSignature(e.target.files?.[0])} />
+                    {uploadingSig ? "Uploading…" : "Upload"}
+                  </label>
+                  {signatureUrl && (
+                    <Button variant="ghost" size="sm" onClick={() => setSignatureUrl("")} style={{ flexShrink: 0 }}>Remove</Button>
+                  )}
+                </div>
+              </Field>
+            </>
           )}
           {saved && <Alert tone="success">Profile updated.</Alert>}
           {error && <Alert tone="danger">{error}</Alert>}

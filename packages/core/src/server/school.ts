@@ -27,17 +27,14 @@ export async function getDefaultGradingScale(schoolId: string, section?: string)
       (await prisma.gradingScheme.findFirst({ where: { schoolId, section: "", isDefault: true } }))
     : await prisma.gradingScheme.findFirst({ where: { schoolId, section: "", isDefault: true } });
   if (!scheme) {
-    // fallback WAEC-ish scale
+    // fallback scale: simple A-F letter grades
     return [
-      { min: 75, max: 100, grade: "A1", remark: "Excellent", gp: 8 },
-      { min: 70, max: 74, grade: "B2", remark: "Very Good", gp: 7 },
-      { min: 65, max: 69, grade: "B3", remark: "Good", gp: 6 },
-      { min: 60, max: 64, grade: "C4", remark: "Credit", gp: 5 },
-      { min: 55, max: 59, grade: "C5", remark: "Credit", gp: 4 },
-      { min: 50, max: 54, grade: "C6", remark: "Credit", gp: 3 },
-      { min: 45, max: 49, grade: "D7", remark: "Pass", gp: 2 },
-      { min: 40, max: 44, grade: "E8", remark: "Pass", gp: 1 },
-      { min: 0, max: 39, grade: "F9", remark: "Fail", gp: 0 },
+      { min: 80, max: 100, grade: "A", remark: "Excellent", gp: 5 },
+      { min: 70, max: 79, grade: "B", remark: "Very Good", gp: 4 },
+      { min: 60, max: 69, grade: "C", remark: "Good", gp: 3 },
+      { min: 50, max: 59, grade: "D", remark: "Fair", gp: 2 },
+      { min: 40, max: 49, grade: "E", remark: "Poor", gp: 1 },
+      { min: 0, max: 39, grade: "F", remark: "Fail", gp: 0 },
     ];
   }
   return (scheme.scale as Array<{ min: number; max: number; grade: string; remark: string; gp: number }>) ?? [];

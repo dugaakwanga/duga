@@ -28,7 +28,6 @@ export interface ReportCardPdfConfig {
   town: string | null;
   state: string | null;
   sectionLabel: string | null;
-  signatureLabels: string[];
 }
 
 export interface ReportCardPdfComponent {
@@ -81,8 +80,11 @@ export interface ReportCardPdfData {
   feesPayableBy?: string | null;
   remark: string | null;
   formMasterName?: string | null;
+  formMasterSignatureUrl?: string | null;
   principalComment?: string | null;
   principalName?: string | null;
+  principalDesignation?: string | null;
+  principalSignatureUrl?: string | null;
 }
 
 const ROOT = "duga-rc-sheet";
@@ -171,6 +173,7 @@ const SHEET_CSS = `
 .${ROOT} .remarks .line{ border-bottom:1px dotted #000; min-height:12px; line-height:1.35; padding-bottom:1px; margin-bottom:3px; }
 .${ROOT} .sig-row{ display:flex; justify-content:space-between; margin-top:2px; font-size:10.5px; gap:20px; }
 .${ROOT} .sig-row .field{ flex:1; }
+.${ROOT} .sig-img{ height:24px; max-width:110px; object-fit:contain; vertical-align:middle; margin-right:6px; }
 
 .${ROOT} .footer-note{
   margin-top:6px; font-size:10px;
@@ -255,23 +258,34 @@ function groupComponents(comps: ReportCardPdfComponent[]): Array<{ label: string
   return groups;
 }
 
-function bandColorFor(total: number | null | undefined): string {
-  const v = total ?? 0;
-  if (v <= 0) return "";
-  if (v >= 70) return "#e5f3e8";
-  if (v >= 50) return "#fbf3d9";
-  return "#f9e2e0";
+// A 6(+)-step green -> red gradient keyed to a band's RANK among the
+// school's own configured grade bands (best band first), not hardcoded
+// score thresholds — stays correct whatever cutoffs a school configures
+// (A/B/C/D/E/F today, but works for any band count).
+function gradientColorForRank(rank: number, totalBands: number): string {
+  if (totalBands <= 1) return "#e5f3e8";
+  const t = rank / (totalBands - 1);
+  const hue = 120 - 120 * t;
+  return `hsl(${hue}, 62%, 86%)`;
 }
 
-function keyRowColor(min: number): string {
-  return min >= 70 ? "#e5f3e8" : min >= 50 ? "#fbf3d9" : "#f9e2e0";
+function bandRankFor(total: number | null | undefined, gradeBands: ReportCardPdfGradeBand[]): number | null {
+  if (total === null || total === undefined) return null;
+  const idx = gradeBands.findIndex((b) => total >= b.min && total <= b.max);
+  return idx === -1 ? null : idx;
+}
+
+function bandColorFor(total: number | null | undefined, gradeBands: ReportCardPdfGradeBand[]): string {
+  if (total === null || total === undefined || total <= 0) return "";
+  const rank = bandRankFor(total, gradeBands);
+  return rank === null ? "" : gradientColorForRank(rank, gradeBands.length);
 }
 
 // Builds the "SUBJECTS | CONTINUOUS ASSESSMENT | EXAMS | TOTAL | ..." table,
 // with Assignment 1/2, Test 1/2, ... grouped under their own spanning header
 // cell exactly like the printed sheet — generically, from whatever CA/EXAM
 // components this school's ResultConfig defines, not hardcoded to one shape.
-function buildAcademicTableHtml(components: ReportCardPdfComponent[], items: ReportCardPdfItem[]): string {
+function buildAcademicTableHtml(components: ReportCardPdfComponent[], items: ReportCardPdfItem[], gradeBands: ReportCardPdfGradeBand[]): string {
   const caComponents = components.filter((c) => c.category === "CA").sort((a, b) => a.order - b.order);
   const examComponents = components.filter((c) => c.category === "EXAM").sort((a, b) => a.order - b.order);
   const compCols = [...caComponents, ...examComponents];
@@ -308,7 +322,6 @@ function buildAcademicTableHtml(components: ReportCardPdfComponent[], items: Rep
       <th rowspan="3">CLASS<br>AVERAGE</th>
       <th rowspan="3">GRADE</th>
       <th rowspan="3">REMARK</th>
-      <th rowspan="3">SIGNATURE</th>
     </tr>
     <tr>${ca.row2}${exam.row2}</tr>
     <tr>${ca.row3}${exam.row3}</tr>
@@ -322,15 +335,14 @@ function buildAcademicTableHtml(components: ReportCardPdfComponent[], items: Rep
           return `<td>${v === undefined || v === null ? "—" : v}</td>`;
         })
         .join("");
-      const bg = bandColorFor(item.total);
+      const bg = bandColorFor(item.total, gradeBands);
       return `<tr>
         <td class="subject-name">${esc(item.subject.name)}</td>
         ${compCells}
         <td class="readonly total-cell" style="font-weight:bold;${bg ? ` background:${bg};` : ""}">${item.total ?? "—"}</td>
         <td>${item.classAverage !== null && item.classAverage !== undefined ? item.classAverage.toFixed(1) : "—"}</td>
-        <td>${esc(item.grade) || "—"}</td>
+        <td style="font-weight:bold;${bg ? ` background:${bg};` : ""}">${esc(item.grade) || "—"}</td>
         <td>${esc(item.remark) || "—"}</td>
-        <td></td>
       </tr>`;
     })
     .join("");
@@ -342,7 +354,7 @@ function buildAcademicTableHtml(components: ReportCardPdfComponent[], items: Rep
     ${compCols.length ? `<td colspan="${compCols.length}"></td>` : ""}
     <td>${Math.round(totalSum)}</td>
     <td>${avg}</td>
-    <td colspan="3"></td>
+    <td colspan="2"></td>
   </tr>`;
 
   return `<table id="academicTable"><thead>${thead}</thead><tbody>${bodyRows}${totalRow}</tbody></table>`;
@@ -352,7 +364,7 @@ function buildAcademicTableHtml(components: ReportCardPdfComponent[], items: Rep
 // grading key, with a dashed pass-mark line at 50 — a direct port of the
 // reference sheet's own drawChart(), using real subject totals instead of a
 // static demo array.
-function buildChartSvg(items: ReportCardPdfItem[]): string {
+function buildChartSvg(items: ReportCardPdfItem[], gradeBands: ReportCardPdfGradeBand[]): string {
   const w = 700;
   const h = 118;
   const padL = 30;
@@ -381,7 +393,8 @@ function buildChartSvg(items: ReportCardPdfItem[]): string {
     const barH = (val / 100) * chartH;
     const x = padL + i * (barW + barGap) + barGap / 2;
     const y = padT + chartH - barH;
-    const fill = val >= 70 ? "#cfe9d6" : val >= 50 ? "#fbedb8" : val > 0 ? "#f6cfcb" : "#fff";
+    const rank = bandRankFor(val, gradeBands);
+    const fill = val <= 0 ? "#fff" : rank === null ? "#fff" : gradientColorForRank(rank, gradeBands.length);
     svg += `<rect x="${x}" y="${y}" width="${barW}" height="${Math.max(barH, 0)}" fill="${fill}" stroke="#000" stroke-width="1.2"/>`;
     if (val > 0) svg += `<text x="${x + barW / 2}" y="${y - 4}" font-size="9" text-anchor="middle">${Math.round(val)}</text>`;
     const shortName = item.subject.name.length > 14 ? `${item.subject.name.slice(0, 13)}.` : item.subject.name;
@@ -425,8 +438,8 @@ function buildTraitTableHtml(entries: Array<[string, string]>, tableClass: strin
 function buildGradingKeyHtml(gradeBands: ReportCardPdfGradeBand[]): string {
   const rows = gradeBands
     .map(
-      (b) =>
-        `<tr style="background:${keyRowColor(b.min)};"><td>${b.min} - ${b.max}</td><td>${esc(b.grade)}</td><td>${esc(b.remark)}</td></tr>`,
+      (b, i) =>
+        `<tr style="background:${gradientColorForRank(i, gradeBands.length)};"><td>${b.min} - ${b.max}</td><td>${esc(b.grade)}</td><td>${esc(b.remark)}</td></tr>`,
     )
     .join("");
   return `<table class="mini-table">
@@ -444,6 +457,8 @@ function buildSheetHtml(
   gradeBands: ReportCardPdfGradeBand[],
   logoDataUrl: string | null,
   photoDataUrl: string | null,
+  formSigDataUrl: string | null,
+  principalSigDataUrl: string | null,
 ): string {
   const genderLabel = card.student.gender === "MALE" ? "Male" : card.student.gender === "FEMALE" ? "Female" : "";
   // The percentage is this student's own present-count over how many times
@@ -482,10 +497,10 @@ function buildSheetHtml(
     config.showCognitive && card.items?.length
       ? `
     ${titleHtml("ACADEMIC REPORT")}
-    ${buildAcademicTableHtml(components, card.items)}
+    ${buildAcademicTableHtml(components, card.items, gradeBands)}
     <div class="chart-wrap">
       ${titleHtml("PERFORMANCE CHART &mdash; STRENGTHS &amp; WEAKNESSES")}
-      ${buildChartSvg(card.items)}
+      ${buildChartSvg(card.items, gradeBands)}
       <div class="chart-note">Each bar is the subject's Total Score out of 100. The dashed line marks the pass mark (50).</div>
     </div>`
       : "";
@@ -535,17 +550,17 @@ function buildSheetHtml(
       </div>
 
       <div class="remarks">
-        <div class="field"><label>Form Master's Comment:</label></div>
+        <div class="field"><label>Class Teacher's Comment:</label></div>
         <div class="line">${esc(card.remark)}</div>
         <div class="sig-row">
-          <div class="field"><label>Form Master's Name:</label><span>${esc(card.formMasterName)}</span></div>
-          <div class="field"><label>Sign/Date:</label><span></span></div>
+          <div class="field"><label>Class Teacher:</label><span>${esc(card.formMasterName)}</span></div>
+          <div class="field"><label>Sign/Date:</label><span>${formSigDataUrl ? `<img class="sig-img" src="${formSigDataUrl}" alt="Signature">` : ""}${esc(fmtDate(new Date().toISOString()))}</span></div>
         </div>
-        <div class="field" style="margin-top:8px;"><label>Principal's Comment:</label></div>
+        <div class="field" style="margin-top:8px;"><label>${esc(card.principalDesignation || "Principal")}'s Comment:</label></div>
         <div class="line">${esc(card.principalComment)}</div>
         <div class="sig-row">
-          <div class="field"><label>Principal's Name:</label><span>${esc(card.principalName)}</span></div>
-          <div class="field"><label>Sign/Date:</label><span></span></div>
+          <div class="field"><label>${esc(card.principalDesignation || "Principal")}:</label><span>${esc(card.principalName)}</span></div>
+          <div class="field"><label>Sign/Date:</label><span>${principalSigDataUrl ? `<img class="sig-img" src="${principalSigDataUrl}" alt="Signature">` : ""}${esc(fmtDate(new Date().toISOString()))}</span></div>
         </div>
       </div>
 
@@ -613,12 +628,12 @@ export const SAMPLE_REPORT_COMPONENTS: ReportCardPdfComponent[] = [
 ];
 
 export const SAMPLE_GRADE_BANDS: ReportCardPdfGradeBand[] = [
-  { min: 80, max: 100, grade: "Excellent", remark: "Excellent" },
-  { min: 70, max: 79, grade: "Very Good", remark: "Very Good" },
-  { min: 60, max: 69, grade: "Good", remark: "Good" },
-  { min: 50, max: 59, grade: "Fair", remark: "Fair" },
-  { min: 40, max: 49, grade: "Poor", remark: "Poor" },
-  { min: 0, max: 39, grade: "Very Poor", remark: "Very Poor" },
+  { min: 80, max: 100, grade: "A", remark: "Excellent" },
+  { min: 70, max: 79, grade: "B", remark: "Very Good" },
+  { min: 60, max: 69, grade: "C", remark: "Good" },
+  { min: 50, max: 59, grade: "D", remark: "Fair" },
+  { min: 40, max: 49, grade: "E", remark: "Poor" },
+  { min: 0, max: 39, grade: "F", remark: "Fail" },
 ];
 
 export const SAMPLE_REPORT_CARD: ReportCardPdfData = {
@@ -631,9 +646,9 @@ export const SAMPLE_REPORT_CARD: ReportCardPdfData = {
   classSize: 28,
   gpa: 4.2,
   items: [
-    { subject: { name: "Mathematics" }, ca: 32, exam: 51, total: 83, grade: "Excellent", remark: "Excellent", position: 1, classAverage: 68.2, componentScores: { "Assignment 1": 9, "Assignment 2": 8, "Test 1": 17, "Test 2": 18, Exam: 51 } },
-    { subject: { name: "English Language" }, ca: 28, exam: 44, total: 72, grade: "Very Good", remark: "Very Good", position: 4, classAverage: 61.5, componentScores: { "Assignment 1": 8, "Assignment 2": 7, "Test 1": 15, "Test 2": 18, Exam: 44 } },
-    { subject: { name: "Basic Science" }, ca: 25, exam: 40, total: 65, grade: "Good", remark: "Good", position: 6, classAverage: 58.9, componentScores: { "Assignment 1": 7, "Assignment 2": 6, "Test 1": 14, "Test 2": 18, Exam: 40 } },
+    { subject: { name: "Mathematics" }, ca: 32, exam: 51, total: 83, grade: "A", remark: "Excellent", position: 1, classAverage: 68.2, componentScores: { "Assignment 1": 9, "Assignment 2": 8, "Test 1": 17, "Test 2": 18, Exam: 51 } },
+    { subject: { name: "English Language" }, ca: 28, exam: 44, total: 72, grade: "B", remark: "Very Good", position: 4, classAverage: 61.5, componentScores: { "Assignment 1": 8, "Assignment 2": 7, "Test 1": 15, "Test 2": 18, Exam: 44 } },
+    { subject: { name: "Basic Science" }, ca: 25, exam: 40, total: 65, grade: "C", remark: "Good", position: 6, classAverage: 58.9, componentScores: { "Assignment 1": 7, "Assignment 2": 6, "Test 1": 14, "Test 2": 18, Exam: 40 } },
   ],
   psychomotor: { Neatness: "A", Punctuality: "B", Honesty: "A", "Self Control": "B", Obedience: "A", Politeness: "A", "Relationship with Others": "B" },
   coCurricular: { Handwriting: "A", "Sports/Games": "B", "Verbal Fluency": "A", Leadership: "B", "Musical Skill": "C" },
@@ -649,6 +664,7 @@ export const SAMPLE_REPORT_CARD: ReportCardPdfData = {
   formMasterName: "Mrs. Grace Adebayo",
   principalComment: "A pleasure to have in school. Well done.",
   principalName: "Mr. Emmanuel Okafor",
+  principalDesignation: "Principal",
 };
 
 async function buildReportCardDoc(
@@ -658,11 +674,13 @@ async function buildReportCardDoc(
   components: ReportCardPdfComponent[],
   gradeBands: ReportCardPdfGradeBand[],
 ) {
-  const [logoDataUrl, photoDataUrl] = await Promise.all([
+  const [logoDataUrl, photoDataUrl, formSigDataUrl, principalSigDataUrl] = await Promise.all([
     config.showLogo ? toDataUrl(school.logoUrl) : Promise.resolve(null),
     toDataUrl(card.student.photoUrl ?? null),
+    toDataUrl(card.formMasterSignatureUrl ?? null),
+    toDataUrl(card.principalSignatureUrl ?? null),
   ]);
-  const html = buildSheetHtml(school, config, card, components, gradeBands, logoDataUrl, photoDataUrl);
+  const html = buildSheetHtml(school, config, card, components, gradeBands, logoDataUrl, photoDataUrl, formSigDataUrl, principalSigDataUrl);
   const canvas = await renderSheetCanvas(html);
   const doc = await canvasToPdf(canvas);
   const name = `${card.student.firstName} ${card.student.lastName}`;

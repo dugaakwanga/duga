@@ -437,6 +437,24 @@ export const studentsModule: Module = {
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "student.fee.set", entityType: "Student", entityId: ctx.id, meta: { feeAmount, feeDays, feeStartDate, feeEndDate, feesDueDate } });
       return { ...updated, fee: feeInfoOf(updated) };
     },
+    // Manual, admin-only override — independent of the automatic "Owing"
+    // fee badge shown alongside it. Blocks teachers from entering/saving
+    // this student's scores anywhere in the results entry grid until an
+    // admin clears it; see saveScores/entrySheet in results.ts.
+    setScoreEntryBlock: async (ctx) => {
+      can(ctx, "students:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const blocked = bool(ctx.body.blocked);
+      const reason = str(ctx.body.reason);
+      const student = await prisma.student.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!student) throw new Error("Student not found");
+      const updated = await prisma.student.update({
+        where: { id: ctx.id },
+        data: { scoreEntryBlocked: blocked, scoreEntryBlockedReason: blocked ? (reason ?? null) : null },
+      });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: blocked ? "student.scoreEntry.blocked" : "student.scoreEntry.unblocked", entityType: "Student", entityId: ctx.id, meta: { reason } });
+      return { ...updated, fee: feeInfoOf(updated) };
+    },
     promote: async (ctx) => {
       can(ctx, "students:promote");
       const schoolId = ctx.session.user.schoolId;

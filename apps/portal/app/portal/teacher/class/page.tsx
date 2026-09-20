@@ -14,6 +14,17 @@ import {
   type ReportCardPdfGradeBand,
 } from "@/lib/client/reportCardPdf";
 
+// A 6-step green -> red gradient keyed to a band's rank among the school's
+// configured grade bands — mirrors reportCardPdf.ts's own gradientColorForRank
+// so the on-screen grade badges match the printed card.
+function gradeBandColor(score: number | null | undefined, scale: ReportCardPdfGradeBand[]): string | undefined {
+  if (score === null || score === undefined || score <= 0 || scale.length === 0) return undefined;
+  const rank = scale.findIndex((b) => score >= b.min && score <= b.max);
+  if (rank === -1) return undefined;
+  const t = scale.length <= 1 ? 0 : rank / (scale.length - 1);
+  return `hsl(${120 - 120 * t}, 62%, 88%)`;
+}
+
 interface RosterStudent {
   id: string;
   name: string;
@@ -419,7 +430,11 @@ export default function MyClassPage() {
                             <td>{i.ca ?? "—"}</td>
                             <td>{i.exam ?? "—"}</td>
                             <td>{i.total ?? "—"}</td>
-                            <td><Badge tone="neutral">{i.grade ?? "—"}</Badge></td>
+                            <td>
+                              <span style={{ display: "inline-block", padding: "2px 10px", borderRadius: 999, fontWeight: 700, fontSize: 12.5, background: gradeBandColor(i.total, studentCard.gradingScale) ?? "var(--duga-chip-bg, #eee)" }}>
+                                {i.grade ?? "—"}
+                              </span>
+                            </td>
                           </tr>
                         ))}
                       </Table>

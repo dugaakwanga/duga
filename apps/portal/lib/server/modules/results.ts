@@ -42,9 +42,76 @@ export async function schoolAndReportCardConfig(schoolId: string, section?: stri
       town: row?.town ?? null,
       state: row?.state ?? null,
       sectionLabel: row?.sectionLabel ?? (section ? `${section} Section`.toUpperCase() : null),
-      signatureLabels: Array.isArray(row?.signatureLabels) ? row.signatureLabels : ["Class Teacher", "Principal"],
     },
   };
+}
+
+// Resolves the two auto-signing identities printed on a report card: the
+// class's own form teacher (their name + uploaded signature) and the
+// school's Principal (whichever Admin's designation contains "principal",
+// or the longest-standing Admin account if none has set one) — replacing
+// the old free-text Name fields admins used to retype by hand on every card.
+async function resolveSignatories(
+  schoolId: string,
+  classGroupIds: Array<string | null | undefined>,
+): Promise<{
+  principalName: string | null;
+  principalDesignation: string;
+  principalSignatureUrl: string | null;
+  formTeachersByClassGroup: Map<string, { name: string; signatureUrl: string | null }>;
+}> {
+  const uniqueIds = [...new Set(classGroupIds.filter((id): id is string => Boolean(id)))];
+  const [principalAdmin, classGroups] = await Promise.all([
+    prisma.admin
+      .findFirst({
+        where: { schoolId, designation: { contains: "principal", mode: "insensitive" } },
+        include: { user: { select: { firstName: true, lastName: true } } },
+        orderBy: { createdAt: "asc" },
+      })
+      .then(
+        async (row) =>
+          row ??
+          prisma.admin.findFirst({
+            where: { schoolId },
+            include: { user: { select: { firstName: true, lastName: true } } },
+            orderBy: { createdAt: "asc" },
+          }),
+      ),
+    uniqueIds.length
+      ? prisma.classGroup.findMany({
+          where: { id: { in: uniqueIds } },
+          select: { id: true, formTeacher: { select: { signatureUrl: true, user: { select: { firstName: true, lastName: true } } } } },
+        })
+      : Promise.resolve([]),
+  ]);
+  const formTeachersByClassGroup = new Map<string, { name: string; signatureUrl: string | null }>();
+  for (const cg of classGroups) {
+    if (!cg.formTeacher) continue;
+    formTeachersByClassGroup.set(cg.id, { name: `${cg.formTeacher.user.firstName} ${cg.formTeacher.user.lastName}`, signatureUrl: cg.formTeacher.signatureUrl });
+  }
+  return {
+    principalName: principalAdmin ? `${principalAdmin.user.firstName} ${principalAdmin.user.lastName}` : null,
+    principalDesignation: principalAdmin?.designation || "Principal",
+    principalSignatureUrl: principalAdmin?.signatureUrl ?? null,
+    formTeachersByClassGroup,
+  };
+}
+
+function applySignatories<T extends { classGroupId?: string | null }>(
+  cards: T[],
+  signatories: Awaited<ReturnType<typeof resolveSignatories>>,
+): Array<T & { formMasterName: string | null; formMasterSignatureUrl: string | null; principalName: string | null; principalDesignation: string; principalSignatureUrl: string | null }> {
+  return cards.map((rc) => {
+    const ft = rc.classGroupId ? signatories.formTeachersByClassGroup.get(rc.classGroupId) : undefined;
+    return {
+      ...rc,
+      formMasterName: ft?.name ?? null,
+      formMasterSignatureUrl: ft?.signatureUrl ?? null,
+      principalName: signatories.principalName,
+      principalDesignation: signatories.principalDesignation,
+      principalSignatureUrl: signatories.principalSignatureUrl,
+    };
+  });
 }
 
 // Which assessment components (e.g. "Assignment", "Test", "Exam" — whatever
@@ -139,7 +206,8 @@ export const resultsModule: Module = {
         });
       }
       const { school, reportCardConfig } = await schoolAndReportCardConfig(schoolId, section);
-      return { role, reportCards: gated, school, reportCardConfig, config, gradingScale };
+      const signatories = await resolveSignatories(schoolId, gated.map((rc) => rc.classGroupId));
+      return { role, reportCards: applySignatories(gated, signatories), school, reportCardConfig, config, gradingScale };
     }
 
     // Admin / owner: only return the active section when one is selected.
@@ -163,12 +231,24 @@ export const resultsModule: Module = {
     ]);
     const submissions = await submissionSummary(schoolId, classSubjects, activeTermId);
     const { school, reportCardConfig } = await schoolAndReportCardConfig(schoolId, section);
+    const signatories = await resolveSignatories(schoolId, reportCards.map((rc) => rc.classGroupId));
     // classSubjects was already being fetched to compute `submissions`, but
     // was never sent to the client — the admin/owner "Subject submissions"
     // overview builds its rows from this array client-side, so without it
     // that whole card silently never rendered, no matter how many subjects
     // teachers had submitted.
-    return { role, reportCards: reportCards.map((rc) => ({ ...rc, gpa: gpaOf(rc.items) })), classSubjects, config, submissions, school, reportCardConfig, activeTermId, terms, gradingScale };
+    return {
+      role,
+      reportCards: applySignatories(reportCards.map((rc) => ({ ...rc, gpa: gpaOf(rc.items) })), signatories),
+      classSubjects,
+      config,
+      submissions,
+      school,
+      reportCardConfig,
+      activeTermId,
+      terms,
+      gradingScale,
+    };
   },
 
   async get(ctx) {
@@ -208,6 +288,7 @@ export const resultsModule: Module = {
         throw err;
       }
     }
+    const signatories = await resolveSignatories(ctx.session.user.schoolId, [rc.classGroupId]);
     if (role === "TEACHER") {
       const teacherId = ctx.session.user.teacher?.id;
       if (!teacherId) throw new Error("Teacher profile not found");
@@ -225,11 +306,11 @@ export const resultsModule: Module = {
           err.status = 403;
           throw err;
         }
-        return { ...rc, items: ownItems, gpa: (await gpaCalculator(ctx.session.user.schoolId))(ownItems), school, reportCardConfig, config, gradingScale };
+        return applySignatories([{ ...rc, items: ownItems, gpa: (await gpaCalculator(ctx.session.user.schoolId))(ownItems), school, reportCardConfig, config, gradingScale }], signatories)[0];
       }
-      return { ...rc, gpa: (await gpaCalculator(ctx.session.user.schoolId))(rc.items), school, reportCardConfig, config, gradingScale };
+      return applySignatories([{ ...rc, gpa: (await gpaCalculator(ctx.session.user.schoolId))(rc.items), school, reportCardConfig, config, gradingScale }], signatories)[0];
     }
-    return { ...rc, gpa: (await gpaCalculator(ctx.session.user.schoolId))(rc.items), school, reportCardConfig, config, gradingScale };
+    return applySignatories([{ ...rc, gpa: (await gpaCalculator(ctx.session.user.schoolId))(rc.items), school, reportCardConfig, config, gradingScale }], signatories)[0];
   },
 
   actions: {
@@ -261,9 +342,7 @@ export const resultsModule: Module = {
           coCurricular,
           attendanceRemark: str(ctx.body.attendanceRemark),
           remark: str(ctx.body.remark),
-          formMasterName: str(ctx.body.formMasterName),
           principalComment: str(ctx.body.principalComment),
-          principalName: str(ctx.body.principalName),
           // These are auto-computed at collation time but stay editable so an
           // admin can correct them (e.g. a manual fee waiver, a corrected DOB).
           feesOwed: num(ctx.body.feesOwed),
@@ -329,10 +408,14 @@ export const resultsModule: Module = {
       if (!classSubject) throw new Error(teacher ? "You can only enter scores for your own subjects" : "Class subject not found");
       const roster = await prisma.student.findMany({
         where: { schoolId, currentClassGroupId: classSubject.classGroupId, status: "ACTIVE" },
-        select: { id: true },
+        select: { id: true, scoreEntryBlocked: true },
       });
       const rosterIds = new Set(roster.map((student) => student.id));
       if (rows.some((row) => !rosterIds.has(row.studentId))) throw new Error("Scores can only be entered for active students in this class");
+      // Admin-set, per-student block — teacher entry only (owner/admin keep
+      // unrestricted override everywhere else in this handler, same as the
+      // component-lock and results-window checks above).
+      const blockedIds = teacher ? new Set(roster.filter((s) => s.scoreEntryBlocked).map((s) => s.id)) : new Set<string>();
 
       const config = await getResultConfig(schoolId, classSubject.classGroup.level.section);
       const compNames = new Set(config.components.map((c) => c.name));
@@ -356,7 +439,12 @@ export const resultsModule: Module = {
       const existing = await prisma.subjectScore.findMany({ where: { schoolId, classSubjectId, termId } });
       const existingByStudent = new Map(existing.map((row) => [row.studentId, row]));
 
+      const skipped: string[] = [];
       for (const r of rows) {
+        if (blockedIds.has(r.studentId)) {
+          skipped.push(r.studentId);
+          continue;
+        }
         const existingScores = (existingByStudent.get(r.studentId)?.scores as Record<string, number> | null | undefined) ?? {};
         const scores: Record<string, number> = {};
         for (const name of compNames) {
@@ -375,8 +463,8 @@ export const resultsModule: Module = {
           create: { schoolId, classSubjectId, studentId: r.studentId, termId, scores: scores as never, caTotal: ca, examTotal: exam, total, enteredByTeacherId: teacher?.id },
         });
       }
-      await logAudit({ schoolId, userId: ctx.session.user.id, action: "results.scoresEntered", entityType: "ClassSubject", entityId: classSubjectId, meta: { termId, rows: rows.length } });
-      return { count: rows.length };
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "results.scoresEntered", entityType: "ClassSubject", entityId: classSubjectId, meta: { termId, rows: rows.length, skipped: skipped.length } });
+      return { count: rows.length - skipped.length, skipped };
     },
 
     // Admin/owner locks one assessment component — or, when `component` is
@@ -585,6 +673,8 @@ export const resultsModule: Module = {
           examTotal: row?.examTotal ?? null,
           total: row?.total ?? null,
           submitted: row?.submitted ?? false,
+          blocked: s.scoreEntryBlocked,
+          blockedReason: s.scoreEntryBlockedReason ?? null,
         };
       });
       return {

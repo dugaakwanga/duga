@@ -21,6 +21,27 @@ export const profileModule: Module = {
       data.avatarUrl = String(b.avatarUrl);
     }
     const user = await prisma.user.update({ where: { id: ctx.session.user.id }, data });
+
+    // Self-service signature, uploaded once and auto-attached wherever this
+    // person signs a report card (class teacher / principal) — see
+    // resolveSignatories in results.ts.
+    const role = ctx.session.user.role;
+    if (role === "TEACHER" && (typeof b.signatureUrl === "string" || typeof b.designation === "string")) {
+      const teacherData: Record<string, unknown> = {};
+      if (typeof b.signatureUrl === "string") teacherData.signatureUrl = b.signatureUrl || null;
+      if (typeof b.designation === "string") teacherData.designation = b.designation || null;
+      await prisma.teacher.update({ where: { userId: ctx.session.user.id }, data: teacherData });
+    }
+    if ((role === "ADMIN" || role === "OWNER") && (typeof b.signatureUrl === "string" || typeof b.designation === "string")) {
+      const adminData: Record<string, unknown> = {};
+      if (typeof b.signatureUrl === "string") adminData.signatureUrl = b.signatureUrl || null;
+      if (typeof b.designation === "string") adminData.designation = b.designation || null;
+      await prisma.admin.upsert({
+        where: { userId: ctx.session.user.id },
+        update: adminData,
+        create: { userId: ctx.session.user.id, schoolId: ctx.session.user.schoolId, ...adminData },
+      });
+    }
     return user;
   },
 

@@ -32,6 +32,8 @@ interface Student {
   fee?: FeeInfo;
   scholarshipOverrideId?: string | null;
   balance?: { totalAmount: number; paidAmount: number; balance: number } | null;
+  scoreEntryBlocked?: boolean;
+  scoreEntryBlockedReason?: string | null;
 }
 
 interface ClassOption {
@@ -341,6 +343,23 @@ export default function StudentsPage() {
     });
   }
 
+  async function toggleScoreEntryBlock(s: Student) {
+    const nextBlocked = !s.scoreEntryBlocked;
+    let reason: string | undefined;
+    if (nextBlocked) {
+      reason = window.prompt(`Block result entry for ${s.user.firstName} ${s.user.lastName} — reason (optional, e.g. "Owing fees"):`) ?? undefined;
+      if (reason === undefined) return; // cancelled
+    } else if (!confirm(`Unblock result entry for ${s.user.firstName} ${s.user.lastName}?`)) {
+      return;
+    }
+    try {
+      const updated = await api<Student>(`students/${s.id}/setScoreEntryBlock`, { method: "POST", body: { blocked: nextBlocked, reason } });
+      setItems((old) => old.map((it) => (it.id === s.id ? { ...it, scoreEntryBlocked: updated.scoreEntryBlocked, scoreEntryBlockedReason: updated.scoreEntryBlockedReason } : it)));
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
   async function removeStudent(s: Student) {
     if (!confirm(`Remove "${s.user.firstName} ${s.user.lastName}"? This deactivates their account so they can no longer sign in.`)) return;
     setSaving(true);
@@ -514,7 +533,7 @@ export default function StudentsPage() {
                 <Icon name="settings" size={14} /> Customize ID card
               </Button>
             </div>
-            <Table headers={["Adm No.", "Name", "Status", "Fee access", "Balance", "Actions"]}>
+            <Table headers={["Adm No.", "Name", "Status", "Fee access", "Balance", "Result entry", "Actions"]}>
               {activeClassStudents.map((s) => (
                 <tr key={s.id}>
                   <td>{s.admissionNumber}</td>
@@ -538,11 +557,23 @@ export default function StudentsPage() {
                   <td>{feeBadge(s)}</td>
                   <td>{balanceBadge(s) ?? <span style={{ color: "var(--duga-muted)", fontSize: 12.5 }}>—</span>}</td>
                   <td>
+                    {s.scoreEntryBlocked ? (
+                      <Badge tone="danger">🔒 Blocked{s.scoreEntryBlockedReason ? ` — ${s.scoreEntryBlockedReason}` : ""}</Badge>
+                    ) : (
+                      <span style={{ color: "var(--duga-muted)", fontSize: 12.5 }}>Open</span>
+                    )}
+                  </td>
+                  <td>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       {canManage && <Button size="sm" variant="ghost" onClick={() => openEdit(s)}>Edit</Button>}
                       {canManage && <Button size="sm" variant="ghost" onClick={() => { setPasswordTarget(s); setTempPassword(""); setPasswordError(null); }}>Set password</Button>}
                       {canSetFee && <Button size="sm" variant="outline" onClick={() => { setFeeTarget(s); setFeeForm({}); }}>Set fee</Button>}
                       {canManage && <Button size="sm" variant="outline" onClick={() => { setPromoteTarget(s); setPromoteForm({}); }}>Move class</Button>}
+                      {canManage && (
+                        <Button size="sm" variant={s.scoreEntryBlocked ? "outline" : "danger"} onClick={() => toggleScoreEntryBlock(s)}>
+                          {s.scoreEntryBlocked ? "Unblock results" : "Block results"}
+                        </Button>
+                      )}
                       <Button size="sm" variant="outline" loading={printingCards === s.id} onClick={() => printIdCards([s.id], s.id)}>ID card</Button>
                       {canManage && <Button size="sm" variant="danger" onClick={() => removeStudent(s)}>Remove</Button>}
                     </div>

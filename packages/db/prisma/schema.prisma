@@ -407,6 +407,12 @@ model Student {
   // paid and requires the fee to be fully settled — see Term.feesDueDate.
   feesDueDate         DateTime?
   feePaidThrough      DateTime?
+  // Manual admin override, independent of fee status — when set, teachers
+  // can't enter/save this student's scores anywhere in the results entry
+  // grid until an admin clears it. Never set automatically from an owing
+  // balance; the admin decides per child.
+  scoreEntryBlocked       Boolean  @default(false)
+  scoreEntryBlockedReason String?
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
 
@@ -485,6 +491,10 @@ model Teacher {
   // and Secondary assignments separate even before a teacher has a class.
   sections         Json?
   designation      String?
+  // Uploaded once on their own profile; auto-attached to every report card
+  // for whichever class they're the form teacher of — see resolveSignatories
+  // in results.ts.
+  signatureUrl     String?
   // Optional cap used by the AI timetable generator to spread a teacher's
   // periods out rather than stacking them all on one day. Null falls back to
   // the generator's own default.
@@ -518,8 +528,15 @@ model Admin {
   // Empty means school-wide access. When present, an admin/bursar can only
   // access the listed school sections.
   sections    Json?
+  // Job title on the printed report card — e.g. "Principal", "Head Teacher".
+  // Whichever admin's designation contains "principal" (case-insensitive) is
+  // auto-resolved as the Principal signatory; see resolveSignatories in
+  // results.ts. Defaults to "Principal" in the UI, not stored until edited.
   designation String?
   staffNumber String?
+  // Uploaded once on their own profile; auto-attached to every report card
+  // school-wide once resolved as the Principal signatory.
+  signatureUrl String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
