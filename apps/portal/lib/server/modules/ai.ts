@@ -3,6 +3,7 @@ import type { Module } from ".";
 import { can, str, num } from "../helpers";
 import { generateSmartTimetable } from "./timetable";
 import { findSchemeChunks } from "./scheme";
+import { findTextbookChunks } from "./textbooks";
 import { checkRateLimit } from "@duga/core/server";
 import { hasPermission, type Role } from "@duga/core";
 import type { Ctx } from "@/app/api/v1/[...path]/route";
@@ -101,6 +102,65 @@ async function generateGemini(system: string, prompt: string | ChatTurn[], tempe
     }
   }
   throw lastErr ?? new Error("Gemini request failed.");
+}
+
+// Gemini's embedding model — used to semantically match a lesson-draft
+// request (subject/topic/level) against a textbook's chunked pages (see
+// textbooks.ts's findTextbookChunks), which a short keyword match can't do
+// reliably across hundreds of pages the way it can for a short scheme-of-
+// work document. batchEmbedContents does up to 100 texts in one call, so
+// ingesting a whole textbook's ~100-150 chunks takes one or two calls, not
+// one per chunk. No fallback provider — OpenRouter's free tier has nothing
+// equivalent, and there's no reasonable non-semantic substitute at this
+// scale the way scheme.ts falls back to keyword matching.
+const GEMINI_EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL || "text-embedding-004";
+
+export async function embedTexts(texts: string[]): Promise<number[][]> {
+  if (!geminiAvailable()) throw new Error("AI is not configured — add a GOOGLE_API_KEY to the server environment.");
+  if (texts.length === 0) return [];
+  const out: number[][] = [];
+  // The API caps a single batchEmbedContents call at 100 requests.
+  for (let i = 0; i < texts.length; i += 100) {
+    const batch = texts.slice(i, i + 100);
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_EMBEDDING_MODEL}:batchEmbedContents?key=${GOOGLE_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requests: batch.map((text) => ({
+            model: `models/${GEMINI_EMBEDDING_MODEL}`,
+            content: { parts: [{ text }] },
+          })),
+        }),
+      },
+    );
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(`Gemini embedding error (${res.status})` + (detail ? `: ${detail.slice(0, 200)}` : ""));
+    }
+    const data = await res.json();
+    const embeddings = data?.embeddings;
+    if (!Array.isArray(embeddings) || embeddings.length !== batch.length) {
+      throw new Error("Gemini returned an unexpected embedding response.");
+    }
+    for (const e of embeddings) out.push((e?.values ?? []) as number[]);
+  }
+  return out;
+}
+
+export function cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  const len = Math.min(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    dot += a[i]! * b[i]!;
+    normA += a[i]! * a[i]!;
+    normB += b[i]! * b[i]!;
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
 // Cloudflare Workers AI's free tier — genuinely good FLUX.1 [schnell]
@@ -512,6 +572,10 @@ export const aiModule: Module = {
       const week = str(ctx.body.week);
 
       const matches = await findSchemeChunks(ctx.session.user.schoolId, { levelName: level, subjectName: subject, topicHint: topic });
+      // Textbook excerpts (see textbooks.ts) ground the actual teaching
+      // depth/wording/examples in the school's own uploaded book, separate
+      // from the scheme excerpt above which only defines WHAT to teach.
+      const textbookMatches = await findTextbookChunks(ctx.session.user.schoolId, { levelName: level, subjectName: subject, topicHint: topic });
 
       // Ask the model to mark its own illustration points wherever a
       // single clear subject genuinely helps — not just one image tacked
@@ -606,7 +670,20 @@ export const aiModule: Module = {
         );
       }
 
-      if (matches.length === 0) {
+      const hasScheme = matches.length > 0;
+      const hasTextbook = textbookMatches.length > 0;
+      const textbookExcerpt = hasTextbook
+        ? textbookMatches.map((m) => `--- ${m.subjectName} (${m.levelName})${m.pageStart ? `, p.${m.pageStart}${m.pageEnd && m.pageEnd !== m.pageStart ? `-${m.pageEnd}` : ""}` : ""} ---\n${m.text}`).join("\n\n")
+        : null;
+      // Present when a textbook was found, regardless of scheme — tells the
+      // model to mirror the book's own wording, worked examples and depth
+      // rather than inventing its own explanation style.
+      const textbookGuidance = hasTextbook
+        ? " A matching textbook excerpt is also provided below (labeled 'Textbook excerpt') — base the actual teaching content, explanations and " +
+          "worked examples on it, mirroring its depth and style, not just generic knowledge of the topic."
+        : "";
+
+      if (!hasScheme && !hasTextbook) {
         const system = "You write lesson notes for students." + structureInstruction(false) + audienceInstruction + lengthInstruction + illustrationInstruction + formatInstruction;
         const prompt = `Subject: ${subject}\nTopic: ${topic ?? "(choose an appropriate topic for this subject and level)"}${level ? `\nLevel/Class: ${level}` : ""}${week ? `\nWeek: ${week}` : ""}`;
         // Gemini 3.5 Flash (the primary provider here — see generate() above)
@@ -620,17 +697,37 @@ export const aiModule: Module = {
         return { reply: content, grounded: false, illustrations };
       }
 
+      // Textbook-only (no scheme match): ground in the textbook directly —
+      // no scheme excerpt to enforce "must literally appear" against, since
+      // findTextbookChunks already picked the most semantically relevant
+      // page(s) rather than an exact tag match.
+      if (!hasScheme) {
+        const system =
+          "You write lesson notes for a Nigerian school student, grounded in the textbook excerpt provided below — base the actual content on it " +
+          "(the excerpt is a raw extract from a PDF, so formatting may be messy — read past that), expanding it into a real taught lesson rather " +
+          "than just restating it." +
+          structureInstruction(false) + audienceInstruction + lengthInstruction + illustrationInstruction + formatInstruction;
+        const prompt = `Textbook excerpt:\n${textbookExcerpt}\n\n---\nWrite a student-facing lesson note for Subject: ${subject}${level ? `, Level/Class: ${level}` : ""}${week ? `, Week ${week}` : ""}${topic ? `, Topic: ${topic}` : " — pick the most relevant part of the excerpt above"}.`;
+        const reply = await generate(system, prompt, 0.6, 7000);
+        const { content, illustrations } = extractIllustrations(reply);
+        return { reply: content, grounded: true, illustrations, sections: textbookMatches.map((m) => ({ subjectName: m.subjectName, levelName: m.levelName, term: null })) };
+      }
+
       const excerpt = matches.map((m) => `--- ${m.subjectName}${m.levelName ? ` (${m.levelName})` : ""}${m.term ? `, ${m.term} TERM` : ""} ---\n${m.text}`).join("\n\n");
       const system =
         "You write lesson notes for a Nigerian school student, strictly grounded in the official scheme-of-work excerpt provided (that's the " +
         "syllabus your teacher follows, not what you show the student — it tells you WHAT to teach). " +
         "Use ONLY topics/subtopics that actually appear in the excerpt — if a specific week or topic was requested, find it in the excerpt " +
         "(the excerpt is a raw extract from a PDF, so formatting may be messy — read past that). Expand each subtopic named in the excerpt into " +
-        "real, taught content — the excerpt itself is just a syllabus line, not the lesson. " +
-        "If the specific week or topic requested genuinely does not appear anywhere in the excerpt, do NOT write an apology, an explanation, or " +
+        "real, taught content — the excerpt itself is just a syllabus line, not the lesson." +
+        textbookGuidance +
+        " If the specific week or topic requested genuinely does not appear anywhere in the scheme excerpt, do NOT write an apology, an explanation, or " +
         "any lesson note at all — respond with EXACTLY the single line NOT_FOUND_IN_SCHEME and nothing else." +
         structureInstruction(true) + audienceInstruction + lengthInstruction + illustrationInstruction + formatInstruction;
-      const prompt = `Scheme of work excerpt (syllabus — do not show this to the student, teach FROM it):\n${excerpt}\n\n---\nWrite a student-facing lesson note for Subject: ${subject}${level ? `, Level/Class: ${level}` : ""}${week ? `, Week ${week}` : ""}${topic ? `, Topic: ${topic}` : " — pick the most relevant week/topic from the excerpt above"}.`;
+      const prompt =
+        `Scheme of work excerpt (syllabus — do not show this to the student, teach FROM it):\n${excerpt}` +
+        (textbookExcerpt ? `\n\n---\nTextbook excerpt:\n${textbookExcerpt}` : "") +
+        `\n\n---\nWrite a student-facing lesson note for Subject: ${subject}${level ? `, Level/Class: ${level}` : ""}${week ? `, Week ${week}` : ""}${topic ? `, Topic: ${topic}` : " — pick the most relevant week/topic from the excerpt above"}.`;
       // Same reasoning-overhead headroom as the ungrounded path above.
       const reply = await generate(system, prompt, 0.6, 7000);
       // The model sometimes ignores the strict-grounding instruction above

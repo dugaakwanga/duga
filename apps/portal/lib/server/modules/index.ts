@@ -51,6 +51,7 @@ import { paperExamModule } from "./paperExam";
 import { pushModule } from "./push";
 import { emailTemplatesModule } from "./emailTemplates";
 import { booksModule } from "./books";
+import { textbooksModule } from "./textbooks";
 
 export const modules: Record<string, Module> = {
   dashboard: dashboardModule,
@@ -93,6 +94,7 @@ export const modules: Record<string, Module> = {
   push: pushModule,
   emailTemplates: emailTemplatesModule,
   books: booksModule,
+  textbooks: textbooksModule,
 };
 
 export type { Ctx };

@@ -1476,6 +1476,51 @@ model SchemeOfWorkChunk {
   @@index([subjectName])
 }
 
+// An uploaded textbook (e.g. a Mathematics Association of Nigeria text),
+// tagged by the admin to one subject/level rather than auto-detected —
+// unlike a scheme-of-work document, a textbook has no reliable
+// self-describing header to parse. Used to ground AI lesson generation in
+// the book's own actual teaching content/depth, alongside (not instead of)
+// the scheme-of-work's syllabus scope — see findTextbookChunks in
+// textbooks.ts.
+model Textbook {
+  id               String   @id @default(cuid())
+  schoolId         String
+  subjectName      String
+  levelName        String
+  section          String
+  title            String
+  fileUrl          String
+  uploadedByUserId String?
+  createdAt        DateTime @default(now())
+
+  chunks TextbookChunk[]
+
+  @@index([schoolId])
+  @@index([subjectName])
+  @@index([levelName])
+}
+
+// A fixed-size (~3000 char), paragraph-boundary chunk of a textbook's
+// extracted text, with an embedding vector for semantic search — a
+// textbook runs hundreds of pages, far too many to find the right one by
+// keyword match the way findSchemeChunks does for a short scheme document.
+model TextbookChunk {
+  id         String @id @default(cuid())
+  textbookId String
+  text       String
+  pageStart  Int?
+  pageEnd    Int?
+  // number[] from Gemini's embedding model — plain Json rather than a real
+  // vector column; similarity search runs in application code, fast enough
+  // at the scale of a few hundred chunks per subject/level.
+  embedding  Json?
+
+  textbook Textbook @relation(fields: [textbookId], references: [id], onDelete: Cascade)
+
+  @@index([textbookId])
+}
+
 // Granular score-entry lock, independent per assessment component (e.g. one
 // of ResultConfig.components — "CA1", "Test", "Assignment", "Exam"...) rather
 // than one all-or-nothing SubjectScore.submitted flag for a class-subject's
