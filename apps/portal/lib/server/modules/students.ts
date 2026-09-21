@@ -134,10 +134,16 @@ export const studentsModule: Module = {
     const schoolId = ctx.session.user.schoolId;
     const level = ctx.query.get("level");
     const search = ctx.query.get("search");
+    // A withdrawn student keeps their record (and their last classGroupId,
+    // so reinstating puts them straight back) but must never appear in the
+    // normal class rosters again — they only show up via ?archived=true,
+    // the Students Archive page.
+    const archived = ctx.query.get("archived") === "true";
     const section = await resolveSection(ctx);
     const students = await prisma.student.findMany({
       where: {
         schoolId,
+        status: archived ? "WITHDRAWN" : { not: "WITHDRAWN" },
         ...(section ? { section } : {}),
         ...(level ? { classGroup: { levelId: level } } : {}),
         ...(search
@@ -419,6 +425,19 @@ export const studentsModule: Module = {
 
   // Promote / change class
   actions: {
+    // Reverses `remove` — reactivates the account and restores ACTIVE
+    // status. Their classGroupId was never cleared on withdrawal, so this
+    // puts them straight back into the class they were in when withdrawn.
+    reinstate: async (ctx) => {
+      can(ctx, "students:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const student = await prisma.student.findFirst({ where: { id: ctx.id, schoolId, status: "WITHDRAWN" } });
+      if (!student) throw new Error("Withdrawn student not found");
+      await prisma.user.update({ where: { id: student.userId }, data: { status: "ACTIVE" } });
+      await prisma.student.update({ where: { id: ctx.id }, data: { status: "ACTIVE" } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "student.reinstated", entityType: "Student", entityId: ctx.id });
+      return { ok: true };
+    },
     // Configure a student's fee plan. Payments, not configuration, reopen
     // access. Bursars hold fees:manage and need to set fees day-to-day —
     // students:manage is deliberately withheld from them (no add/edit/

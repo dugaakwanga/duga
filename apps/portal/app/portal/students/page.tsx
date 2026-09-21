@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { Card, Badge, Table, PageHeader, Button, Modal, Field, Input, Select, EmptyState, Alert, Spinner, Icon } from "@duga/ui";
 import { api } from "@/lib/client/api";
 import { useSection } from "@/components/SectionContext";
@@ -395,30 +396,38 @@ export default function StudentsPage() {
     }
   }
 
-  function feeBadge(s: Student) {
-    if (!s.fee || (!s.fee.feeAmount || Number(s.fee.feeAmount) === 0)) return <Badge tone="neutral">No fee set</Badge>;
-    if (s.fee.expired) return <Badge tone="danger">Expired</Badge>;
-    const until = s.fee.feeEndDate ? new Date(s.fee.feeEndDate).toLocaleDateString() : null;
-    return (
-      <Badge tone={s.fee.daysRemaining <= 7 ? "warning" : "success"}>
-        {until ? `Due ${until}` : `${s.fee.daysRemaining} day${s.fee.daysRemaining === 1 ? "" : "s"} left`}
-      </Badge>
-    );
-  }
-
-  // The real ₦ paid/owing on this child's own school fee, set per-student
-  // via "Set school fees" — different students can be on different amounts
-  // (negotiated agreements, discounts, etc.), so this is never derived from
-  // a class-wide amount. Separate from the "Other fees" balance below,
-  // which is whatever's billed through Invoices (PTA levy and the like).
-  function schoolFeeBadge(s: Student) {
+  // Everything about this child's own school fee — the amount set, what
+  // they've paid, what they're owing, and whether their paid-through period
+  // has lapsed — in one place. These used to be two separate, confusingly
+  // independent-looking columns (a ₦ ledger and a time-window badge) even
+  // though both come from the exact same "Set school fees" plan; showing
+  // them apart made it look like two different fee systems disagreeing with
+  // each other rather than one plan viewed two ways.
+  function schoolFeeCell(s: Student) {
     const naira = (v: number) => `₦${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
     if (!s.schoolFee || s.schoolFee.feeAmount <= 0) return <Badge tone="neutral">Not set</Badge>;
-    if (s.schoolFee.owing <= 0) return <Badge tone="success">Paid in full ({naira(s.schoolFee.paid)})</Badge>;
-    return s.schoolFee.paid > 0 ? (
-      <Badge tone="warning">Partly paid — owes {naira(s.schoolFee.owing)}</Badge>
+    const paidBadge =
+      s.schoolFee.owing <= 0 ? (
+        <Badge tone="success">Paid in full</Badge>
+      ) : s.schoolFee.paid > 0 ? (
+        <Badge tone="warning">Owing {naira(s.schoolFee.owing)}</Badge>
+      ) : (
+        <Badge tone="danger">Owing {naira(s.schoolFee.owing)}</Badge>
+      );
+    const until = s.fee?.feeEndDate ? new Date(s.fee.feeEndDate).toLocaleDateString() : null;
+    const accessBadge = !s.fee?.feeAmount || Number(s.fee.feeAmount) === 0 ? null : s.fee.expired ? (
+      <Badge tone="danger">Access expired</Badge>
     ) : (
-      <Badge tone="danger">Owing {naira(s.schoolFee.owing)}</Badge>
+      <Badge tone={s.fee.daysRemaining <= 7 ? "warning" : "success"}>{until ? `Active until ${until}` : `${s.fee.daysRemaining} day${s.fee.daysRemaining === 1 ? "" : "s"} left`}</Badge>
+    );
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-start" }}>
+        <div style={{ fontSize: 12.5 }}>
+          Fee: <strong>{naira(s.schoolFee.feeAmount)}</strong> &nbsp;·&nbsp; Paid: {naira(s.schoolFee.paid)}
+        </div>
+        {paidBadge}
+        {accessBadge}
+      </div>
     );
   }
 
@@ -449,9 +458,12 @@ export default function StudentsPage() {
         subtitle={canManage ? "Enroll, search and manage students and their fee access." : canSetFee ? "Search students and set their fee access." : "Search and view students."}
         actions={
           canManage ? (
-            <Button onClick={() => setOpen(true)}>
-              <Icon name="plus" size={16} /> Enroll student
-            </Button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Link href="/portal/students/archive" className="duga-btn duga-btn--outline">Archive</Link>
+              <Button onClick={() => setOpen(true)}>
+                <Icon name="plus" size={16} /> Enroll student
+              </Button>
+            </div>
           ) : undefined
         }
       />
@@ -558,7 +570,7 @@ export default function StudentsPage() {
                 <Icon name="settings" size={14} /> Customize ID card
               </Button>
             </div>
-            <Table headers={["Adm No.", "Name", "Status", "School fees", "Fee access", "Other fees", "Result entry", "Actions"]}>
+            <Table headers={["Adm No.", "Name", "Status", "School fees", "Other fees", "Result entry", "Actions"]}>
               {activeClassStudents.map((s) => (
                 <tr key={s.id}>
                   <td>{s.admissionNumber}</td>
@@ -579,8 +591,7 @@ export default function StudentsPage() {
                     </div>
                   </td>
                   <td><Badge tone={s.status === "ACTIVE" ? "success" : "warning"}>{s.status}</Badge></td>
-                  <td>{schoolFeeBadge(s)}</td>
-                  <td>{feeBadge(s)}</td>
+                  <td>{schoolFeeCell(s)}</td>
                   <td>{balanceBadge(s) ?? <span style={{ color: "var(--duga-muted)", fontSize: 12.5 }}>—</span>}</td>
                   <td>
                     {s.scoreEntryBlocked ? (

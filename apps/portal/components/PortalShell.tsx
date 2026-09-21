@@ -345,6 +345,7 @@ const TITLES: Array<{ match: string; title: string }> = [
   { match: "/portal/parent", title: "My Family Home" },
   { match: "/portal/attendance/clock", title: "Clock In / Out" },
   { match: "/portal/attendance/records", title: "Staff Clock Records" },
+  { match: "/portal/students/archive", title: "Students Archive" },
   { match: "/portal/students", title: "Students" },
   { match: "/portal/classes", title: "Classes" },
   { match: "/portal/timetable", title: "Timetable" },
