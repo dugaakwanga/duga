@@ -241,7 +241,18 @@ export const feesModule: Module = {
     const { totalAmount, paidAmount, balance } = agg._sum;
     const invoices = await prisma.invoice.findMany({
       where: { schoolId, ...studentSectionWhere },
-      include: { student: { include: { user: { select: { firstName: true, lastName: true } } } }, term: true, payments: true, items: true, installmentPlan: { include: { installments: { orderBy: { sequence: "asc" } } } } },
+      include: {
+        student: {
+          include: {
+            user: { select: { firstName: true, lastName: true } },
+            classGroup: { select: { id: true, name: true, level: { select: { name: true, section: true, order: true } } } },
+          },
+        },
+        term: true,
+        payments: true,
+        items: true,
+        installmentPlan: { include: { installments: { orderBy: { sequence: "asc" } } } },
+      },
       orderBy: { createdAt: "desc" },
       take: 400,
     });
@@ -258,12 +269,29 @@ export const feesModule: Module = {
       // invoice generated yet, or vice versa).
       prisma.student.findMany({
         where: { schoolId, feeAmount: { gt: 0 }, feeDays: { gt: 0 }, ...studentSectionWhere, user: { status: "ACTIVE" } },
-        select: { id: true, feeAmount: true, feeDays: true, feePaidThrough: true, enrollmentDate: true, admissionNumber: true, user: { select: { firstName: true, lastName: true } } },
+        select: {
+          id: true,
+          feeAmount: true,
+          feeDays: true,
+          feePaidThrough: true,
+          enrollmentDate: true,
+          admissionNumber: true,
+          user: { select: { firstName: true, lastName: true } },
+          classGroup: { select: { id: true, name: true, level: { select: { name: true, section: true, order: true } } } },
+        },
       }),
     ]);
+    // Arranged by section -> class -> admission number, not left in
+    // whatever order the DB happened to return them, so a bursar can find
+    // "who in JSS 2 is owing" instead of scanning one long, scattered list.
+    const classOrderKey = (cg: { level: { section: string; order: number } } | null) => (cg ? `${cg.level.section}-${String(cg.level.order).padStart(4, "0")}` : "zzz");
     const owingStudents = feeConfiguredStudents
       .map((s) => ({ ...s, fee: feeInfoOf(s) }))
-      .filter((s) => s.fee.expired);
+      .filter((s) => s.fee.expired)
+      .sort((a, b) => {
+        const k = classOrderKey(a.classGroup).localeCompare(classOrderKey(b.classGroup)) || (a.classGroup?.name ?? "").localeCompare(b.classGroup?.name ?? "");
+        return k || a.admissionNumber.localeCompare(b.admissionNumber);
+      });
     return {
       role,
       paymentRecordsVisible: true,

@@ -20,6 +20,12 @@ interface InstallmentPlan {
   installments: Installment[];
 }
 
+interface StudentClassGroup {
+  id: string;
+  name: string;
+  level: { name: string; section: string; order: number };
+}
+
 interface Invoice {
   id: string;
   invoiceNumber: string;
@@ -28,7 +34,7 @@ interface Invoice {
   paidAmount: string | number;
   balance: string | number;
   term: { name: string } | null;
-  student?: { user: { firstName: string; lastName: string } };
+  student?: { user: { firstName: string; lastName: string }; classGroup: StudentClassGroup | null };
   installmentPlan: InstallmentPlan | null;
 }
 
@@ -74,6 +80,7 @@ interface OwingStudent {
   admissionNumber: string;
   user: { firstName: string; lastName: string };
   fee: { feePaidThrough: string | null; daysRemaining: number; expired: boolean };
+  classGroup: StudentClassGroup | null;
 }
 
 interface Override {
@@ -98,6 +105,29 @@ interface ChildFeeSummary {
 
 function naira(v: string | number | undefined): string {
   return `₦${Number(v ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+}
+
+// Section -> level order -> class name, so every fee list reads the same
+// way the Classes page does, instead of whatever order the DB happened to
+// return rows in. Unassigned/no-class rows sort last.
+function classGroupSortKey(cg: StudentClassGroup | null | undefined): string {
+  if (!cg) return "zzz";
+  return `${cg.level.section}-${String(cg.level.order).padStart(4, "0")}-${cg.name}`;
+}
+
+function classLabel(cg: StudentClassGroup | null | undefined): string {
+  return cg ? `${cg.level.name} ${cg.name}` : "No class";
+}
+
+// Fee structures don't carry a level's section/order on their own — this
+// looks each one's scope up against the `levels` list (already fetched in
+// the school's canonical section -> order sequence) so "All classes" rows
+// sort first (broadest scope), then class/level/section-scoped rows follow
+// in the same order the Classes page shows them, instead of creation order.
+function feeStructureSortKey(s: FeeStructure, levels: ClassLevel[]): string {
+  const levelId = s.classGroup?.level.id ?? s.level?.id;
+  const idx = levelId ? levels.findIndex((l) => l.id === levelId) : s.section ? levels.findIndex((l) => l.section === s.section) : -1;
+  return `${String(idx === -1 ? 0 : idx + 1).padStart(4, "0")}-${s.classGroup?.name ?? ""}`;
 }
 
 type SetupKind = "type" | "structure";
@@ -565,23 +595,57 @@ export default function FeesPage() {
       {isStaff && owingStudents.length > 0 && (
         <Card title={`Students owing (${owingStudents.length})`} style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 13, color: "var(--duga-muted)", marginBottom: 10 }}>
-            Their fee-access window has lapsed — whichever features are set to require payment (Settings → Restrictions) are currently blocked for them.
+            Their fee-access window has lapsed — whichever features are set to require payment (Settings → Restrictions) are currently blocked for them. Grouped by class.
           </div>
-          <Table headers={["Student", "Admission no.", "Paid through", "", ""]}>
-            {owingStudents.map((s) => (
-              <tr key={s.id}>
-                <td>{s.user.firstName} {s.user.lastName}</td>
-                <td>{s.admissionNumber}</td>
-                <td>{s.fee.feePaidThrough ? new Date(s.fee.feePaidThrough).toLocaleDateString() : "Never paid"}</td>
-                <td><Badge tone="danger">Owing</Badge></td>
-                <td>
-                  <Button size="sm" variant="outline" onClick={() => openGrantOverride({ id: s.id, name: `${s.user.firstName} ${s.user.lastName}` })}>
-                    Grant exception
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </Table>
+          {Array.from(
+            [...owingStudents]
+              .sort((a, b) => classGroupSortKey(a.classGroup).localeCompare(classGroupSortKey(b.classGroup)) || a.admissionNumber.localeCompare(b.admissionNumber))
+              .reduce((map, s) => {
+                const key = classLabel(s.classGroup);
+                const list = map.get(key) ?? [];
+                list.push(s);
+                map.set(key, list);
+                return map;
+              }, new Map<string, OwingStudent[]>()),
+          ).map(([className, rows]) => (
+            <details key={className} open={owingStudents.length <= 20} style={{ marginBottom: 10 }}>
+              <summary
+                style={{
+                  cursor: "pointer",
+                  padding: "10px 12px",
+                  borderRadius: 8,
+                  background: "var(--duga-surface-2, #f4f6f9)",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                }}
+              >
+                {className}
+                <span style={{ fontWeight: 400, fontSize: 12.5, color: "var(--duga-muted)" }}>
+                  {rows.length} student{rows.length === 1 ? "" : "s"}
+                </span>
+              </summary>
+              <div style={{ marginTop: 8 }}>
+                <Table headers={["Student", "Admission no.", "Paid through", "", ""]}>
+                  {rows.map((s) => (
+                    <tr key={s.id}>
+                      <td>{s.user.firstName} {s.user.lastName}</td>
+                      <td>{s.admissionNumber}</td>
+                      <td>{s.fee.feePaidThrough ? new Date(s.fee.feePaidThrough).toLocaleDateString() : "Never paid"}</td>
+                      <td><Badge tone="danger">Owing</Badge></td>
+                      <td>
+                        <Button size="sm" variant="outline" onClick={() => openGrantOverride({ id: s.id, name: `${s.user.firstName} ${s.user.lastName}` })}>
+                          Grant exception
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </Table>
+              </div>
+            </details>
+          ))}
         </Card>
       )}
 
@@ -656,7 +720,14 @@ export default function FeesPage() {
               map.set(key, list);
               return map;
             }, new Map<string, Invoice[]>()),
-          ).map(([termName, rows]) => {
+          ).map(([termName, rowsUnsorted]) => {
+            // Arranged by class within each term, not scattered in
+            // whatever order invoices happened to be created.
+            const rows = [...rowsUnsorted].sort(
+              (a, b) =>
+                classGroupSortKey(a.student?.classGroup).localeCompare(classGroupSortKey(b.student?.classGroup)) ||
+                (a.student ? `${a.student.user.firstName} ${a.student.user.lastName}` : "").localeCompare(b.student ? `${b.student.user.firstName} ${b.student.user.lastName}` : ""),
+            );
             const balance = rows.reduce((a, i) => a + Number(i.balance), 0);
             return (
               <details key={termName} open={invoices.length <= 20} style={{ marginBottom: 10 }}>
@@ -680,11 +751,12 @@ export default function FeesPage() {
                   {paymentRecordsVisible && <Badge tone={balance > 0 ? "danger" : "success"}>{naira(balance)} outstanding</Badge>}
                 </summary>
                 <div style={{ marginTop: 8 }}>
-                  <Table headers={paymentRecordsVisible ? ["Invoice", "Student", "Amount", "Paid", "Balance", "Status", ""] : ["Invoice", "Student", "Amount", "Balance", "Status", ""]}>
+                  <Table headers={paymentRecordsVisible ? ["Invoice", "Student", "Class", "Amount", "Paid", "Balance", "Status", ""] : ["Invoice", "Student", "Class", "Amount", "Balance", "Status", ""]}>
                     {rows.map((i) => (
                       <tr key={i.id}>
                         <td>{i.invoiceNumber}</td>
                         <td>{i.student ? `${i.student.user.firstName} ${i.student.user.lastName}` : "—"}</td>
+                        <td>{classLabel(i.student?.classGroup)}</td>
                         <td>{naira(i.totalAmount)}</td>
                         {paymentRecordsVisible && <td>{naira(i.paidAmount)}</td>}
                         <td>{naira(i.balance)}</td>
@@ -747,7 +819,7 @@ export default function FeesPage() {
               <EmptyState title="No fee structures yet" hint="Attach an amount to a fee type for a class, level, section or term." />
             ) : (
               <Table headers={["Fee", "Amount", "Term", "Scope", "Student type", ""]}>
-                {feeStructures.map((s) => (
+                {[...feeStructures].sort((a, b) => feeStructureSortKey(a, levels).localeCompare(feeStructureSortKey(b, levels))).map((s) => (
                   <tr key={s.id}>
                     <td>{s.feeType.name}</td>
                     <td>{naira(s.amount)}</td>

@@ -406,10 +406,16 @@ export default function StudentsPage() {
   // the actual ₦ owed from invoices, which can disagree with it (e.g. a
   // student can still be inside their access window while an invoice for a
   // different item sits partially paid).
+  // `s.balance` is only computed from actual Invoice rows — a student with
+  // NO invoice yet (nobody has run "Generate invoices" for their class/term
+  // on the Fees page) also has `balance: null` here, which used to render
+  // as the exact same blank "—" as a student who's paid in full. Those are
+  // very different situations for a bursar, so they now get distinct badges.
   function balanceBadge(s: Student) {
     if (s.scholarshipOverrideId) return <Badge tone="info">Scholarship</Badge>;
-    if (!s.balance || s.balance.balance <= 0) return null;
     const naira = (v: number) => `₦${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+    if (!s.balance) return <Badge tone="neutral">Not yet invoiced</Badge>;
+    if (s.balance.balance <= 0) return <Badge tone="success">Paid in full</Badge>;
     return s.balance.paidAmount > 0 ? (
       <Badge tone="warning">Partly paid — owes {naira(s.balance.balance)}</Badge>
     ) : (
