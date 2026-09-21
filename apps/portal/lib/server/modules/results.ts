@@ -61,22 +61,13 @@ async function resolveSignatories(
   formTeachersByClassGroup: Map<string, { name: string; signatureUrl: string | null }>;
 }> {
   const uniqueIds = [...new Set(classGroupIds.filter((id): id is string => Boolean(id)))];
-  const [principalAdmin, classGroups] = await Promise.all([
-    prisma.admin
-      .findFirst({
-        where: { schoolId, designation: { contains: "principal", mode: "insensitive" } },
-        include: { user: { select: { firstName: true, lastName: true } } },
-        orderBy: { createdAt: "asc" },
-      })
-      .then(
-        async (row) =>
-          row ??
-          prisma.admin.findFirst({
-            where: { schoolId },
-            include: { user: { select: { firstName: true, lastName: true } } },
-            orderBy: { createdAt: "asc" },
-          }),
-      ),
+  const adminSelect = { include: { user: { select: { firstName: true, lastName: true } } } } as const;
+  const [principalMatch, classGroups] = await Promise.all([
+    prisma.admin.findFirst({
+      where: { schoolId, designation: { contains: "principal", mode: "insensitive" } },
+      orderBy: { createdAt: "asc" },
+      ...adminSelect,
+    }),
     uniqueIds.length
       ? prisma.classGroup.findMany({
           where: { id: { in: uniqueIds } },
@@ -84,6 +75,13 @@ async function resolveSignatories(
         })
       : Promise.resolve([]),
   ]);
+  // Only an admin who actually claimed the "Principal" designation lends
+  // their title to the label. Falling back to just the longest-standing
+  // admin account (so cards aren't blank before anyone's set that up) must
+  // NOT also adopt whatever unrelated designation that account happens to
+  // already hold (e.g. a legacy "Administrator" value) — the printed label
+  // always defaults to "Principal" in that case.
+  const principalAdmin = principalMatch ?? (await prisma.admin.findFirst({ where: { schoolId }, orderBy: { createdAt: "asc" }, ...adminSelect }));
   const formTeachersByClassGroup = new Map<string, { name: string; signatureUrl: string | null }>();
   for (const cg of classGroups) {
     if (!cg.formTeacher) continue;
@@ -91,7 +89,7 @@ async function resolveSignatories(
   }
   return {
     principalName: principalAdmin ? `${principalAdmin.user.firstName} ${principalAdmin.user.lastName}` : null,
-    principalDesignation: principalAdmin?.designation || "Principal",
+    principalDesignation: principalMatch?.designation || "Principal",
     principalSignatureUrl: principalAdmin?.signatureUrl ?? null,
     formTeachersByClassGroup,
   };

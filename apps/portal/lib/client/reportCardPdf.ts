@@ -111,28 +111,28 @@ const SHEET_CSS = `
   justify-content:space-between;
   gap:10px;
   border-bottom:2px solid #1f3a5f;
-  padding-bottom:6px;
-  margin-bottom:6px;
+  padding-bottom:4px;
+  margin-bottom:4px;
 }
 .${ROOT} .logo-box, .${ROOT} .photo-box{
-  width:70px;height:70px;
+  width:58px;height:58px;
   border:1px solid #1f3a5f;
   display:flex;align-items:center;justify-content:center;
-  text-align:center;font-size:9px;color:#555;
+  text-align:center;font-size:8px;color:#555;
   flex-shrink:0;overflow:hidden;
 }
-.${ROOT} .photo-box{ height:84px; }
+.${ROOT} .photo-box{ height:70px; }
 .${ROOT} .logo-box{ border-radius:50%; }
 .${ROOT} .logo-box img, .${ROOT} .photo-box img{ width:100%;height:100%;object-fit:cover; }
 .${ROOT} .school-name{ flex-grow:1; text-align:center; }
-.${ROOT} .school-name h1{ margin:0; font-size:23px; letter-spacing:1px; color:#1f3a5f; }
-.${ROOT} .school-name .motto{ font-style:italic; font-size:12px; margin:2px 0; }
-.${ROOT} .school-name .section{ font-weight:bold; font-size:13.5px; letter-spacing:2px; margin-top:2px; }
+.${ROOT} .school-name h1{ margin:0; font-size:20px; letter-spacing:1px; color:#1f3a5f; }
+.${ROOT} .school-name .motto{ font-style:italic; font-size:11px; margin:1px 0; }
+.${ROOT} .school-name .section{ font-weight:bold; font-size:12.5px; letter-spacing:2px; margin-top:1px; }
 
 .${ROOT} h2.section-title{
   text-align:center;
-  font-size:13.5px;
-  margin:6px 0 4px;
+  font-size:12.5px;
+  margin:4px 0 3px;
   font-weight:bold;
   color:#1f3a5f;
   /* html2canvas mismeasures word-space width for bold Georgia at small
@@ -149,18 +149,18 @@ const SHEET_CSS = `
 .${ROOT} .id-block{
   display:grid;
   grid-template-columns:1fr 1fr;
-  gap:2px 20px;
-  font-size:11px;
-  margin-bottom:4px;
+  gap:1px 20px;
+  font-size:10.5px;
+  margin-bottom:3px;
 }
-.${ROOT} .field{ border-bottom:1px dotted #000; display:flex; gap:4px; line-height:1.35; padding-bottom:1px; }
+.${ROOT} .field{ border-bottom:1px dotted #000; display:flex; gap:4px; line-height:1.25; padding-bottom:0.5px; }
 .${ROOT} .field label{ font-weight:bold; white-space:nowrap; }
 .${ROOT} .field span{ flex-grow:1; }
 
 .${ROOT} table{ width:100%; border-collapse:collapse; font-size:10px; }
-.${ROOT} th, .${ROOT} td{ border:1px solid #000; padding:1.5px 4px; text-align:center; line-height:1.3; }
+.${ROOT} th, .${ROOT} td{ border:1px solid #000; padding:0.15em 0.4em; text-align:center; line-height:1.22; }
 .${ROOT} thead th{ background:#eaf0f6; color:#1f3a5f; }
-.${ROOT} td.subject-name{ text-align:left; font-weight:bold; font-size:10.5px; }
+.${ROOT} td.subject-name{ text-align:left; font-weight:bold; font-size:1.05em; }
 .${ROOT} tr.total-row td{ font-weight:bold; background:#eaf0f6; }
 .${ROOT} .domain-table tr:first-child th{ background:#e6f2ea; color:#2c6e49; }
 .${ROOT} .behaviour-table tr:first-child th{ background:#fdf1de; color:#a1651a; }
@@ -169,20 +169,20 @@ const SHEET_CSS = `
 .${ROOT} .two-col > div{ flex:1; }
 .${ROOT} .mini-table th, .${ROOT} .mini-table td{ font-size:9.5px; padding:1.5px 3px; }
 
-.${ROOT} .remarks{ margin-top:6px; font-size:10.5px; }
-.${ROOT} .remarks .line{ border-bottom:1px dotted #000; min-height:12px; line-height:1.35; padding-bottom:1px; margin-bottom:3px; }
-.${ROOT} .sig-row{ display:flex; justify-content:space-between; margin-top:2px; font-size:10.5px; gap:20px; }
+.${ROOT} .remarks{ margin-top:4px; font-size:10px; }
+.${ROOT} .remarks .line{ border-bottom:1px dotted #000; min-height:10px; line-height:1.25; padding-bottom:0.5px; margin-bottom:2px; }
+.${ROOT} .sig-row{ display:flex; justify-content:space-between; margin-top:1px; font-size:10px; gap:20px; }
 .${ROOT} .sig-row .field{ flex:1; }
-.${ROOT} .sig-img{ height:24px; max-width:110px; object-fit:contain; vertical-align:middle; margin-right:6px; }
+.${ROOT} .sig-img{ height:20px; max-width:100px; object-fit:contain; vertical-align:middle; margin-right:6px; }
 
 .${ROOT} .footer-note{
-  margin-top:6px; font-size:10px;
+  margin-top:4px; font-size:9.5px;
   display:flex; justify-content:space-between; gap:16px;
-  border-top:1px solid #000; padding-top:3px;
+  border-top:1px solid #000; padding-top:2px;
 }
 
-.${ROOT} .chart-wrap{ margin-top:6px; }
-.${ROOT} .chart-note{ font-size:9px; margin-top:2px; }
+.${ROOT} .chart-wrap{ margin-top:4px; }
+.${ROOT} .chart-note{ font-size:8.5px; margin-top:1px; }
 .${ROOT} #chartSvg text{ font-family: Georgia, serif; }
 `;
 
@@ -357,7 +357,13 @@ function buildAcademicTableHtml(components: ReportCardPdfComponent[], items: Rep
     <td colspan="2"></td>
   </tr>`;
 
-  return `<table id="academicTable"><thead>${thead}</thead><tbody>${bodyRows}${totalRow}</tbody></table>`;
+  // A card with many subjects (a secondary-school class often has 12+)
+  // shrinks its own font-size — table padding/line-height are set in `em`
+  // (see SHEET_CSS) so they scale down with it — rather than letting row
+  // count alone push the sheet onto a second page.
+  const n = items.length;
+  const fontSize = n > 16 ? 8 : n > 13 ? 8.6 : n > 10 ? 9.2 : 10;
+  return `<table id="academicTable" style="font-size:${fontSize}px;"><thead>${thead}</thead><tbody>${bodyRows}${totalRow}</tbody></table>`;
 }
 
 // One bar per subject's Total score (0-100), color-banded the same as the
@@ -366,9 +372,9 @@ function buildAcademicTableHtml(components: ReportCardPdfComponent[], items: Rep
 // static demo array.
 function buildChartSvg(items: ReportCardPdfItem[], gradeBands: ReportCardPdfGradeBand[]): string {
   const w = 700;
-  const h = 118;
-  const padL = 30;
-  const padB = 42;
+  const h = 96;
+  const padL = 28;
+  const padB = 36;
   const padT = 10;
   const padR = 10;
   const chartW = w - padL - padR;
