@@ -1,6 +1,6 @@
 import { prisma } from "./prisma";
 import { computeGrade } from "../grading";
-import { getDefaultGradingScale, computeDaysSchoolOpened } from "./school";
+import { getDefaultGradingScale, computeDaysSchoolOpened, schoolFeeLedgerFor } from "./school";
 
 // Hand-written, minimal row shapes (only the fields this file actually
 // reads) instead of any Prisma-derived type — every attempt to reference a
@@ -14,14 +14,8 @@ interface StudentRow {
   id: string;
   section: string;
   dateOfBirth: Date | null;
-}
-interface InvoiceRow {
-  studentId: string;
-  // Prisma's Decimal type — left as `any` so it can flow straight through
-  // to another Prisma write (feesOwed) or into Number(...) without needing
-  // to reference Prisma's own Decimal export.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  balance: any;
+  feeAmount: unknown;
+  feeStartDate: Date | null;
 }
 interface FeeStructureRow {
   classGroupId: string | null;
@@ -242,18 +236,19 @@ export async function collateReportCards(opts: CollateOptions) {
     }
   }
 
-  // Fees: this term's invoice balance ("fees owed") and next term's
-  // applicable fee structures ("next term's fees"), same most-specific-wins
-  // matching fees.ts uses when generating invoices.
-  const [invoices, nextTermStructures] = await Promise.all([
-    prisma.invoice.findMany({ where: { schoolId, termId, studentId: { in: students.map((s: StudentRow) => s.id) } } }),
+  // Fees: "fees owed" is the CORE school-fee ledger (Student.feeAmount minus
+  // standalone payments, set per-student via "Set school fees" — never an
+  // Invoice, which is reserved for supplementary fees like a PTA levy).
+  // "Next term's fees" stays sourced from FeeStructure — the same most-
+  // specific-wins matching fees.ts uses when generating invoices — since
+  // there's no forward-looking per-student school-fee amount until the
+  // admin sets one for the new term.
+  const [schoolFeeLedger, nextTermStructures] = await Promise.all([
+    schoolFeeLedgerFor(schoolId, students),
     nextTerm
       ? prisma.feeStructure.findMany({ where: { schoolId, termId: nextTerm.id } })
       : Promise.resolve([]),
   ]);
-  const invoiceByStudent = new Map<string, InvoiceRow>(
-    invoices.map((inv: InvoiceRow): [string, InvoiceRow] => [inv.studentId, inv]),
-  );
   const nextTermFeesByStudent = new Map<string, number>();
   for (const student of students) {
     const applicable = nextTermStructures.filter(
@@ -342,7 +337,7 @@ export async function collateReportCards(opts: CollateOptions) {
     const average = count ? (total ?? 0) / count : 0;
     const overallPosition = ranked.indexOf(average) + 1;
     const willPublish = shouldPublish(student.id);
-    const invoice = invoiceByStudent.get(student.id);
+    const schoolFee = schoolFeeLedger.get(student.id);
     const nextTermFees = nextTermFeesByStudent.get(student.id);
     const existing = existingByStudent.get(student.id);
 
@@ -358,7 +353,7 @@ export async function collateReportCards(opts: CollateOptions) {
       schoolDaysOpened,
       daysPresent: daysPresentByStudent.get(student.id) ?? 0,
       daysRecorded: daysRecordedByStudent.get(student.id) ?? 0,
-      feesOwed: invoice ? invoice.balance : undefined,
+      feesOwed: schoolFee && schoolFee.feeAmount > 0 ? schoolFee.owing : undefined,
       nextTermFees: nextTermFees !== undefined ? nextTermFees : undefined,
       feesPayableBy: nextTerm?.startDate ?? undefined,
     };

@@ -552,15 +552,15 @@ export default function FeesPage() {
             ? "Itemized invoices, balances and installment plans for each of your children."
             : role === "STUDENT"
               ? "Your invoices, balance and installment plan."
-              : "Invoices, payments and fee structures."
+              : "Other fees (PTA levy, excursions, etc.) via invoices — core school fees are set per student on the Students page."
         }
         actions={
           isStaff ? (
             <div style={{ display: "flex", gap: 8 }}>
               <Button variant="outline" onClick={() => openSetup("type")}><Icon name="plus" size={16} /> Add fee type</Button>
               <Button variant="outline" onClick={sendReminders}><Icon name="notifications" size={16} /> Send reminders</Button>
-              <Button variant="outline" onClick={openStandalonePayment}><Icon name="plus" size={16} /> Record a payment</Button>
-              <Button onClick={() => setOpen(true)}><Icon name="plus" size={16} /> Generate invoices</Button>
+              <Button variant="outline" onClick={openStandalonePayment}><Icon name="plus" size={16} /> Record school-fee payment</Button>
+              <Button onClick={() => setOpen(true)}><Icon name="plus" size={16} /> Generate other-fee invoices</Button>
             </div>
           ) : undefined
         }
@@ -785,9 +785,9 @@ export default function FeesPage() {
 
       {isStaff && (
         <>
-          <Card title="Fee types" style={{ marginTop: 20 }}>
+          <Card title="Fee types (other fees)" style={{ marginTop: 20 }}>
             <div style={{ fontSize: 13, color: "var(--duga-muted)", marginBottom: 12 }}>
-              A fee type is just a named category (e.g. Tuition, Transport) — it has no amount by itself. Attach an actual ₦ amount to it per class/term under &quot;Fee structures&quot; below.
+              For supplementary fees only — PTA levy, excursions, uniforms, and the like — never the core school fee, which is set per student on the Students page instead. A fee type is just a named category; attach an actual ₦ amount to it per class/term under &quot;Fee structures&quot; below.
             </div>
             {feeTypes.length === 0 ? (
               <EmptyState title="No fee types yet" hint="Add fee types (e.g. Tuition, Transport) then attach amounts per class." />
@@ -848,9 +848,9 @@ export default function FeesPage() {
         </>
       )}
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Generate invoices">
+      <Modal open={open} onClose={() => setOpen(false)} title="Generate other-fee invoices">
         <Alert tone="info">
-          Bills every active student in the selected term (or just one class) using the amounts set up under &quot;Fee structures&quot; below. Students who already have an invoice for this term are skipped, so this is safe to run again later.
+          For supplementary fees only (PTA levy, excursions, etc.) — never the core school fee, which is set per student on the Students page and never needs an invoice. Bills every active student in the selected term (or just one class) using the amounts set up under &quot;Fee structures&quot; below. Students who already have an invoice for this term are skipped, so this is safe to run again later.
         </Alert>
         <Field label="Term" required>
           <Select value={form.termId ?? ""} onChange={(e) => setForm({ ...form, termId: e.target.value })}>
@@ -966,8 +966,8 @@ export default function FeesPage() {
         </div>
       </Modal>
 
-      <Modal open={standalonePayOpen} onClose={() => setStandalonePayOpen(false)} title="Record a payment">
-        <Alert tone="info">For cash, bank transfer or any payment taken outside the app — works even if this student has no invoice yet.</Alert>
+      <Modal open={standalonePayOpen} onClose={() => setStandalonePayOpen(false)} title="Record a school-fee payment">
+        <Alert tone="info">Pays down this student&apos;s core school fee (set on the Students page) — for cash, bank transfer or any payment taken outside the app. For PTA levy or other supplementary fees, use Generate other-fee invoices below instead.</Alert>
         {!standaloneStudent ? (
           <>
             <Field label="Find student" hint="Search by name or admission number.">

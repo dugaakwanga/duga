@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { prisma, signGateToken } from "@duga/core/server";
+import { prisma, signGateToken, schoolFeeLedgerFor } from "@duga/core/server";
 import { hasPermission } from "@duga/core";
 import type { Module } from ".";
 import { can, pick, str, num, bool, idArray, studentScope, feeInfoOf, feeDaysBetween, assertContactFree, resolveSection, generateTempPassword } from "../helpers";
@@ -164,15 +164,20 @@ export const studentsModule: Module = {
     // at this list otherwise only sees "expires in N days", never what's
     // actually still owed or whether a child is on scholarship.
     const studentIds = students.map((s) => s.id);
-    const [overrides, invoices] = await Promise.all([
+    const [overrides, invoices, schoolFeeLedger] = await Promise.all([
       prisma.feeOverride.findMany({
         where: { schoolId, studentId: { in: studentIds }, isActive: true, reason: "SCHOLARSHIP" },
         select: { id: true, studentId: true },
       }),
+      // Invoices/payments here are ONLY ever the supplementary "other fees"
+      // ledger (PTA levy, excursions, etc.) — the core school fee owed/paid
+      // is schoolFeeLedger below, sourced from "Set school fees" plus any
+      // standalone (non-invoice) payment, never from an Invoice.
       prisma.invoice.findMany({
         where: { schoolId, studentId: { in: studentIds }, status: { in: ["UNPAID", "PARTIAL"] } },
         select: { studentId: true, totalAmount: true, paidAmount: true, balance: true },
       }),
+      schoolFeeLedgerFor(schoolId, students),
     ]);
     const scholarshipOverrideByStudent = new Map(overrides.map((o) => [o.studentId, o.id]));
     const balanceByStudent = new Map<string, { totalAmount: number; paidAmount: number; balance: number }>();
@@ -188,6 +193,7 @@ export const studentsModule: Module = {
       items: students.map((s) => ({
         ...s,
         fee: feeInfoOf(s),
+        schoolFee: schoolFeeLedger.get(s.id) ?? null,
         scholarshipOverrideId: scholarshipOverrideByStudent.get(s.id) ?? null,
         balance: balanceByStudent.get(s.id) ?? null,
       })),
@@ -223,7 +229,8 @@ export const studentsModule: Module = {
       },
     });
     if (!student) throw new Error("Student not found");
-    return { ...student, fee: feeInfoOf(student) };
+    const schoolFeeLedger = await schoolFeeLedgerFor(ctx.session.user.schoolId, [student]);
+    return { ...student, fee: feeInfoOf(student), schoolFee: schoolFeeLedger.get(student.id) ?? null };
   },
 
   // Enroll a new student (creates user account).
@@ -435,7 +442,8 @@ export const studentsModule: Module = {
         data: { feeAmount, feeDays, feeStartDate, feeEndDate, feesDueDate, ...(feeAmount <= 0 || feeDays <= 0 ? { feePaidThrough: null } : {}) },
       });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "student.fee.set", entityType: "Student", entityId: ctx.id, meta: { feeAmount, feeDays, feeStartDate, feeEndDate, feesDueDate } });
-      return { ...updated, fee: feeInfoOf(updated) };
+      const schoolFeeLedger = await schoolFeeLedgerFor(schoolId, [updated]);
+      return { ...updated, fee: feeInfoOf(updated), schoolFee: schoolFeeLedger.get(updated.id) ?? null };
     },
     // Manual, admin-only override — independent of the automatic "Owing"
     // fee badge shown alongside it. Blocks teachers from entering/saving

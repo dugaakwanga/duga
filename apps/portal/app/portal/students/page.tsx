@@ -30,6 +30,10 @@ interface Student {
   classGroup: { level: { name: string; section: string }; name: string } | null;
   parentLinks?: Array<{ parent: { user: { firstName: string; lastName: string; email: string; phone: string | null } } }>;
   fee?: FeeInfo;
+  // The core school-fee ledger set via "Set school fees" — paid/owing here
+  // comes only from standalone payments against this plan, never from the
+  // Invoice/FeeStructure system below (that's for other/supplementary fees).
+  schoolFee?: { feeAmount: number; paid: number; owing: number } | null;
   scholarshipOverrideId?: string | null;
   balance?: { totalAmount: number; paidAmount: number; balance: number } | null;
   scoreEntryBlocked?: boolean;
@@ -402,15 +406,30 @@ export default function StudentsPage() {
     );
   }
 
-  // The fee-access badge above only reflects the time window — this reflects
-  // the actual ₦ owed from invoices, which can disagree with it (e.g. a
-  // student can still be inside their access window while an invoice for a
-  // different item sits partially paid).
-  // `s.balance` is only computed from actual Invoice rows — a student with
-  // NO invoice yet (nobody has run "Generate invoices" for their class/term
-  // on the Fees page) also has `balance: null` here, which used to render
-  // as the exact same blank "—" as a student who's paid in full. Those are
-  // very different situations for a bursar, so they now get distinct badges.
+  // The real ₦ paid/owing on this child's own school fee, set per-student
+  // via "Set school fees" — different students can be on different amounts
+  // (negotiated agreements, discounts, etc.), so this is never derived from
+  // a class-wide amount. Separate from the "Other fees" balance below,
+  // which is whatever's billed through Invoices (PTA levy and the like).
+  function schoolFeeBadge(s: Student) {
+    const naira = (v: number) => `₦${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+    if (!s.schoolFee || s.schoolFee.feeAmount <= 0) return <Badge tone="neutral">Not set</Badge>;
+    if (s.schoolFee.owing <= 0) return <Badge tone="success">Paid in full ({naira(s.schoolFee.paid)})</Badge>;
+    return s.schoolFee.paid > 0 ? (
+      <Badge tone="warning">Partly paid — owes {naira(s.schoolFee.owing)}</Badge>
+    ) : (
+      <Badge tone="danger">Owing {naira(s.schoolFee.owing)}</Badge>
+    );
+  }
+
+  // "Other fees" — whatever's billed through Invoices/Fee Structures (PTA
+  // levy, excursions, and the like), entirely separate from the core school
+  // fee above. `s.balance` is only computed from actual Invoice rows — a
+  // student with NO invoice yet (nobody has run "Generate invoices" for
+  // their class/term on the Fees page) also has `balance: null` here, which
+  // used to render as the exact same blank "—" as a student who's paid in
+  // full. Those are very different situations for a bursar, so they now get
+  // distinct badges.
   function balanceBadge(s: Student) {
     if (s.scholarshipOverrideId) return <Badge tone="info">Scholarship</Badge>;
     const naira = (v: number) => `₦${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
@@ -539,7 +558,7 @@ export default function StudentsPage() {
                 <Icon name="settings" size={14} /> Customize ID card
               </Button>
             </div>
-            <Table headers={["Adm No.", "Name", "Status", "Fee access", "Balance", "Result entry", "Actions"]}>
+            <Table headers={["Adm No.", "Name", "Status", "School fees", "Fee access", "Other fees", "Result entry", "Actions"]}>
               {activeClassStudents.map((s) => (
                 <tr key={s.id}>
                   <td>{s.admissionNumber}</td>
@@ -560,6 +579,7 @@ export default function StudentsPage() {
                     </div>
                   </td>
                   <td><Badge tone={s.status === "ACTIVE" ? "success" : "warning"}>{s.status}</Badge></td>
+                  <td>{schoolFeeBadge(s)}</td>
                   <td>{feeBadge(s)}</td>
                   <td>{balanceBadge(s) ?? <span style={{ color: "var(--duga-muted)", fontSize: 12.5 }}>—</span>}</td>
                   <td>
@@ -573,7 +593,7 @@ export default function StudentsPage() {
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       {canManage && <Button size="sm" variant="ghost" onClick={() => openEdit(s)}>Edit</Button>}
                       {canManage && <Button size="sm" variant="ghost" onClick={() => { setPasswordTarget(s); setTempPassword(""); setPasswordError(null); }}>Set password</Button>}
-                      {canSetFee && <Button size="sm" variant="outline" onClick={() => { setFeeTarget(s); setFeeForm({}); }}>Set fee</Button>}
+                      {canSetFee && <Button size="sm" variant="outline" onClick={() => { setFeeTarget(s); setFeeForm({}); }}>Set school fees</Button>}
                       {canManage && <Button size="sm" variant="outline" onClick={() => { setPromoteTarget(s); setPromoteForm({}); }}>Move class</Button>}
                       {canManage && (
                         <Button size="sm" variant={s.scoreEntryBlocked ? "outline" : "danger"} onClick={() => toggleScoreEntryBlock(s)}>
@@ -790,7 +810,16 @@ export default function StudentsPage() {
         </div>
       </Modal>
 
-      <Modal open={!!feeTarget} onClose={() => setFeeTarget(null)} title={feeTarget ? `Set fee — ${feeTarget.user.firstName} ${feeTarget.user.lastName}` : ""}>        {feeTarget?.fee?.expired && (
+      <Modal open={!!feeTarget} onClose={() => setFeeTarget(null)} title={feeTarget ? `Set school fees — ${feeTarget.user.firstName} ${feeTarget.user.lastName}` : ""}>
+        {feeTarget?.schoolFee && feeTarget.schoolFee.feeAmount > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            <Alert tone="info">
+              Paid so far this period: ₦{feeTarget.schoolFee.paid.toLocaleString()} of ₦{feeTarget.schoolFee.feeAmount.toLocaleString()}
+              {feeTarget.schoolFee.owing > 0 ? ` — owing ₦${feeTarget.schoolFee.owing.toLocaleString()}.` : " — paid in full."}
+            </Alert>
+          </div>
+        )}
+        {feeTarget?.fee?.expired && (
           <div style={{ marginBottom: 12 }}>
             <Alert tone="danger">This child&apos;s fee access has expired. Renew it below to reopen their portal access.</Alert>
           </div>

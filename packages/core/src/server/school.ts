@@ -186,6 +186,43 @@ export function feeInfoOf(student: {
   };
 }
 
+export interface SchoolFeeLedger {
+  feeAmount: number;
+  paid: number;
+  owing: number;
+}
+
+// The ₦ ledger for a student's CORE school fee — set per-student via "Set
+// school fees" (Student.feeAmount/feeStartDate), never via the Invoice/
+// FeeStructure system, which is reserved for supplementary fees (PTA levy,
+// excursions, etc.) that are billed and tracked completely separately.
+// Sums only standalone payments (invoiceId: null) recorded since the
+// student's own feeStartDate — an invoice-linked payment is for one of
+// those other fees and must never count toward this ledger, and a payment
+// from a PRIOR fee window (before the admin last reset feeStartDate for a
+// new term) must never count toward the current one either.
+export async function schoolFeeLedgerFor(
+  schoolId: string,
+  students: Array<{ id: string; feeAmount: { toString(): string } | string | null; feeStartDate: Date | null }>,
+): Promise<Map<string, SchoolFeeLedger>> {
+  const ids = students.map((s) => s.id);
+  const payments = ids.length
+    ? await prisma.payment.findMany({
+        where: { schoolId, studentId: { in: ids }, status: "SUCCESS", invoiceId: null },
+        select: { studentId: true, amount: true, paidAt: true },
+      })
+    : [];
+  const map = new Map<string, SchoolFeeLedger>();
+  for (const s of students) {
+    const feeAmount = Number(s.feeAmount ?? 0);
+    const paid = s.feeStartDate
+      ? payments.filter((p) => p.studentId === s.id && p.paidAt && p.paidAt >= s.feeStartDate!).reduce((a, p) => a + Number(p.amount), 0)
+      : 0;
+    map.set(s.id, { feeAmount, paid, owing: Math.max(0, feeAmount - paid) });
+  }
+  return map;
+}
+
 // Which fee-gated features are currently blocked for owing students — admin
 // configurable via Settings → Restrictions (schoolSetting key "restrictions",
 // field feeGatedFeatures). "results" (published report cards) used to be its
