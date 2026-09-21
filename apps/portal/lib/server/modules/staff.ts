@@ -57,7 +57,12 @@ export const staffModule: Module = {
         orderBy: { createdAt: "desc" },
         take: 300,
       }),
-      prisma.subject.findMany({ where: { schoolId, ...(section ? { section } : {}) }, select: { id: true, name: true, section: true }, orderBy: [{ section: "asc" }, { name: "asc" }] }),
+      // Sorted by name only here — Subject has no order field of its own,
+      // so section ordering is applied in JS below against schoolSections'
+      // real order instead of sorting the section NAME alphabetically
+      // (which scatters custom section names like "Junior Secondary" ahead
+      // of "Pre-Primary").
+      prisma.subject.findMany({ where: { schoolId, ...(section ? { section } : {}) }, select: { id: true, name: true, section: true }, orderBy: { name: "asc" } }),
       prisma.schoolSection.findMany({ where: { schoolId }, select: { name: true }, orderBy: [{ order: "asc" }, { name: "asc" }] }),
     ]);
     const scopedUsers = section
@@ -79,7 +84,11 @@ export const staffModule: Module = {
           return fullSchool || overlap.includes(section.trim().toLowerCase()) ? user : null;
         })).then((rows) => rows.filter((row): row is typeof users[number] => !!row))
       : users;
-    return { items: scopedUsers, subjects, sections: schoolSections.map((s) => s.name), total: scopedUsers.length, role: ctx.session.user.role };
+    const sectionRank = new Map(schoolSections.map((s, i) => [s.name, i]));
+    const sortedSubjects = [...subjects].sort(
+      (a, b) => (sectionRank.get(a.section) ?? 99) - (sectionRank.get(b.section) ?? 99) || a.name.localeCompare(b.name),
+    );
+    return { items: scopedUsers, subjects: sortedSubjects, sections: schoolSections.map((s) => s.name), total: scopedUsers.length, role: ctx.session.user.role };
   },
 
   async get(ctx) {

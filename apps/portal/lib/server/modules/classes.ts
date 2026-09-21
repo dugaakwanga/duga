@@ -178,7 +178,12 @@ export const classesModule: Module = {
       if (current >= maxSections) throw new Error(`Your school is limited to ${maxSections} section(s). Ask the Superadmin to increase this limit.`);
       const exists = await prisma.schoolSection.findFirst({ where: { schoolId, name: { equals: name, mode: "insensitive" } } });
       if (exists) throw new Error("A section with this name already exists");
-      const section = await prisma.schoolSection.create({ data: { schoolId, name, order: current + 1 } });
+      // max(order)+1, not count()+1 — count() drifts from the actual
+      // highest order in use once any section has ever been deleted
+      // (removeSection below), producing duplicate order values on the
+      // next add and scattering every list sorted by section order.
+      const maxOrder = await prisma.schoolSection.aggregate({ where: { schoolId }, _max: { order: true } });
+      const section = await prisma.schoolSection.create({ data: { schoolId, name, order: (maxOrder._max.order ?? 0) + 1 } });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "section.created", entityType: "SchoolSection", entityId: section.id, meta: { name } });
       return section;
     },
@@ -318,7 +323,12 @@ export const classesModule: Module = {
         where: { schoolId_section_name: { schoolId, section, name } },
       });
       if (dup) throw new Error(`Level "${name}" already exists for ${section.toLowerCase()}`);
-      const order = (await prisma.classLevel.count({ where: { schoolId } })) + 1;
+      // max(order)+1, not count()+1 — see addSection's identical fix above:
+      // count() drifts from the true max once any level has ever been
+      // deleted, producing duplicate order values that scatter every list
+      // sorted by class order.
+      const maxLevelOrder = await prisma.classLevel.aggregate({ where: { schoolId }, _max: { order: true } });
+      const order = (maxLevelOrder._max.order ?? 0) + 1;
       const level = await prisma.classLevel.create({ data: { schoolId, name, section, order } });
       return level;
     },

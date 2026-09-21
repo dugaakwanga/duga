@@ -261,14 +261,23 @@ export const feesModule: Module = {
       prisma.feeStructure.findMany({ where: { schoolId }, include: { feeType: true, level: true, classGroup: { include: { level: true } }, term: true } }),
       prisma.feeOverride.findMany({ where: { schoolId, isActive: true }, include: { student: { include: { user: { select: { firstName: true, lastName: true } } } }, term: true } }),
       prisma.term.findMany({ where: { schoolId }, include: { session: true }, orderBy: [{ session: { createdAt: "desc" } }, { termNumber: "asc" }] }),
-      prisma.classLevel.findMany({ where: { schoolId, ...(section ? { section } : {}) }, orderBy: [{ section: "asc" }, { order: "asc" }] }),
+      // `order` alone (not `{section:"asc"}` first) — ClassLevel.order is a
+      // single global sequence across every section already, and sorting
+      // section NAMES alphabetically instead scatters them (e.g. "Junior
+      // Secondary" would sort before "Pre-Primary").
+      prisma.classLevel.findMany({ where: { schoolId, ...(section ? { section } : {}) }, orderBy: { order: "asc" } }),
       prisma.classGroup.findMany({ where: { schoolId, ...(section ? { level: { section } } : {}) }, include: { level: true } }),
       // Every student with a fee plan configured (feeAmount/feeDays > 0) — used
       // to surface who's currently owing, independent of the per-term invoice
       // system (a student can be "owing" on their access window even with no
       // invoice generated yet, or vice versa).
       prisma.student.findMany({
-        where: { schoolId, feeAmount: { gt: 0 }, feeDays: { gt: 0 }, ...studentSectionWhere, user: { status: "ACTIVE" } },
+        // Student rows filter by their own `section` column directly —
+        // `studentSectionWhere` above is shaped for Invoice's `student`
+        // relation (`student: { is: { section } }`) and doesn't apply here;
+        // spreading it into a direct Student query was an invalid Prisma
+        // argument whenever a section filter was active.
+        where: { schoolId, feeAmount: { gt: 0 }, feeDays: { gt: 0 }, ...(section ? { section } : {}), user: { status: "ACTIVE" } },
         select: {
           id: true,
           feeAmount: true,
