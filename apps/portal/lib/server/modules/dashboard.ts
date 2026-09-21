@@ -1,4 +1,4 @@
-import { prisma } from "@duga/core/server";
+import { prisma, schoolFeeLedgerFor } from "@duga/core/server";
 import type { Module } from ".";
 import { subfeatureEnabled } from "../features";
 import { feeInfoOf, isAssignedTo, resolveSection, staffBreakdown } from "../helpers";
@@ -27,11 +27,19 @@ export const dashboardModule: Module = {
         finance = financeOn && (row?.value === true || row?.value === "true");
       }
       const attendanceWhere = { schoolId, ...(section ? { student: { section } } : {}) };
-      const [studentCount, staff, classCount, invoiceStats, applications, unpaid, today, attendanceTotal, attendancePresent, averageResult] = await Promise.all([
+      const [studentCount, staff, classCount, feeStudents, applications, unpaidOtherFees, today, attendanceTotal, attendancePresent, averageResult] = await Promise.all([
         prisma.student.count({ where: studentWhere }),
         staffBreakdown(schoolId, section),
         prisma.classGroup.count({ where: classWhere }),
-        finance ? prisma.invoice.aggregate({ where: { schoolId, ...(section ? { student: { is: { section } } } : {}) }, _sum: { totalAmount: true, paidAmount: true, balance: true } }) : Promise.resolve({ _sum: { totalAmount: 0, paidAmount: 0, balance: 0 } }),
+        // The real "collected/owing" figure is the core school-fee ledger
+        // (set per student via "Set school fees"), never an Invoice —
+        // Invoice is the supplementary "other fees" system (PTA levy etc.).
+        finance
+          ? prisma.student.findMany({
+              where: { ...studentWhere, feeAmount: { gt: 0 }, feeDays: { gt: 0 }, user: { status: "ACTIVE" } },
+              select: { id: true, feeAmount: true, feeStartDate: true },
+            })
+          : Promise.resolve([]),
         prisma.application.count({ where: { schoolId, status: "RECEIVED", ...(section ? { section } : {}) } }),
         finance ? prisma.invoice.count({ where: { schoolId, status: { in: ["UNPAID", "PARTIAL"] }, ...(section ? { student: { is: { section } } } : {}) } }) : Promise.resolve(0),
         prisma.studentAttendance.count({ where: { ...attendanceWhere, date: new Date() } }),
@@ -44,17 +52,23 @@ export const dashboardModule: Module = {
         prisma.reportCard.aggregate({ where: { schoolId, isPublished: true, ...(section ? { classGroup: { level: { section } } } : {}) }, _avg: { average: true }, _count: { average: true } }),
       ]);
       const attendanceRate = attendanceTotal ? Math.round((attendancePresent / attendanceTotal) * 100) : 0;
+      const schoolFeeLedger = await schoolFeeLedgerFor(schoolId, feeStudents);
+      let schoolFeeTotal = 0;
+      let schoolFeePaid = 0;
+      let schoolFeeOwing = 0;
+      let owing = 0;
+      for (const s of feeStudents) {
+        const l = schoolFeeLedger.get(s.id)!;
+        schoolFeeTotal += l.feeAmount;
+        schoolFeePaid += l.paid;
+        schoolFeeOwing += l.owing;
+        if (l.owing > 0) owing++;
+      }
       return {
         role,
-        counts: { studentCount, staffCount: staff.teaching, staff, classCount, applications, unpaid, today },
+        counts: { studentCount, staffCount: staff.teaching, staff, classCount, applications, unpaid: unpaidOtherFees, owing, today },
         schoolProgress: { attendanceRate, subjectAverage: Math.round(Number(averageResult._avg.average ?? 0) * 10) / 10, assessedStudents: averageResult._count.average },
-        feeSummary: finance
-          ? {
-              total: invoiceStats._sum.totalAmount ?? 0,
-              paid: invoiceStats._sum.paidAmount ?? 0,
-              balance: invoiceStats._sum.balance ?? 0,
-            }
-          : null,
+        schoolFeeSummary: finance ? { total: schoolFeeTotal, paid: schoolFeePaid, owing: schoolFeeOwing } : null,
         recentAnnouncements: await prisma.announcement.findMany({
           where: { schoolId },
           orderBy: { createdAt: "desc" },
@@ -234,26 +248,60 @@ export const dashboardModule: Module = {
     }
 
     if (role === "BURSAR") {
-      const [invoiceStats, unpaid, recentPayments] = await Promise.all([
-        financeOn
-          ? prisma.invoice.aggregate({ where: { schoolId }, _sum: { totalAmount: true, paidAmount: true, balance: true } })
-          : Promise.resolve({ _sum: { totalAmount: 0, paidAmount: 0, balance: 0 } }),
-        financeOn ? prisma.invoice.count({ where: { schoolId, status: { in: ["UNPAID", "PARTIAL"] } } }) : Promise.resolve(0),
-        financeOn
-          ? prisma.payment.findMany({
-              where: { schoolId, status: "SUCCESS" },
-              orderBy: { paidAt: "desc" },
-              take: 5,
-              include: { student: { select: { user: { select: { firstName: true, lastName: true } } } } },
-            })
-          : Promise.resolve([]),
+      if (!financeOn) {
+        return { role, schoolFeeSummary: null, schoolFeeBySection: [], otherFeesSummary: null, counts: { owing: 0, unpaidOtherFees: 0 }, recentPayments: [] };
+      }
+      const section = await resolveSection(ctx);
+      const studentSectionWhere = section ? { section } : {};
+      const invoiceSectionWhere = section ? { student: { is: { section } } } : {};
+
+      const [feeStudents, sections, otherFeesStats, unpaidOtherFees, recentPayments] = await Promise.all([
+        // Every student with a core school-fee plan configured — the real
+        // "what's supposed to come in / collected / owing" ledger, set per
+        // student via "Set school fees" (never an Invoice).
+        prisma.student.findMany({
+          where: { schoolId, feeAmount: { gt: 0 }, feeDays: { gt: 0 }, ...studentSectionWhere, user: { status: "ACTIVE" } },
+          select: { id: true, feeAmount: true, feeStartDate: true, section: true },
+        }),
+        prisma.schoolSection.findMany({ where: { schoolId }, select: { name: true }, orderBy: [{ order: "asc" }, { name: "asc" }] }),
+        prisma.invoice.aggregate({ where: { schoolId, ...invoiceSectionWhere }, _sum: { totalAmount: true, paidAmount: true, balance: true } }),
+        prisma.invoice.count({ where: { schoolId, status: { in: ["UNPAID", "PARTIAL"] }, ...invoiceSectionWhere } }),
+        prisma.payment.findMany({
+          where: { schoolId, status: "SUCCESS", ...(section ? { student: { is: { section } } } : {}) },
+          orderBy: { paidAt: "desc" },
+          take: 5,
+          include: { student: { select: { user: { select: { firstName: true, lastName: true } } } } },
+        }),
       ]);
+
+      const ledger = await schoolFeeLedgerFor(schoolId, feeStudents);
+      let total = 0;
+      let paid = 0;
+      let owing = 0;
+      let owingCount = 0;
+      const bySection = new Map<string, { total: number; paid: number; owing: number }>();
+      for (const s of feeStudents) {
+        const l = ledger.get(s.id)!;
+        total += l.feeAmount;
+        paid += l.paid;
+        owing += l.owing;
+        if (l.owing > 0) owingCount++;
+        const agg = bySection.get(s.section) ?? { total: 0, paid: 0, owing: 0 };
+        agg.total += l.feeAmount;
+        agg.paid += l.paid;
+        agg.owing += l.owing;
+        bySection.set(s.section, agg);
+      }
+      const schoolFeeBySection = sections
+        .filter((sec) => bySection.has(sec.name))
+        .map((sec) => ({ section: sec.name, ...bySection.get(sec.name)! }));
+
       return {
         role,
-        feeSummary: financeOn
-          ? { total: invoiceStats._sum.totalAmount ?? 0, paid: invoiceStats._sum.paidAmount ?? 0, balance: invoiceStats._sum.balance ?? 0 }
-          : null,
-        counts: { unpaid },
+        schoolFeeSummary: { total, paid, owing },
+        schoolFeeBySection,
+        otherFeesSummary: { total: otherFeesStats._sum.totalAmount ?? 0, paid: otherFeesStats._sum.paidAmount ?? 0, balance: otherFeesStats._sum.balance ?? 0 },
+        counts: { owing: owingCount, unpaidOtherFees },
         recentPayments,
       };
     }

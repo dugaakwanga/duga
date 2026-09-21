@@ -17,8 +17,13 @@ interface InvoiceLike {
 
 interface DashboardData {
   role: string;
-  counts?: { studentCount: number; staffCount: number; staff?: { teaching: number; admin: number; bursar: number; security: number; total: number }; classCount: number; applications: number; unpaid: number; today: number };
-  feeSummary?: { total: number; paid: number; balance: number };
+  counts?: { studentCount: number; staffCount: number; staff?: { teaching: number; admin: number; bursar: number; security: number; total: number }; classCount: number; applications: number; unpaid: number; owing?: number; unpaidOtherFees?: number; today: number };
+  // The core school-fee ledger (set per student via "Set school fees") —
+  // never an Invoice, which is the separate "other fees" system (PTA levy
+  // and the like, see otherFeesSummary below).
+  schoolFeeSummary?: { total: number; paid: number; owing: number } | null;
+  schoolFeeBySection?: Array<{ section: string; total: number; paid: number; owing: number }>;
+  otherFeesSummary?: { total: number; paid: number; balance: number } | null;
   schoolProgress?: { attendanceRate: number; subjectAverage: number; assessedStudents: number };
   recentAnnouncements?: Array<{ id: string; title: string; audience: string; author: { firstName: string; lastName: string }; createdAt: string }>;
   classSubjects?: Array<{ id: string; subject: { name: string }; classGroup?: { level: { name: string }; name: string }; teacher?: { user: { firstName: string; lastName: string } } }>;
@@ -85,18 +90,18 @@ export default function DashboardPage() {
             <Stat label="Bursar staff" value={data.counts?.staff?.bursar} />
             <Stat label="Security staff" value={data.counts?.staff?.security} />
             <Stat label="Classes" value={data.counts?.classCount} />
-            {data.feeSummary && <Stat label="Fees collected" value={naira(data.feeSummary.paid)} tone="success" />}
-            {data.feeSummary && <Stat label="Outstanding" value={naira(data.feeSummary.balance)} tone="danger" />}
+            {data.schoolFeeSummary && <Stat label="School fees collected" value={naira(data.schoolFeeSummary.paid)} tone="success" />}
+            {data.schoolFeeSummary && <Stat label="School fees owing" value={naira(data.schoolFeeSummary.owing)} tone="danger" />}
             <Stat label="New applications" value={data.counts?.applications} tone="info" />
             <Stat label="Attendance today" value={data.counts?.today} />
           </div>
 
           <div className="portal-dashboard-grid">
           <Card title="School monitoring" className="portal-monitor-card">
-            {data.feeSummary && (
+            {data.schoolFeeSummary && (
               <>
-                <div className="portal-monitor-row"><div><strong>Fee collection</strong><small>{naira(data.feeSummary.paid)} received</small></div><b>{Math.round((Number(data.feeSummary.paid) / Math.max(1, Number(data.feeSummary.total))) * 100)}%</b></div>
-                <ProgressBar tone="green" value={Number(data.feeSummary.paid) / Math.max(1, Number(data.feeSummary.total)) * 100} />
+                <div className="portal-monitor-row"><div><strong>School fee collection</strong><small>{naira(data.schoolFeeSummary.paid)} of {naira(data.schoolFeeSummary.total)} expected</small></div><b>{Math.round((Number(data.schoolFeeSummary.paid) / Math.max(1, Number(data.schoolFeeSummary.total))) * 100)}%</b></div>
+                <ProgressBar tone="green" value={Number(data.schoolFeeSummary.paid) / Math.max(1, Number(data.schoolFeeSummary.total)) * 100} />
               </>
             )}
             <div className="portal-monitor-row"><div><strong>Average attendance</strong><small>{data.counts?.today ?? 0} records captured today</small></div><b>{data.schoolProgress?.attendanceRate ?? 0}%</b></div>
@@ -284,17 +289,48 @@ export default function DashboardPage() {
       {data.role === "BURSAR" ? (
         <>
           <div className="portal-metrics" style={{ marginBottom: 20 }}>
-            {data.feeSummary ? (
+            {data.schoolFeeSummary ? (
               <>
-                <Stat label="Fees collected" value={naira(data.feeSummary.paid)} tone="success" />
-                <Stat label="Outstanding" value={naira(data.feeSummary.balance)} tone="danger" />
-                <Stat label="Total billed" value={naira(data.feeSummary.total)} />
+                <Stat label="School fees collected" value={naira(data.schoolFeeSummary.paid)} tone="success" />
+                <Stat label="School fees owing" value={naira(data.schoolFeeSummary.owing)} tone="danger" />
+                <Stat label="Total school fees expected" value={naira(data.schoolFeeSummary.total)} />
+                <Stat label="Students owing" value={data.counts?.owing ?? 0} tone="info" />
               </>
             ) : (
               <Stat label="Finance access" value="Not enabled" hint="Ask the owner to enable finance access." />
             )}
-            <Stat label="Unpaid / partial invoices" value={data.counts?.unpaid ?? 0} tone="info" />
           </div>
+
+          {data.schoolFeeBySection && data.schoolFeeBySection.length > 0 && (
+            <Card title="School fees by section" style={{ marginBottom: 20 }}>
+              <Table headers={["Section", "Expected", "Collected", "Owing"]}>
+                {data.schoolFeeBySection.map((s) => (
+                  <tr key={s.section}>
+                    <td>{s.section}</td>
+                    <td>{naira(s.total)}</td>
+                    <td style={{ color: "var(--duga-success, #1a7f37)" }}>{naira(s.paid)}</td>
+                    <td style={{ color: s.owing > 0 ? "var(--duga-danger, #b91c1c)" : undefined }}>{naira(s.owing)}</td>
+                  </tr>
+                ))}
+              </Table>
+            </Card>
+          )}
+
+          {data.otherFeesSummary && (
+            <Card
+              title="Other fees (PTA levy, excursions, etc.)"
+              actions={<Link href="/portal/fees" className="duga-btn duga-btn--outline duga-btn--sm">View invoices</Link>}
+              style={{ marginBottom: 20 }}
+            >
+              <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+                <Stat label="Billed" value={naira(data.otherFeesSummary.total)} />
+                <Stat label="Collected" value={naira(data.otherFeesSummary.paid)} tone="success" />
+                <Stat label="Outstanding" value={naira(data.otherFeesSummary.balance)} tone="danger" />
+                <Stat label="Unpaid / partial invoices" value={data.counts?.unpaidOtherFees ?? 0} tone="info" />
+              </div>
+            </Card>
+          )}
+
           <Card title="Recent payments">
             {data.recentPayments?.length ? (
               <Table headers={["Student", "Amount", "Date"]}>

@@ -51,13 +51,19 @@ export async function recomputeFeeAccess(schoolId: string, studentId: string): P
   const pastDueDate = Boolean(student.feesDueDate && Date.now() >= student.feesDueDate.getTime());
   const pastDueDateUnpaid = pastDueDate && !fullyPaid;
 
+  // A student who has paid the full fee amount is never "expired" — full
+  // stop, regardless of any explicit `coversTo` a bursar entered on one of
+  // the payments (that field describes what a PARTIAL payment covers; it
+  // must never cap access below the full period once the balance is ₦0).
   const paidThrough = pastDueDateUnpaid
     ? student.feeStartDate
-    : explicitCoversTo
-      ? (explicitCoversTo > student.feeStartDate ? explicitCoversTo : student.feeStartDate)
-      : pastDueDate
-        ? (student.feeEndDate ?? new Date(student.feeStartDate.getTime() + student.feeDays * 86400000))
-        : new Date(student.feeStartDate.getTime() + Math.floor((totalPaid / Number(student.feeAmount)) * student.feeDays) * 86400000);
+    : fullyPaid
+      ? (student.feeEndDate ?? new Date(student.feeStartDate.getTime() + student.feeDays * 86400000))
+      : explicitCoversTo
+        ? (explicitCoversTo > student.feeStartDate ? explicitCoversTo : student.feeStartDate)
+        : pastDueDate
+          ? (student.feeEndDate ?? new Date(student.feeStartDate.getTime() + student.feeDays * 86400000))
+          : new Date(student.feeStartDate.getTime() + Math.floor((totalPaid / Number(student.feeAmount)) * student.feeDays) * 86400000);
 
   await prisma.student.update({ where: { id: student.id }, data: { feePaidThrough: paidThrough } });
   return { paidThrough, totalPaid, pastDueDateUnpaid };
