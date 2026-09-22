@@ -298,7 +298,7 @@ export const feesModule: Module = {
         // relation (`student: { is: { section } }`) and doesn't apply here;
         // spreading it into a direct Student query was an invalid Prisma
         // argument whenever a section filter was active.
-        where: { schoolId, feeAmount: { gt: 0 }, feeDays: { gt: 0 }, ...(section ? { section } : {}), user: { status: "ACTIVE" } },
+        where: { schoolId, feeAmount: { gt: 0 }, ...(section ? { section } : {}), user: { status: "ACTIVE" } },
         select: {
           id: true,
           feeAmount: true,

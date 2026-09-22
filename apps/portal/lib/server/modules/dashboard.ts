@@ -34,9 +34,13 @@ export const dashboardModule: Module = {
         // The real "collected/owing" figure is the core school-fee ledger
         // (set per student via "Set school fees"), never an Invoice —
         // Invoice is the supplementary "other fees" system (PTA levy etc.).
+        // feeDays is deliberately NOT required here — a fee amount entered
+        // without a valid date window is still a real fee that must count
+        // toward "what's expected/collected/owing"; the date window only
+        // matters for the separate feature-access-expiry calculation.
         finance
           ? prisma.student.findMany({
-              where: { ...studentWhere, feeAmount: { gt: 0 }, feeDays: { gt: 0 }, user: { status: "ACTIVE" } },
+              where: { ...studentWhere, feeAmount: { gt: 0 }, user: { status: "ACTIVE" } },
               select: { id: true, feeAmount: true, feeStartDate: true },
             })
           : Promise.resolve([]),
@@ -258,9 +262,10 @@ export const dashboardModule: Module = {
       const [feeStudents, sections, otherFeesStats, unpaidOtherFees, recentPayments] = await Promise.all([
         // Every student with a core school-fee plan configured — the real
         // "what's supposed to come in / collected / owing" ledger, set per
-        // student via "Set school fees" (never an Invoice).
+        // student via "Set school fees" (never an Invoice). feeDays is NOT
+        // required — see the identical note above.
         prisma.student.findMany({
-          where: { schoolId, feeAmount: { gt: 0 }, feeDays: { gt: 0 }, ...studentSectionWhere, user: { status: "ACTIVE" } },
+          where: { schoolId, feeAmount: { gt: 0 }, ...studentSectionWhere, user: { status: "ACTIVE" } },
           select: { id: true, feeAmount: true, feeStartDate: true, section: true },
         }),
         prisma.schoolSection.findMany({ where: { schoolId }, select: { name: true }, orderBy: [{ order: "asc" }, { name: "asc" }] }),

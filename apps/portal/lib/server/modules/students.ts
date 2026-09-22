@@ -450,6 +450,11 @@ export const studentsModule: Module = {
       const feeStartDate = str(ctx.body.feeStartDate) ? new Date(String(ctx.body.feeStartDate)) : null;
       const feeEndDate = str(ctx.body.feeEndDate) ? new Date(String(ctx.body.feeEndDate)) : null;
       const feesDueDate = str(ctx.body.feesDueDate) ? new Date(String(ctx.body.feesDueDate)) : null;
+      // A fee amount with no date window is a broken, half-set record — it
+      // silently vanished from every dashboard/summary total that
+      // (reasonably) expects a real period to compute against. Require both
+      // whenever an amount is actually being set.
+      if (feeAmount > 0 && (!feeStartDate || !feeEndDate)) throw new Error("A start and end date are required when setting a fee amount");
       if (feeEndDate && feeStartDate && feeEndDate <= feeStartDate) throw new Error("Fee end date must be after the start date");
       if (feesDueDate && feeEndDate && feesDueDate > feeEndDate) throw new Error("Fees-due date must not be after the fee period's end date");
       if (feesDueDate && feeStartDate && feesDueDate < feeStartDate) throw new Error("Fees-due date must not be before the fee period's start date");

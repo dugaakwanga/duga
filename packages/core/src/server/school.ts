@@ -215,9 +215,13 @@ export async function schoolFeeLedgerFor(
   const map = new Map<string, SchoolFeeLedger>();
   for (const s of students) {
     const feeAmount = Number(s.feeAmount ?? 0);
-    const paid = s.feeStartDate
-      ? payments.filter((p) => p.studentId === s.id && p.paidAt && p.paidAt >= s.feeStartDate!).reduce((a, p) => a + Number(p.amount), 0)
-      : 0;
+    // A missing feeStartDate (a fee amount set with no date window — a data
+    // gap, not a reason to hide the student's payments) falls back to
+    // counting every standalone payment ever made for them, rather than
+    // silently reporting ₦0 paid.
+    const paid = payments
+      .filter((p) => p.studentId === s.id && p.paidAt && (!s.feeStartDate || p.paidAt >= s.feeStartDate!))
+      .reduce((a, p) => a + Number(p.amount), 0);
     map.set(s.id, { feeAmount, paid, owing: Math.max(0, feeAmount - paid) });
   }
   return map;
