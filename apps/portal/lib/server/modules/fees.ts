@@ -1,7 +1,8 @@
-import { prisma, initializePayment, verifyPayment, logAudit, dispatchNotification } from "@duga/core/server";
+import { prisma, initializePayment, verifyPayment, logAudit, dispatchNotification, schoolFeeLedgerFor, renderSmsFeeReminder, type OwingChild } from "@duga/core/server";
 import { generateReference, formatNaira } from "@duga/core";
 import type { Module } from ".";
 import { can, str, num, studentScope, resolveSection, financeManager, otherFeesManager, feeInfoOf } from "../helpers";
+import { getSmsFeeReminderCopy } from "./emailTemplates";
 
 async function assertFinanceManager(ctx: { session: { user: { role: string; schoolId: string } } }) {
   if (!(await financeManager(ctx as Parameters<typeof financeManager>[0]))) {
@@ -155,6 +156,69 @@ export async function sendFeeReminders(schoolId: string): Promise<number> {
       });
       sent += 1;
     }
+  }
+  return sent;
+}
+
+// The weekly text message described by the owner: one SMS per parent (not
+// per child, not per invoice), listing every one of their children who
+// still owes on the CORE school fee — never the supplementary "other fees"
+// invoices sendFeeReminders above covers. Runs from a dedicated weekly cron
+// (app/api/cron/sms-fee-reminders) kept separate from the Mon/Wed/Fri one
+// above so SMS spend stays predictable at exactly once a week, not three.
+export async function sendWeeklySchoolFeeSmsReminders(schoolId: string): Promise<number> {
+  const [school, students] = await Promise.all([
+    prisma.school.findUnique({ where: { id: schoolId }, select: { name: true } }),
+    prisma.student.findMany({
+      where: { schoolId, feeAmount: { gt: 0 }, user: { status: "ACTIVE" } },
+      select: { id: true, feeAmount: true, feeStartDate: true, feesDueDate: true, user: { select: { firstName: true, lastName: true } } },
+    }),
+  ]);
+  if (students.length === 0) return 0;
+  const ledger = await schoolFeeLedgerFor(schoolId, students);
+  const owingStudents = students.filter((s) => (ledger.get(s.id)?.owing ?? 0) > 0);
+  if (owingStudents.length === 0) return 0;
+
+  const links = await prisma.studentParent.findMany({
+    where: { studentId: { in: owingStudents.map((s) => s.id) } },
+    include: { parent: { include: { user: { select: { id: true, firstName: true, lastName: true, phone: true } } } } },
+  });
+  const owingByStudent = new Map(owingStudents.map((s) => [s.id, s]));
+  const byParent = new Map<string, { parentUserId: string; parentName: string; children: OwingChild[]; dueDates: Date[] }>();
+  for (const link of links) {
+    const student = owingByStudent.get(link.studentId);
+    if (!student || !link.parent.user.phone) continue;
+    const entry = byParent.get(link.parent.userId) ?? {
+      parentUserId: link.parent.userId,
+      parentName: `${link.parent.user.firstName} ${link.parent.user.lastName}`,
+      children: [],
+      dueDates: [],
+    };
+    entry.children.push({ name: student.user.firstName, owing: ledger.get(student.id)!.owing });
+    if (student.feesDueDate) entry.dueDates.push(student.feesDueDate);
+    byParent.set(link.parent.userId, entry);
+  }
+
+  const copy = await getSmsFeeReminderCopy(schoolId);
+  let sent = 0;
+  for (const entry of byParent.values()) {
+    const earliestDue = entry.dueDates.sort((a, b) => a.getTime() - b.getTime())[0];
+    const text = renderSmsFeeReminder(copy, {
+      parentName: entry.parentName,
+      schoolName: school?.name ?? "the school",
+      children: entry.children,
+      dueDate: earliestDue ? earliestDue.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : null,
+    });
+    await dispatchNotification({
+      schoolId,
+      userId: entry.parentUserId,
+      type: "school_fee_sms_reminder",
+      title: "School fees reminder",
+      body: text,
+      link: "/portal/fees",
+      channels: ["SMS"],
+    });
+    sent += 1;
   }
   return sent;
 }
@@ -787,6 +851,14 @@ export const feesModule: Module = {
     remind: async (ctx) => {
       await assertFinanceManager(ctx);
       const sent = await sendFeeReminders(ctx.session.user.schoolId);
+      return { sent };
+    },
+
+    // Manual trigger for the weekly school-fee SMS reminder — lets a bursar
+    // test wording/delivery without waiting for the Monday cron.
+    sendSchoolFeeSmsRemindersNow: async (ctx) => {
+      await assertFinanceManager(ctx);
+      const sent = await sendWeeklySchoolFeeSmsReminders(ctx.session.user.schoolId);
       return { sent };
     },
 

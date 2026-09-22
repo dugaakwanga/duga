@@ -19,6 +19,11 @@ interface TemplateItem {
   custom: Partial<EmailCopy> | null;
 }
 
+interface SmsCopy {
+  greeting: string;
+  closing: string;
+}
+
 const FIELDS: Array<{ key: keyof EmailCopy; label: string; hint: string }> = [
   { key: "greeting", label: "Greeting", hint: "Use {{name}} to insert the recipient's name — falls back to \"Parent/Guardian\" when it isn't known." },
   { key: "intro", label: "Opening line", hint: "The sentence right after the greeting, before the actual fact (amount, admission number, etc.)." },
@@ -41,6 +46,14 @@ export default function EmailTemplatesPage() {
   // them, so it only shows up for whoever can actually load that page.
   const [canSeeMainSettings, setCanSeeMainSettings] = useState(false);
 
+  const [smsForm, setSmsForm] = useState<SmsCopy>({ greeting: "", closing: "" });
+  const [smsSaving, setSmsSaving] = useState(false);
+  const [smsSaved, setSmsSaved] = useState(false);
+  const [smsPreview, setSmsPreview] = useState<{ text: string; length: number; segments: number } | null>(null);
+  const [smsPreviewLoading, setSmsPreviewLoading] = useState(false);
+  const [smsSending, setSmsSending] = useState(false);
+  const [smsSentMsg, setSmsSentMsg] = useState<string | null>(null);
+
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => r.json())
@@ -48,10 +61,67 @@ export default function EmailTemplatesPage() {
   }, []);
 
   function load() {
-    api<{ items: TemplateItem[] }>("emailTemplates")
-      .then((d) => setItems(d.items))
+    api<{ items: TemplateItem[]; smsFeeReminder: SmsCopy }>("emailTemplates")
+      .then((d) => {
+        setItems(d.items);
+        setSmsForm(d.smsFeeReminder);
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
+  }
+
+  async function saveSms() {
+    setSmsSaving(true);
+    setSmsSaved(false);
+    try {
+      await api("emailTemplates/saveSms", { method: "POST", body: smsForm });
+      setSmsSaved(true);
+      setSmsPreview(null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSmsSaving(false);
+    }
+  }
+
+  async function resetSms() {
+    setSmsSaving(true);
+    try {
+      await api("emailTemplates/resetSms", { method: "POST", body: {} });
+      setSmsSaved(true);
+      setSmsPreview(null);
+      load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSmsSaving(false);
+    }
+  }
+
+  async function previewSms() {
+    setSmsPreviewLoading(true);
+    try {
+      const d = await api<{ text: string; length: number; segments: number }>("emailTemplates/previewSms", { method: "POST", body: smsForm, loading: false });
+      setSmsPreview(d);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSmsPreviewLoading(false);
+    }
+  }
+
+  async function sendSmsNow() {
+    if (!confirm("Send this week's school-fee SMS reminder right now, to every parent with an owing child?")) return;
+    setSmsSending(true);
+    setSmsSentMsg(null);
+    try {
+      const d = await api<{ sent: number }>("fees/sendSchoolFeeSmsRemindersNow", { method: "POST", body: {} });
+      setSmsSentMsg(`Sent to ${d.sent} parent${d.sent === 1 ? "" : "s"}.`);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSmsSending(false);
+    }
   }
 
   useEffect(() => {
@@ -132,6 +202,35 @@ export default function EmailTemplatesPage() {
           ) : undefined
         }
       />
+      <Card title="Weekly school-fee SMS reminder" style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 13.5, color: "var(--duga-ink-2)", marginBottom: 12 }}>
+          Sent once a week (Monday mornings) to every parent with at least one child owing on the core school fee — one text per parent, listing all of their owing children together. Use <code>{"{parent}"}</code>, <code>{"{children}"}</code> (auto-generated: e.g. &quot;John owes ₦45,000&quot;) and <code>{"{dueDate}"}</code>. The school&apos;s name isn&apos;t repeated in the body since it already shows as the sender.
+        </div>
+        <Field label="Greeting + fact" hint="Must include {children} — this is where the owing list goes.">
+          <Textarea rows={2} value={smsForm.greeting} onChange={(e) => setSmsForm({ ...smsForm, greeting: e.target.value })} />
+        </Field>
+        <Field label="Closing">
+          <Textarea rows={2} value={smsForm.closing} onChange={(e) => setSmsForm({ ...smsForm, closing: e.target.value })} />
+        </Field>
+        {smsSaved && <Alert tone="success">Saved.</Alert>}
+        {smsSentMsg && <Alert tone="success">{smsSentMsg}</Alert>}
+        <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+          <Button onClick={saveSms} loading={smsSaving}>Save</Button>
+          <Button variant="outline" onClick={previewSms} loading={smsPreviewLoading}>Preview</Button>
+          <Button variant="ghost" onClick={resetSms} disabled={smsSaving}>Reset to default</Button>
+          <Button variant="danger" onClick={sendSmsNow} loading={smsSending}>Send now (test)</Button>
+        </div>
+        {smsPreview && (
+          <div style={{ marginTop: 14, padding: 12, border: "1px solid var(--duga-border)", borderRadius: 10, background: "var(--duga-surface-2, #f4f6f9)" }}>
+            <div style={{ fontSize: 13.5 }}>{smsPreview.text}</div>
+            <div style={{ fontSize: 12, color: "var(--duga-muted)", marginTop: 8 }}>
+              {smsPreview.length} characters · {smsPreview.segments} SMS segment{smsPreview.segments === 1 ? "" : "s"}
+              {smsPreview.segments > 1 && " — this parent's owing-children list didn't fit in one segment, so this costs 2 credits instead of 1."}
+            </div>
+          </div>
+        )}
+      </Card>
+
       <div className="duga-split-2">
         <Card title="Notification types" pad={false}>
           <div style={{ maxHeight: 560, overflowY: "auto" }}>

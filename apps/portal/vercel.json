@@ -2,6 +2,7 @@
   "framework": "nextjs",
   "buildCommand": "npx prisma generate --schema ../../packages/db/prisma/schema.prisma && next build",
   "crons": [
-    { "path": "/api/cron/fee-reminders", "schedule": "0 7 * * 1,3,5" }
+    { "path": "/api/cron/fee-reminders", "schedule": "0 7 * * 1,3,5" },
+    { "path": "/api/cron/sms-fee-reminders", "schedule": "0 7 * * 1" }
   ]
 }

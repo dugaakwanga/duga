@@ -1,6 +1,19 @@
-import { prisma, renderEmailHtml, defaultCopyFor } from "@duga/core/server";
+import { prisma, renderEmailHtml, defaultCopyFor, renderSmsFeeReminder, DEFAULT_SMS_FEE_REMINDER_COPY, type SmsFeeReminderCopy } from "@duga/core/server";
 import type { Module } from ".";
 import { can, str } from "../helpers";
+
+const SMS_FEE_REMINDER_KEY = "smsFeeReminderTemplate";
+
+// Exported for fees.ts's weekly SMS reminder sender — same source of truth
+// the settings-page preview above renders with.
+export async function getSmsFeeReminderCopy(schoolId: string): Promise<SmsFeeReminderCopy> {
+  const row = await prisma.schoolSetting.findUnique({ where: { schoolId_key: { schoolId, key: SMS_FEE_REMINDER_KEY } } });
+  const raw = row?.value && typeof row.value === "object" ? (row.value as Partial<SmsFeeReminderCopy>) : {};
+  return {
+    greeting: typeof raw.greeting === "string" && raw.greeting ? raw.greeting : DEFAULT_SMS_FEE_REMINDER_COPY.greeting,
+    closing: typeof raw.closing === "string" && raw.closing ? raw.closing : DEFAULT_SMS_FEE_REMINDER_COPY.closing,
+  };
+}
 
 // One entry per admin-editable notification type — the label shown in the
 // UI, and sample data so both the "what does this look like" preview and
@@ -47,10 +60,51 @@ export const emailTemplatesModule: Module = {
           custom: row ? { greeting: row.greeting, intro: row.intro, closing: row.closing, signOff: row.signOff } : null,
         };
       }),
+      smsFeeReminder: await getSmsFeeReminderCopy(schoolId),
     };
   },
 
   actions: {
+    saveSms: async (ctx) => {
+      can(ctx, "emailTemplates:manage");
+      const schoolId = ctx.session.user.schoolId;
+      const greeting = str(ctx.body.greeting) || DEFAULT_SMS_FEE_REMINDER_COPY.greeting;
+      const closing = str(ctx.body.closing) || DEFAULT_SMS_FEE_REMINDER_COPY.closing;
+      if (!greeting.includes("{children}")) throw new Error('The greeting must include "{children}" — that\'s where each owing child and amount is listed');
+      await prisma.schoolSetting.upsert({
+        where: { schoolId_key: { schoolId, key: SMS_FEE_REMINDER_KEY } },
+        update: { value: { greeting, closing } },
+        create: { schoolId, key: SMS_FEE_REMINDER_KEY, value: { greeting, closing } },
+      });
+      return { ok: true };
+    },
+
+    resetSms: async (ctx) => {
+      can(ctx, "emailTemplates:manage");
+      await prisma.schoolSetting.deleteMany({ where: { schoolId: ctx.session.user.schoolId, key: SMS_FEE_REMINDER_KEY } });
+      return { ok: true };
+    },
+
+    // Renders the exact function the real weekly send uses, with sample
+    // data, so what's shown while editing is what actually goes out.
+    previewSms: async (ctx) => {
+      can(ctx, "emailTemplates:manage");
+      const school = await prisma.school.findUnique({ where: { id: ctx.session.user.schoolId }, select: { name: true } });
+      const text = renderSmsFeeReminder(
+        { greeting: str(ctx.body.greeting) || DEFAULT_SMS_FEE_REMINDER_COPY.greeting, closing: str(ctx.body.closing) || DEFAULT_SMS_FEE_REMINDER_COPY.closing },
+        {
+          parentName: "Chioma Okafor",
+          schoolName: school?.name ?? "the school",
+          children: [
+            { name: "John", owing: 45000 },
+            { name: "Grace", owing: 30000 },
+          ],
+          dueDate: "12 Dec 2026",
+        },
+      );
+      return { text, length: text.length, segments: Math.ceil(text.length / 160) };
+    },
+
     save: async (ctx) => {
       can(ctx, "emailTemplates:manage");
       const schoolId = ctx.session.user.schoolId;
