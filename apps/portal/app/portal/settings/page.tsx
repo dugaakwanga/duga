@@ -43,6 +43,8 @@ interface SettingsData {
   role?: string;
   financeAccess?: boolean;
   bursarFinanceAccess?: boolean;
+  adminOtherFeesAccess?: boolean;
+  bursarOtherFeesAccess?: boolean;
   schoolDays?: SchoolDaysConfig;
   restrictions?: RestrictionsConfig;
 }
@@ -167,6 +169,18 @@ export default function SettingsPage() {
       const value = role === "admin" ? !data?.financeAccess : !data?.bursarFinanceAccess;
       await api("settings/setFinanceAccess", { method: "POST", body: { role, value } });
       setData({ ...data!, ...(role === "admin" ? { financeAccess: value } : { bursarFinanceAccess: value }) });
+      setSaved(true);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function toggleOtherFeesAccess(role: "admin" | "bursar") {
+    setError(null);
+    try {
+      const value = role === "admin" ? !data?.adminOtherFeesAccess : !data?.bursarOtherFeesAccess;
+      await api("settings/setOtherFeesAccess", { method: "POST", body: { role, value } });
+      setData({ ...data!, ...(role === "admin" ? { adminOtherFeesAccess: value } : { bursarOtherFeesAccess: value }) });
       setSaved(true);
     } catch (e) {
       setError((e as Error).message);
@@ -472,6 +486,30 @@ export default function SettingsPage() {
               <div style={{ fontSize: 12.5, color: "var(--duga-muted)", marginTop: 8 }}>
                 When granted, that account can view fees, reports, payroll and the finance dashboard. Teachers, students and parents never see financial details.
               </div>
+            </Card>
+          )}
+
+          {data.role === "OWNER" && (
+            <Card title="Other fees access" style={{ marginTop: 16 }}>
+              <div style={{ fontSize: 13.5, color: "var(--duga-ink-2)", marginBottom: 12 }}>
+                A narrower grant than Finance access above — lets an admin or bursar manage supplementary fees (book purchases, PTA levy, excursions and the like) without seeing payroll, financial reports or the core school-fee dashboard. Anyone already granted Finance access has this automatically.
+              </div>
+              <button
+                type="button"
+                onClick={() => toggleOtherFeesAccess("admin")}
+                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", border: "1px solid var(--duga-border)", borderRadius: 10, cursor: "pointer", textAlign: "left", background: "transparent", width: "100%" }}
+              >
+                <span style={{ fontSize: 13.5, fontWeight: 600 }}>Admin other-fees access</span>
+                <Badge tone={data.adminOtherFeesAccess ? "success" : "neutral"}>{data.adminOtherFeesAccess ? "Granted" : "Not granted"}</Badge>
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleOtherFeesAccess("bursar")}
+                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", border: "1px solid var(--duga-border)", borderRadius: 10, cursor: "pointer", textAlign: "left", background: "transparent", width: "100%", marginTop: 8 }}
+              >
+                <span style={{ fontSize: 13.5, fontWeight: 600 }}>Bursar other-fees access</span>
+                <Badge tone={data.bursarOtherFeesAccess ? "success" : "neutral"}>{data.bursarOtherFeesAccess ? "Granted" : "Not granted"}</Badge>
+              </button>
             </Card>
           )}
 

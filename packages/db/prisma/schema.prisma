@@ -593,14 +593,42 @@ model PayrollEntry {
   extraDeduction Decimal   @default(0)
   note           String?
   netPay         Decimal   @default(0)
+  // DRAFT (generated, still editable/deletable) -> PUBLISHED (reviewed and
+  // accepted, locked from further adjustment, ready to pay) -> PARTIAL (some
+  // of netPay paid, see payments below) -> PAID (paidAmount >= netPay).
   status         String    @default("DRAFT")
+  // Denormalized running total from this entry's PayrollPayment rows —
+  // refreshed after every payment the same way Invoice.paidAmount is, so
+  // reading it never requires summing payments on every list load.
+  paidAmount     Decimal   @default(0)
   processedAt    DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   user           User      @relation("PayrollStaff", fields: [userId], references: [id], onDelete: Cascade)
+  payments       PayrollPayment[]
 
   @@unique([schoolId, userId, month])
   @@index([schoolId, month])
+}
+
+// A single disbursement against a PayrollEntry — staff salary can be paid in
+// installments (part now, the rest later), so this is a real history, not a
+// single boolean/amount field, mirroring how Payment works against Invoice.
+model PayrollPayment {
+  id               String        @id @default(cuid())
+  schoolId         String
+  payrollEntryId   String
+  amount           Decimal
+  method           PaymentMethod @default(CASH)
+  note             String?
+  recordedByUserId String?
+  paidAt           DateTime      @default(now())
+  createdAt        DateTime      @default(now())
+
+  payrollEntry PayrollEntry @relation(fields: [payrollEntryId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId])
+  @@index([payrollEntryId])
 }
 
 // ----------------------------------------------------------------------------

@@ -1,11 +1,22 @@
 import { prisma, initializePayment, verifyPayment, logAudit, dispatchNotification } from "@duga/core/server";
 import { generateReference, formatNaira } from "@duga/core";
 import type { Module } from ".";
-import { can, str, num, studentScope, resolveSection, financeManager, feeInfoOf } from "../helpers";
+import { can, str, num, studentScope, resolveSection, financeManager, otherFeesManager, feeInfoOf } from "../helpers";
 
 async function assertFinanceManager(ctx: { session: { user: { role: string; schoolId: string } } }) {
   if (!(await financeManager(ctx as Parameters<typeof financeManager>[0]))) {
     const err = new Error("Finance is managed only by the bursar and school owner, or an admin granted access") as Error & { status?: number };
+    err.status = 403;
+    throw err;
+  }
+}
+
+// Narrower than assertFinanceManager — also satisfied by the independently
+// grantable "other fees" access (book purchases, PTA levy, etc.), so an
+// admin/bursar can be given just this without full finance/payroll access.
+async function assertOtherFeesManager(ctx: { session: { user: { role: string; schoolId: string } } }) {
+  if (!(await otherFeesManager(ctx as Parameters<typeof otherFeesManager>[0]))) {
+    const err = new Error("Other fees are managed only by the bursar and school owner, or an admin/bursar granted access") as Error & { status?: number };
     err.status = 403;
     throw err;
   }
@@ -236,7 +247,11 @@ export const feesModule: Module = {
       });
       return { role, invoices, summary, byChild };
     }
-    await assertFinanceManager(ctx);
+    // Viewing the page requires at least the narrower other-fees access —
+    // full finance access always satisfies it too. The response bundles
+    // owingStudents/core-fee context alongside the other-fees data below;
+    // that's read-only visibility, acceptable for either grant.
+    await assertOtherFeesManager(ctx);
 
     const section = await resolveSection(ctx);
     const studentSectionWhere = section ? { student: { is: { section } } } : {};
@@ -325,7 +340,7 @@ export const feesModule: Module = {
   async get(ctx) {
     can(ctx, "fees:view");
     const role = ctx.session.user.role;
-    if (role !== "STUDENT" && role !== "PARENT") await assertFinanceManager(ctx);
+    if (role !== "STUDENT" && role !== "PARENT") await assertOtherFeesManager(ctx);
     const invoice = await prisma.invoice.findFirst({
       where: {
         id: ctx.id,
@@ -342,7 +357,7 @@ export const feesModule: Module = {
   actions: {
     // Bursar/owner: generate invoices for all students of a class (or level) from fee structures
     generateInvoices: async (ctx) => {
-      await assertFinanceManager(ctx);
+      await assertOtherFeesManager(ctx);
       const schoolId = ctx.session.user.schoolId;
       const termId = str(ctx.body.termId);
       const classGroupId = str(ctx.body.classGroupId);
@@ -436,7 +451,7 @@ export const feesModule: Module = {
     // its term's calendar (or ~30-day steps when the term has no dates set)
     // unless the bursar supplies custom per-tranche amounts.
     createInstallmentPlan: async (ctx) => {
-      await assertFinanceManager(ctx);
+      await assertOtherFeesManager(ctx);
       const schoolId = ctx.session.user.schoolId;
       const invoiceId = str(ctx.body.invoiceId) ?? ctx.id;
       const installmentCount = Math.max(2, Math.min(12, Math.trunc(num(ctx.body.installmentCount) ?? 0)));
@@ -481,7 +496,7 @@ export const feesModule: Module = {
     },
 
     deleteInstallmentPlan: async (ctx) => {
-      await assertFinanceManager(ctx);
+      await assertOtherFeesManager(ctx);
       const schoolId = ctx.session.user.schoolId;
       const plan = await prisma.installmentPlan.findFirst({ where: { id: ctx.id, schoolId }, include: { installments: { include: { payments: true } } } });
       if (!plan) throw new Error("Installment plan not found");
@@ -492,7 +507,7 @@ export const feesModule: Module = {
     },
 
     addFeeType: async (ctx) => {
-      await assertFinanceManager(ctx);
+      await assertOtherFeesManager(ctx);
       const name = str(ctx.body.name);
       if (!name) throw new Error("name required");
       const ft = await prisma.feeType.create({
@@ -502,7 +517,7 @@ export const feesModule: Module = {
     },
 
     addFeeStructure: async (ctx) => {
-      await assertFinanceManager(ctx);
+      await assertOtherFeesManager(ctx);
       const schoolId = ctx.session.user.schoolId;
       const feeTypeId = str(ctx.body.feeTypeId);
       const amount = num(ctx.body.amount);
@@ -526,7 +541,7 @@ export const feesModule: Module = {
     },
 
     updateFeeType: async (ctx) => {
-      await assertFinanceManager(ctx);
+      await assertOtherFeesManager(ctx);
       const schoolId = ctx.session.user.schoolId;
       const existing = await prisma.feeType.findFirst({ where: { id: ctx.id, schoolId } });
       if (!existing) throw new Error("Fee type not found");
@@ -541,7 +556,7 @@ export const feesModule: Module = {
     },
 
     deleteFeeType: async (ctx) => {
-      await assertFinanceManager(ctx);
+      await assertOtherFeesManager(ctx);
       const schoolId = ctx.session.user.schoolId;
       const existing = await prisma.feeType.findFirst({ where: { id: ctx.id, schoolId } });
       if (!existing) throw new Error("Fee type not found");
@@ -553,7 +568,7 @@ export const feesModule: Module = {
     },
 
     updateFeeStructure: async (ctx) => {
-      await assertFinanceManager(ctx);
+      await assertOtherFeesManager(ctx);
       const schoolId = ctx.session.user.schoolId;
       const existing = await prisma.feeStructure.findFirst({ where: { id: ctx.id, schoolId } });
       if (!existing) throw new Error("Fee structure not found");
@@ -574,7 +589,7 @@ export const feesModule: Module = {
     },
 
     deleteFeeStructure: async (ctx) => {
-      await assertFinanceManager(ctx);
+      await assertOtherFeesManager(ctx);
       const schoolId = ctx.session.user.schoolId;
       const existing = await prisma.feeStructure.findFirst({ where: { id: ctx.id, schoolId } });
       if (!existing) throw new Error("Fee structure not found");
@@ -584,7 +599,7 @@ export const feesModule: Module = {
     },
 
     deleteInvoice: async (ctx) => {
-      await assertFinanceManager(ctx);
+      await assertOtherFeesManager(ctx);
       const schoolId = ctx.session.user.schoolId;
       const invoice = await prisma.invoice.findFirst({ where: { id: ctx.id, schoolId } });
       if (!invoice) throw new Error("Invoice not found");
@@ -603,7 +618,7 @@ export const feesModule: Module = {
     // or creates a fresh single-item invoice for that student/term if
     // neither exists yet.
     addInvoiceItem: async (ctx) => {
-      await assertFinanceManager(ctx);
+      await assertOtherFeesManager(ctx);
       const schoolId = ctx.session.user.schoolId;
       const description = str(ctx.body.description);
       const amount = num(ctx.body.amount);
@@ -781,9 +796,14 @@ export const feesModule: Module = {
     // there's no invoice to apply it to — either way it still advances the
     // student's fee-access window via grantFeeAccessForPayment.
     recordManual: async (ctx) => {
-      await assertFinanceManager(ctx);
       const schoolId = ctx.session.user.schoolId;
       const invoiceId = str(ctx.body.invoiceId) ?? ctx.id;
+      // A payment against an invoice is an "other fees" collection (book
+      // purchases, PTA levy) — the narrower, independently-grantable access
+      // covers it. A standalone payment (no invoice) is against the core
+      // school-fee ledger instead, and always requires full finance access.
+      if (invoiceId) await assertOtherFeesManager(ctx);
+      else await assertFinanceManager(ctx);
       const amount = num(ctx.body.amount);
       if (amount === undefined || amount <= 0) throw new Error("A positive amount is required");
 

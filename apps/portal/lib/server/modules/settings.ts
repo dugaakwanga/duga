@@ -88,6 +88,15 @@ export const settingsModule: Module = {
     const bursarFinanceAccess = await prisma.schoolSetting.findUnique({
       where: { schoolId_key: { schoolId: ctx.session.user.schoolId, key: "bursarFinanceAccess" } },
     });
+    // Independent of the finance-access toggle above — lets the owner grant
+    // JUST the ability to manage supplementary fees (book purchases, PTA
+    // levy, etc.) without handing over payroll/financial-reports visibility.
+    const adminOtherFeesAccess = await prisma.schoolSetting.findUnique({
+      where: { schoolId_key: { schoolId: ctx.session.user.schoolId, key: "adminOtherFeesAccess" } },
+    });
+    const bursarOtherFeesAccess = await prisma.schoolSetting.findUnique({
+      where: { schoolId_key: { schoolId: ctx.session.user.schoolId, key: "bursarOtherFeesAccess" } },
+    });
     const [schoolDays, restrictions, gatedFeatures] = await Promise.all([
       readSetting<SchoolDaysConfig>(ctx.session.user.schoolId, SCHOOL_DAYS_KEY, {
         weekdays: { monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: false, sunday: false },
@@ -112,6 +121,8 @@ export const settingsModule: Module = {
       role: ctx.session.user.role,
       financeAccess: financeAccess?.value === true || financeAccess?.value === "true",
       bursarFinanceAccess: bursarFinanceAccess?.value === true || bursarFinanceAccess?.value === "true",
+      adminOtherFeesAccess: adminOtherFeesAccess?.value === true || adminOtherFeesAccess?.value === "true",
+      bursarOtherFeesAccess: bursarOtherFeesAccess?.value === true || bursarOtherFeesAccess?.value === "true",
       schoolDays,
       restrictions,
     };
@@ -175,6 +186,26 @@ export const settingsModule: Module = {
         where: { schoolId_key: { schoolId, key: role === "bursar" ? "bursarFinanceAccess" : "adminFinanceAccess" } },
         update: { value: value as never },
         create: { schoolId, key: role === "bursar" ? "bursarFinanceAccess" : "adminFinanceAccess", value: value as never },
+      });
+      return { granted: value };
+    },
+
+    // Owner-only: grant or revoke JUST supplementary-fees access (book
+    // purchases, PTA levy, etc.) — independent of full finance access above,
+    // so an admin/bursar can be given one without the other.
+    setOtherFeesAccess: async (ctx) => {
+      if (ctx.session.user.role !== "OWNER") {
+        const err = new Error("Only the school owner can grant other-fees access") as Error & { status?: number };
+        err.status = 403;
+        throw err;
+      }
+      const schoolId = ctx.session.user.schoolId;
+      const role = ctx.body.role === "bursar" ? "bursar" : "admin";
+      const value = ctx.body.value === true || ctx.body.value === "true";
+      await prisma.schoolSetting.upsert({
+        where: { schoolId_key: { schoolId, key: role === "bursar" ? "bursarOtherFeesAccess" : "adminOtherFeesAccess" } },
+        update: { value: value as never },
+        create: { schoolId, key: role === "bursar" ? "bursarOtherFeesAccess" : "adminOtherFeesAccess", value: value as never },
       });
       return { granted: value };
     },

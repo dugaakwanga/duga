@@ -115,7 +115,7 @@ export const payrollModule: Module = {
       const deduction = await prisma.staffDeduction.create({ data: { schoolId, userId, month, amount, reason, createdByUserId: ctx.session.user.id } });
 
       const entry = await prisma.payrollEntry.findUnique({ where: { schoolId_userId_month: { schoolId, userId, month } } });
-      if (entry && entry.status !== "PAID") {
+      if (entry && entry.status === "DRAFT") {
         const extraDeduction = Number(entry.extraDeduction) + amount;
         const netPay = Math.max(0, Number(entry.baseSalary) + Number(entry.reward) - Number(entry.lateDeduction) - extraDeduction);
         await prisma.payrollEntry.update({ where: { id: entry.id }, data: { extraDeduction, netPay } });
@@ -131,7 +131,7 @@ export const payrollModule: Module = {
 
       const entry = await prisma.payrollEntry.findUnique({ where: { schoolId_userId_month: { schoolId, userId: deduction.userId, month: deduction.month } } });
       if (entry) {
-        if (entry.status === "PAID") throw new Error("This month's payroll has already been paid — the deduction can no longer be removed");
+        if (entry.status !== "DRAFT") throw new Error("This month's payroll has already been published — unpublish it first if this deduction needs removing");
         const extraDeduction = Math.max(0, Number(entry.extraDeduction) - Number(deduction.amount));
         const netPay = Math.max(0, Number(entry.baseSalary) + Number(entry.reward) - Number(entry.lateDeduction) - extraDeduction);
         await prisma.payrollEntry.update({ where: { id: entry.id }, data: { extraDeduction, netPay } });
@@ -196,7 +196,7 @@ export const payrollModule: Module = {
     adjust: async (ctx) => {
       await assertPayrollAccess(ctx, true);
       const entry = await prisma.payrollEntry.findFirst({ where: { id: ctx.id, schoolId: ctx.session.user.schoolId } }); if (!entry) throw new Error("Payroll entry not found");
-      if (entry.status === "PAID") throw new Error("A paid payroll entry cannot be changed");
+      if (entry.status !== "DRAFT") throw new Error("Only a draft payroll entry can be changed — unpublish it first if it needs correcting");
       const { latePenaltyAmount } = await getPayrollRules(ctx.session.user.schoolId);
       const lateDays = Math.max(0, num(ctx.body.lateDays) ?? entry.lateDays);
       const reward = Math.max(0, num(ctx.body.reward) ?? Number(entry.reward));
@@ -205,10 +205,75 @@ export const payrollModule: Module = {
       const netPay = Math.max(0, Number(entry.baseSalary) + reward - lateDeduction - extraDeduction);
       return prisma.payrollEntry.update({ where: { id: entry.id }, data: { lateDays, lateDeduction, reward, extraDeduction, netPay, note: str(ctx.body.note) } });
     },
-    markPaid: async (ctx) => {
+    // Deletes every still-DRAFT entry for a month — lets a bursar throw away
+    // a bad generation and re-run `generate` from scratch. Never touches an
+    // entry that's already been published or paid, so this is always safe
+    // to call even on a month that's partly progressed.
+    deleteDraft: async (ctx) => {
       await assertPayrollAccess(ctx, true);
-      const entry = await prisma.payrollEntry.findFirst({ where: { id: ctx.id, schoolId: ctx.session.user.schoolId } }); if (!entry) throw new Error("Payroll entry not found");
-      return prisma.payrollEntry.update({ where: { id: entry.id }, data: { status: "PAID", processedAt: new Date() } });
+      const schoolId = ctx.session.user.schoolId;
+      const month = str(ctx.body.month);
+      if (!month || !/^\d{4}-\d{2}$/.test(month)) throw new Error("month (YYYY-MM) is required");
+      const { count } = await prisma.payrollEntry.deleteMany({ where: { schoolId, month, status: "DRAFT" } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "payroll.draftDeleted", entityType: "PayrollEntry", entityId: month, meta: { month, count } });
+      return { deleted: count };
+    },
+    // The "accept this draft" step: locks every DRAFT entry for the month
+    // from further adjustment and makes it the school's official payroll
+    // for that month, ready to actually disburse.
+    publishMonth: async (ctx) => {
+      await assertPayrollAccess(ctx, true);
+      const schoolId = ctx.session.user.schoolId;
+      const month = str(ctx.body.month);
+      if (!month || !/^\d{4}-\d{2}$/.test(month)) throw new Error("month (YYYY-MM) is required");
+      const { count } = await prisma.payrollEntry.updateMany({ where: { schoolId, month, status: "DRAFT" }, data: { status: "PUBLISHED" } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "payroll.monthPublished", entityType: "PayrollEntry", entityId: month, meta: { month, count } });
+      return { published: count };
+    },
+    // Reopens a published (not yet paid) month for correction — only
+    // entries with nothing paid against them yet revert to DRAFT; anything
+    // already PARTIAL/PAID is left untouched rather than risking an
+    // inconsistent paidAmount-vs-status state.
+    unpublishMonth: async (ctx) => {
+      await assertPayrollAccess(ctx, true);
+      const schoolId = ctx.session.user.schoolId;
+      const month = str(ctx.body.month);
+      if (!month || !/^\d{4}-\d{2}$/.test(month)) throw new Error("month (YYYY-MM) is required");
+      const { count } = await prisma.payrollEntry.updateMany({ where: { schoolId, month, status: "PUBLISHED", paidAmount: 0 }, data: { status: "DRAFT" } });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "payroll.monthUnpublished", entityType: "PayrollEntry", entityId: month, meta: { month, count } });
+      return { unpublished: count };
+    },
+    // Records a disbursement against one entry — full or partial. Requires
+    // the month to have been published first (the review/accept step),
+    // same as fees.ts's invoice payments require an invoice to exist.
+    recordPayment: async (ctx) => {
+      await assertPayrollAccess(ctx, true);
+      const schoolId = ctx.session.user.schoolId;
+      const entry = await prisma.payrollEntry.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!entry) throw new Error("Payroll entry not found");
+      if (entry.status === "DRAFT") throw new Error("Publish this month's payroll before recording a payment");
+      const remaining = Number(entry.netPay) - Number(entry.paidAmount);
+      const amount = num(ctx.body.amount);
+      if (amount === undefined || amount <= 0) throw new Error("A positive amount is required");
+      if (amount > remaining) throw new Error(`Amount must not exceed what's left to pay (₦${remaining.toLocaleString()})`);
+      const payment = await prisma.payrollPayment.create({
+        data: {
+          schoolId,
+          payrollEntryId: entry.id,
+          amount,
+          method: (str(ctx.body.method) as "CASH") ?? "CASH",
+          note: str(ctx.body.note),
+          recordedByUserId: ctx.session.user.id,
+        },
+      });
+      const paidAmount = Number(entry.paidAmount) + amount;
+      const status = paidAmount >= Number(entry.netPay) ? "PAID" : "PARTIAL";
+      const updated = await prisma.payrollEntry.update({
+        where: { id: entry.id },
+        data: { paidAmount, status, processedAt: status === "PAID" ? new Date() : entry.processedAt },
+      });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "payroll.paymentRecorded", entityType: "PayrollEntry", entityId: entry.id, meta: { amount, status } });
+      return { entry: updated, payment };
     },
   },
 };

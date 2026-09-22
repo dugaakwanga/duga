@@ -1,13 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Alert, Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, Spinner, Table } from "@duga/ui";
+import { Alert, Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, Select, Spinner, Table } from "@duga/ui";
 import { api } from "@/lib/client/api";
 
 type Staff = { id: string; firstName: string; lastName: string; role: string; salaryProfile?: { monthlyAmount: number; rewardAmount: number } | null };
-type Entry = { id: string; userId: string; baseSalary: number; lateDays: number; lateDeduction: number; reward: number; extraDeduction: number; netPay: number; status: string; note?: string | null; user: { firstName: string; lastName: string; role: string } };
+type Entry = { id: string; userId: string; baseSalary: number; lateDays: number; lateDeduction: number; reward: number; extraDeduction: number; netPay: number; paidAmount: number; status: string; note?: string | null; user: { firstName: string; lastName: string; role: string } };
 type Deduction = { id: string; userId: string; month: string; amount: number; reason: string; createdAt: string };
 const money = (v: number | string) => `₦${Number(v ?? 0).toLocaleString()}`;
+
+function statusTone(status: string): "success" | "warning" | "info" | "neutral" {
+  if (status === "PAID") return "success";
+  if (status === "PARTIAL") return "warning";
+  if (status === "PUBLISHED") return "info";
+  return "neutral";
+}
 
 export default function PayrollPage() {
   const [role, setRole] = useState(""); const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
@@ -17,6 +24,8 @@ export default function PayrollPage() {
   const [lateAfterTime, setLateAfterTime] = useState("08:00"); const [lateTimeDraft, setLateTimeDraft] = useState("08:00");
   const [latePenaltyAmount, setLatePenaltyAmount] = useState(0); const [latePenaltyDraft, setLatePenaltyDraft] = useState("0"); const [savingRules, setSavingRules] = useState(false);
   const [deductStaff, setDeductStaff] = useState<Staff | null>(null); const [deductForm, setDeductForm] = useState({ amount: "", reason: "", month: month }); const [deductBusy, setDeductBusy] = useState(false);
+  const [payTarget, setPayTarget] = useState<Entry | null>(null); const [payForm, setPayForm] = useState({ amount: "", method: "CASH", note: "" }); const [payBusy, setPayBusy] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -32,7 +41,6 @@ export default function PayrollPage() {
   async function generate() { try { await api("payroll/generate", { method: "POST", body: { month } }); await load(); } catch (e) { alert((e as Error).message); } }
   async function saveSalary() { if (!salaryStaff) return; try { await api("payroll/setSalary", { method: "POST", body: { userId: salaryStaff.id, monthlyAmount: Number(form.monthlyAmount), rewardAmount: Number(form.rewardAmount) } }); setSalaryStaff(null); await load(); } catch (e) { alert((e as Error).message); } }
   async function saveAdjustment() { if (!edit) return; try { await api(`payroll/${edit.id}/adjust`, { method: "POST", body: { lateDays: Number(form.lateDays), reward: Number(form.reward), extraDeduction: Number(form.extraDeduction), note: form.note } }); setEdit(null); await load(); } catch (e) { alert((e as Error).message); } }
-  async function paid(id: string) { try { await api(`payroll/${id}/markPaid`, { method: "POST", body: {} }); await load(); } catch (e) { alert((e as Error).message); } }
   async function toggleBursar() { try { await api("payroll/setBursarAccess", { method: "POST", body: { enabled: !bursarAccess } }); setBursarAccess(!bursarAccess); } catch (e) { alert((e as Error).message); } }
   async function saveRules() {
     setSavingRules(true);
@@ -59,6 +67,34 @@ export default function PayrollPage() {
     try { await api(`payroll/${id}/removeDeduction`, { method: "POST", body: {} }); await load(); } catch (e) { alert((e as Error).message); }
   }
 
+  async function deleteDraft() {
+    if (!confirm(`Delete every draft entry for ${month}? This cannot be undone — you'll need to Generate again.`)) return;
+    setBusy(true);
+    try { await api("payroll/deleteDraft", { method: "POST", body: { month } }); await load(); } catch (e) { alert((e as Error).message); } finally { setBusy(false); }
+  }
+  async function publishMonth() {
+    if (!confirm(`Publish ${month}'s payroll draft? Entries will be locked from further adjustment and ready to pay.`)) return;
+    setBusy(true);
+    try { await api("payroll/publishMonth", { method: "POST", body: { month } }); await load(); } catch (e) { alert((e as Error).message); } finally { setBusy(false); }
+  }
+  async function unpublishMonth() {
+    if (!confirm(`Reopen ${month}'s payroll for correction? Only entries with nothing paid against them yet will revert to draft.`)) return;
+    setBusy(true);
+    try { await api("payroll/unpublishMonth", { method: "POST", body: { month } }); await load(); } catch (e) { alert((e as Error).message); } finally { setBusy(false); }
+  }
+  function openPayment(e: Entry) { setPayTarget(e); setPayForm({ amount: String(Math.max(0, e.netPay - e.paidAmount)), method: "CASH", note: "" }); }
+  async function submitPayment() {
+    if (!payTarget) return;
+    const amount = Number(payForm.amount);
+    if (!amount || amount <= 0) return alert("Enter a valid amount");
+    setPayBusy(true);
+    try {
+      await api(`payroll/${payTarget.id}/recordPayment`, { method: "POST", body: { amount, method: payForm.method, note: payForm.note || undefined } });
+      setPayTarget(null);
+      await load();
+    } catch (e) { alert((e as Error).message); } finally { setPayBusy(false); }
+  }
+
   if (loading) return <Spinner size={28} />; if (error) return <Alert tone="danger">{error}</Alert>;
   // Reaching this page at all means the server already confirmed finance
   // access (list() gates on financeManager()) — so any role rendering here
@@ -66,8 +102,17 @@ export default function PayrollPage() {
   const canManagePayroll = role === "OWNER" || role === "ADMIN" || role === "BURSAR";
   const rulesChanged = lateTimeDraft !== lateAfterTime || Number(latePenaltyDraft) !== latePenaltyAmount;
   const deductStaffRows = deductStaff ? deductions.filter((d) => d.userId === deductStaff.id) : [];
+  const hasDraft = entries.some((e) => e.status === "DRAFT");
+  const hasUnpaidPublished = entries.some((e) => e.status === "PUBLISHED" && Number(e.paidAmount) === 0);
 
-  return <div><PageHeader title="Payroll" subtitle="Monthly salaries, late-coming penalties, rewards and deductions." actions={<Button onClick={generate}>Generate {month} payroll</Button>} />
+  return <div><PageHeader title="Payroll" subtitle="Monthly salaries, late-coming penalties, rewards and deductions." actions={
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <Button onClick={generate} disabled={busy}>Generate {month} payroll</Button>
+      {hasDraft && <Button variant="primary" onClick={publishMonth} disabled={busy}>Publish {month} draft</Button>}
+      {hasDraft && <Button variant="danger" onClick={deleteDraft} disabled={busy}>Delete draft</Button>}
+      {hasUnpaidPublished && <Button variant="outline" onClick={unpublishMonth} disabled={busy}>Unpublish</Button>}
+    </div>
+  } />
     {role === "OWNER" && <Card title="Bursar access" style={{ marginBottom: 16 }}><p>The bursar can manage fees and payroll only when you grant access.</p><Button variant={bursarAccess ? "outline" : "primary"} onClick={toggleBursar}>{bursarAccess ? "Remove bursar finance access" : "Grant bursar finance access"}</Button></Card>}
     {canManagePayroll && <Card title="Attendance & penalty rules" style={{ marginBottom: 16 }}>
       <p>Late days are pulled automatically from real clock-in records when payroll is generated — a staff member counts as late on any day they clock in after this time. A day they never clock in at all is an absence, not lateness, and never counts here. The late penalty is one school-wide amount that applies to every staff member the same way.</p>
@@ -78,9 +123,53 @@ export default function PayrollPage() {
       </div>
     </Card>}
     {canManagePayroll && <Card title="Staff salary rules" style={{ marginBottom: 16 }}><Table headers={["Staff", "Role", "Monthly salary", "Monthly reward", ""]}>{staff.map(s => <tr key={s.id}><td>{s.firstName} {s.lastName}</td><td>{s.role}</td><td>{money(s.salaryProfile?.monthlyAmount ?? 0)}</td><td>{money(s.salaryProfile?.rewardAmount ?? 0)}</td><td><div style={{ display: "flex", gap: 6 }}><Button size="sm" variant="outline" onClick={() => { setSalaryStaff(s); setForm({ monthlyAmount: String(s.salaryProfile?.monthlyAmount ?? 0), rewardAmount: String(s.salaryProfile?.rewardAmount ?? 0) }); }}>Set rules</Button><Button size="sm" variant="ghost" onClick={() => openDeductions(s)}>Deductions</Button></div></td></tr>)}</Table></Card>}
-    {entries.length === 0 ? <EmptyState title="No payroll entries" hint="Set staff salary rules, then generate the monthly payroll." /> : <Card title={`Payroll — ${month}`}><Table headers={["Staff", "Base", `Late days (auto, after ${lateAfterTime})`, "Late deduction", "Reward", "Other deduction", "Net pay", "Status", ""]}>{entries.map(e => <tr key={e.id}><td>{e.user.firstName} {e.user.lastName}</td><td>{money(e.baseSalary)}</td><td>{e.lateDays}</td><td>{money(e.lateDeduction)}</td><td>{money(e.reward)}</td><td>{money(e.extraDeduction)}</td><td><b>{money(e.netPay)}</b></td><td><Badge tone={e.status === "PAID" ? "success" : "warning"}>{e.status}</Badge></td><td>{e.status !== "PAID" && <><Button size="sm" variant="outline" onClick={() => { setEdit(e); setForm({ lateDays: String(e.lateDays), reward: String(e.reward), extraDeduction: String(e.extraDeduction), note: e.note ?? "" }); }}>Adjust</Button> <Button size="sm" onClick={() => paid(e.id)}>Mark paid</Button></>}</td></tr>)}</Table></Card>}
+    {entries.length === 0 ? <EmptyState title="No payroll entries" hint="Set staff salary rules, then generate the monthly payroll." /> : <Card title={`Payroll — ${month}`}>
+      <Table headers={["Staff", "Base", `Late days (auto, after ${lateAfterTime})`, "Late deduction", "Reward", "Other deduction", "Net pay", "Paid", "Owing", "Status", ""]}>
+        {entries.map(e => {
+          const owing = Math.max(0, e.netPay - e.paidAmount);
+          return <tr key={e.id}>
+            <td>{e.user.firstName} {e.user.lastName}</td>
+            <td>{money(e.baseSalary)}</td>
+            <td>{e.lateDays}</td>
+            <td>{money(e.lateDeduction)}</td>
+            <td>{money(e.reward)}</td>
+            <td>{money(e.extraDeduction)}</td>
+            <td><b>{money(e.netPay)}</b></td>
+            <td>{money(e.paidAmount)}</td>
+            <td>{owing > 0 ? <span style={{ color: "var(--duga-danger, #b91c1c)" }}>{money(owing)}</span> : "—"}</td>
+            <td><Badge tone={statusTone(e.status)}>{e.status}</Badge></td>
+            <td>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {e.status === "DRAFT" && <Button size="sm" variant="outline" onClick={() => { setEdit(e); setForm({ lateDays: String(e.lateDays), reward: String(e.reward), extraDeduction: String(e.extraDeduction), note: e.note ?? "" }); }}>Adjust</Button>}
+                {(e.status === "PUBLISHED" || e.status === "PARTIAL") && <Button size="sm" onClick={() => openPayment(e)}>Record payment</Button>}
+              </div>
+            </td>
+          </tr>;
+        })}
+      </Table>
+    </Card>}
     <Modal open={!!salaryStaff} onClose={() => setSalaryStaff(null)} title="Set salary rules"><Field label="Monthly salary"><Input type="number" value={form.monthlyAmount ?? ""} onChange={e => setForm({ ...form, monthlyAmount: e.target.value })} /></Field><Field label="Monthly reward"><Input type="number" value={form.rewardAmount ?? ""} onChange={e => setForm({ ...form, rewardAmount: e.target.value })} /></Field><Button onClick={saveSalary}>Save salary rules</Button></Modal>
     <Modal open={!!edit} onClose={() => setEdit(null)} title="Adjust payroll"><Field label="Late days" hint="Auto-filled from clock-in records when generated — change it here to correct for a documented excuse."><Input type="number" value={form.lateDays ?? "0"} onChange={e => setForm({ ...form, lateDays: e.target.value })} /></Field><Field label="Reward"><Input type="number" value={form.reward ?? "0"} onChange={e => setForm({ ...form, reward: e.target.value })} /></Field><Field label="Other deduction" hint="Includes any deductions logged for this staff member and month."><Input type="number" value={form.extraDeduction ?? "0"} onChange={e => setForm({ ...form, extraDeduction: e.target.value })} /></Field><Field label="Note"><Input value={form.note ?? ""} onChange={e => setForm({ ...form, note: e.target.value })} /></Field><Button onClick={saveAdjustment}>Save adjustment</Button></Modal>
+
+    <Modal open={!!payTarget} onClose={() => setPayTarget(null)} title={payTarget ? `Record payment — ${payTarget.user.firstName} ${payTarget.user.lastName}` : ""}>
+      {payTarget && (
+        <Alert tone="info">
+          Net pay {money(payTarget.netPay)} · already paid {money(payTarget.paidAmount)} · left to pay {money(Math.max(0, payTarget.netPay - payTarget.paidAmount))}. A partial amount is fine — the remainder stays owed.
+        </Alert>
+      )}
+      <Field label="Amount (₦)"><Input type="number" min={0} value={payForm.amount} onChange={e => setPayForm({ ...payForm, amount: e.target.value })} /></Field>
+      <Field label="Method">
+        <Select value={payForm.method} onChange={e => setPayForm({ ...payForm, method: e.target.value })}>
+          <option value="CASH">Cash</option>
+          <option value="TRANSFER">Bank transfer</option>
+          <option value="CARD">Card</option>
+        </Select>
+      </Field>
+      <Field label="Note (optional)"><Input value={payForm.note} onChange={e => setPayForm({ ...payForm, note: e.target.value })} /></Field>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+        <Button onClick={submitPayment} loading={payBusy}>Record payment</Button>
+      </div>
+    </Modal>
 
     <Modal open={!!deductStaff} onClose={() => setDeductStaff(null)} title={deductStaff ? `Deductions — ${deductStaff.firstName} ${deductStaff.lastName}` : ""}>
       <Alert tone="info">A one-off deduction (e.g. didn&apos;t submit lesson notes) — entered by hand, any time. It applies to the month you pick below, whether or not that month&apos;s payroll has already been generated.</Alert>

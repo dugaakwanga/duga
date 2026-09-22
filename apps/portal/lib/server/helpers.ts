@@ -175,6 +175,22 @@ export async function financeManager(ctx: Ctx): Promise<boolean> {
   return row?.value === true || row?.value === "true";
 }
 
+// Whether an account may manage the supplementary-fees system (book
+// purchases, PTA levy, excursions — FeeType/FeeStructure/Invoice, never the
+// core school-fee ledger set via "Set school fees"). Owner always can; full
+// financeManager access always implies it too; otherwise only when the
+// owner separately granted this narrower, independently-revocable access —
+// e.g. an admin who should record book purchases without seeing payroll or
+// financial reports.
+export async function otherFeesManager(ctx: Ctx): Promise<boolean> {
+  if (await financeManager(ctx)) return true;
+  const role = ctx.session.user.role;
+  const key = role === "ADMIN" ? "adminOtherFeesAccess" : role === "BURSAR" ? "bursarOtherFeesAccess" : null;
+  if (!key) return false;
+  const row = await prisma.schoolSetting.findUnique({ where: { schoolId_key: { schoolId: ctx.session.user.schoolId, key } } });
+  return row?.value === true || row?.value === "true";
+}
+
 // studentId scoping by role. For PARENT: all linked children; for STUDENT: self.
 export async function studentScope(ctx: Ctx): Promise<{ studentId?: { in: string[] } }> {
   const role = ctx.session.user.role;
