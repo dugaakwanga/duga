@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Card, Stat, Badge, Table, PageHeader, Icon, EmptyState, Alert, Spinner } from "@duga/ui";
+import { Card, Stat, Badge, Table, PageHeader, Icon, EmptyState, Alert, Spinner, Button } from "@duga/ui";
 import { api } from "@/lib/client/api";
 import { useSection } from "@/components/SectionContext";
 import { groupClassSubjectsBySubject } from "@/lib/client/classSubjectOptions";
@@ -30,7 +30,16 @@ interface DashboardData {
   upcomingLive?: Array<{ id: string; title: string; scheduledAt: string }>;
   pendingGrading?: number;
   classTeacherOf?: Array<{ classGroupId: string; className: string; studentCount: number; attendanceRate: number; subjectAverage: number | null }>;
-  children?: Array<{ student: { id: string; admissionNumber: string; user: { firstName: string; lastName: string }; classGroup: { level: { name: string }; name: string } | null } }>;
+  children?: Array<{
+    student: {
+      id: string;
+      admissionNumber: string;
+      user: { firstName: string; lastName: string };
+      classGroup: { level: { name: string }; name: string } | null;
+      schoolFee: { feeAmount: number; paid: number; owing: number } | null;
+    };
+  }>;
+  schoolFee?: { feeAmount: number; paid: number; owing: number } | null;
   invoices?: InvoiceLike[];
   assignments?: Array<{ id: string; title: string; classSubject?: { subject: { name: string } } }>;
   live?: Array<{ id: string; title: string; scheduledAt: string }>;
@@ -52,10 +61,42 @@ function ProgressBar({ value, tone = "blue" }: { value: number; tone?: "blue" | 
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [paying, setPaying] = useState<string | null>(null);
   const { section } = useSection();
 
-  useEffect(() => {
+  function load() {
     api<DashboardData>("dashboard").then(setData).catch((e) => setError(e.message));
+  }
+
+  async function paySchoolFee(studentId?: string) {
+    setPaying(studentId ?? "self");
+    try {
+      const d = await api<{ mock: boolean; authorization_url: string; status?: string }>("fees/initSchoolFeePayment", {
+        method: "POST",
+        body: studentId ? { studentId } : {},
+      });
+      if (d.mock) {
+        // Local-dev-only mock success (see fees.ts) — real deploys with no
+        // gateway configured throw instead of reaching this branch.
+        alert("Payment recorded (development mode — no real gateway configured).");
+        load();
+      } else {
+        window.location.href = d.authorization_url;
+      }
+    } catch (e) {
+      const msg = (e as Error).message;
+      if (msg.toLowerCase().includes("not configured")) {
+        alert("Online payment isn't set up yet for this school — please pay at the school office for now.");
+      } else {
+        alert(msg);
+      }
+    } finally {
+      setPaying(null);
+    }
+  }
+
+  useEffect(() => {
+    load();
   }, [section]);
 
   if (error) return <Alert tone="danger">{error}</Alert>;
@@ -189,14 +230,28 @@ export default function DashboardPage() {
               Go to Learning
             </Link>
           </Card>
+          {data.schoolFee && (
+            <Card title="School fees">
+              <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 12 }}>
+                <Stat label="Fee" value={naira(data.schoolFee.feeAmount)} />
+                <Stat label="Paid" value={naira(data.schoolFee.paid)} tone="success" />
+                <Stat label="Owing" value={naira(data.schoolFee.owing)} tone={data.schoolFee.owing > 0 ? "danger" : "success"} />
+              </div>
+              {data.schoolFee.owing > 0 && (
+                <Button loading={paying === "self"} onClick={() => paySchoolFee()}>
+                  Pay {naira(data.schoolFee.owing)} now
+                </Button>
+              )}
+            </Card>
+          )}
         </div>
       ) : null}
 
       {data.role === "PARENT" ? (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 18 }}>
-          <Card title="My children">
+          <Card title="School fees">
             {data.children?.length ? (
-              <Table headers={["Name", "Class"]}>
+              <Table headers={["Child", "Class", "Fee", "Paid", "Owing", ""]}>
                 {data.children.map((c) => (
                   <tr key={c.student.id}>
                     <td>
@@ -204,6 +259,28 @@ export default function DashboardPage() {
                       <div style={{ fontSize: 12, color: "var(--duga-muted)" }}>{c.student.admissionNumber}</div>
                     </td>
                     <td>{c.student.classGroup ? `${c.student.classGroup.level.name} ${c.student.classGroup.name}` : "—"}</td>
+                    {c.student.schoolFee ? (
+                      <>
+                        <td>{naira(c.student.schoolFee.feeAmount)}</td>
+                        <td style={{ color: "var(--duga-success, #1a7f37)" }}>{naira(c.student.schoolFee.paid)}</td>
+                        <td>
+                          {c.student.schoolFee.owing > 0 ? (
+                            <Badge tone="danger">{naira(c.student.schoolFee.owing)}</Badge>
+                          ) : (
+                            <Badge tone="success">Paid in full</Badge>
+                          )}
+                        </td>
+                        <td>
+                          {c.student.schoolFee.owing > 0 && (
+                            <Button size="sm" loading={paying === c.student.id} onClick={() => paySchoolFee(c.student.id)}>
+                              Pay
+                            </Button>
+                          )}
+                        </td>
+                      </>
+                    ) : (
+                      <td colSpan={4} style={{ color: "var(--duga-muted)" }}>No fee set yet</td>
+                    )}
                   </tr>
                 ))}
               </Table>
@@ -212,7 +289,7 @@ export default function DashboardPage() {
             )}
           </Card>
           {data.invoices !== null && (
-            <Card title="Outstanding fees">
+            <Card title="Other fees (PTA levy, excursions, etc.)">
               {data.invoices?.length ? (
                 <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
                   {data.invoices.map((i) => (
@@ -231,7 +308,7 @@ export default function DashboardPage() {
                 <EmptyState title="No outstanding fees" />
               )}
               <Link href="/portal/fees" className="duga-btn duga-btn--outline duga-btn--sm" style={{ marginTop: 12, display: "inline-flex" }}>
-                Pay fees
+                View / pay
               </Link>
             </Card>
           )}

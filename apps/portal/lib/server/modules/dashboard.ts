@@ -131,6 +131,9 @@ export const dashboardModule: Module = {
         include: { student: { include: { classGroup: { include: { level: true } } } } },
       });
       const childIds = children.map((c) => c.studentId);
+      // The real core school-fee ledger per child — never the Invoice
+      // system below, which is only ever "other fees" (PTA levy etc.).
+      const schoolFeeLedger = await schoolFeeLedgerFor(schoolId, children.map((c) => c.student));
       const monthAgo = new Date(Date.now() - 30 * 86400000);
       const [reportCards, latestInvoices, attendanceRows, subjectCounts] = await Promise.all([
         prisma.reportCard.findMany({
@@ -185,8 +188,9 @@ export const dashboardModule: Module = {
           student: {
             ...c.student,
             reportAverage: cardById.get(c.studentId) ?? null,
-            feeBalance: invoiceById.get(c.studentId)?.balance ?? null,
-            feeStatus: invoiceById.get(c.studentId)?.status ?? null,
+            schoolFee: schoolFeeLedger.get(c.studentId) ?? null,
+            otherFeesBalance: invoiceById.get(c.studentId)?.balance ?? null,
+            otherFeesStatus: invoiceById.get(c.studentId)?.status ?? null,
             attendancePct: att && att.total > 0 ? Math.round((att.present / att.total) * 100) : null,
             subjectCount: countByClass.get(c.student.currentClassGroupId ?? "") ?? 0,
             subjects: subjectsByClass.get(c.student.currentClassGroupId ?? "") ?? [],
@@ -248,7 +252,10 @@ export const dashboardModule: Module = {
       const assignments = assignmentCandidates
         .filter((assignment) => isAssignedTo(assignment, student.id, classGroupId))
         .slice(0, 5);
-      return { role, classSubjects, assignments, live, reportCard, invoice, fee: feeInfoOf(student) };
+      // The real core school-fee ledger — never the (possibly null/other-
+      // fees) invoice above.
+      const schoolFee = (await schoolFeeLedgerFor(schoolId, [student])).get(student.id) ?? null;
+      return { role, classSubjects, assignments, live, reportCard, invoice, fee: feeInfoOf(student), schoolFee };
     }
 
     if (role === "BURSAR") {

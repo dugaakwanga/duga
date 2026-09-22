@@ -1,7 +1,7 @@
 import { prisma, initializePayment, verifyPayment, logAudit, dispatchNotification, schoolFeeLedgerFor, renderSmsFeeReminder, type OwingChild } from "@duga/core/server";
 import { generateReference, formatNaira } from "@duga/core";
 import type { Module } from ".";
-import { can, str, num, studentScope, resolveSection, financeManager, otherFeesManager, feeInfoOf } from "../helpers";
+import { can, str, num, studentScope, resolveSection, financeManager, otherFeesManager } from "../helpers";
 import { getSmsFeeReminderCopy } from "./emailTemplates";
 
 async function assertFinanceManager(ctx: { session: { user: { role: string; schoolId: string } } }) {
@@ -367,6 +367,7 @@ export const feesModule: Module = {
           id: true,
           feeAmount: true,
           feeDays: true,
+          feeStartDate: true,
           feePaidThrough: true,
           enrollmentDate: true,
           admissionNumber: true,
@@ -379,16 +380,24 @@ export const feesModule: Module = {
     // whatever order the DB happened to return them, so a bursar can find
     // "who in JSS 2 is owing" instead of scanning one long, scattered list.
     const classOrderKey = (cg: { level: { section: string; order: number } } | null) => (cg ? `${cg.level.section}-${String(cg.level.order).padStart(4, "0")}` : "zzz");
-    const owingStudents = feeConfiguredStudents
-      .map((s) => ({ ...s, fee: feeInfoOf(s) }))
-      .filter((s) => s.fee.expired)
-      .sort((a, b) => {
-        const k = classOrderKey(a.classGroup).localeCompare(classOrderKey(b.classGroup)) || (a.classGroup?.name ?? "").localeCompare(b.classGroup?.name ?? "");
-        return k || a.admissionNumber.localeCompare(b.admissionNumber);
-      });
+    const byClassThenAdmission = (a: { classGroup: { name: string; level: { section: string; order: number } } | null; admissionNumber: string }, b: typeof a) =>
+      classOrderKey(a.classGroup).localeCompare(classOrderKey(b.classGroup)) || (a.classGroup?.name ?? "").localeCompare(b.classGroup?.name ?? "") || a.admissionNumber.localeCompare(b.admissionNumber);
+
+    // The real ₦ ledger — every fee-configured student, not just those whose
+    // TIME-window happens to have lapsed (feeInfoOf's .expired, which used
+    // to be this list's only definition of "owing" and silently hid anyone
+    // whose feeDays was never set correctly, even though they genuinely
+    // owed money). "Owing" here always means the same thing the Students
+    // page and dashboard already show: paid < feeAmount.
+    const schoolFeeLedger = await schoolFeeLedgerFor(schoolId, feeConfiguredStudents);
+    const schoolFeeStudents = feeConfiguredStudents
+      .map((s) => ({ ...s, schoolFee: schoolFeeLedger.get(s.id)! }))
+      .sort(byClassThenAdmission);
+    const owingStudents = schoolFeeStudents.filter((s) => s.schoolFee.owing > 0);
     return {
       role,
       paymentRecordsVisible: true,
+      schoolFeeStudents,
       summary: { total: totalAmount ?? 0, paid: paidAmount ?? 0, balance: balance ?? 0 },
       invoices,
       feeTypes,
@@ -831,18 +840,82 @@ export const feesModule: Module = {
         }
       }
 
-      const invoice = await refreshInvoice(payment.invoiceId!);
+      // A self-service school-fee payment (see initSchoolFeePayment) never
+      // has an invoice — payment.invoiceId! used to crash on exactly that.
+      const invoice = payment.invoiceId ? await refreshInvoice(payment.invoiceId) : null;
       if (payment.installmentId) await refreshInstallment(payment.installmentId);
       const access = await recomputeFeeAccess(ctx.session.user.schoolId, payment.studentId);
       if (invoice && Number(invoice.balance) > 0) await notifyParentsOfBalance(ctx.session.user.schoolId, payment.studentId, invoice);
       await logAudit({ schoolId: ctx.session.user.schoolId, userId: ctx.session.user.id, action: "fees.paymentVerified", entityType: "Payment", entityId: payment.id, meta: { reference } });
       const student = await prisma.student.findUnique({ where: { id: payment.studentId }, include: { user: true } });
+      let schoolFeeOwing: number | null = null;
+      if (student && !invoice) {
+        const ledger = (await schoolFeeLedgerFor(ctx.session.user.schoolId, [student])).get(student.id);
+        schoolFeeOwing = ledger?.owing ?? null;
+      }
       if (student) {
-        const body = `₦${Number(payment.amount).toLocaleString()} confirmed. Balance: ₦${(invoice?.balance ?? 0).toLocaleString()}.${coverageSuffix(access)}`;
+        const balanceText = invoice ? `Balance: ₦${Number(invoice.balance).toLocaleString()}.` : schoolFeeOwing !== null ? `School fee balance: ₦${schoolFeeOwing.toLocaleString()}.` : "";
+        const body = `₦${Number(payment.amount).toLocaleString()} confirmed. ${balanceText}${coverageSuffix(access)}`;
         await dispatchNotification({ schoolId: ctx.session.user.schoolId, userId: student.userId, type: "payment", title: "Payment confirmed", body, link: "/portal/fees" });
         await notifyParentsOfPayment(ctx.session.user.schoolId, payment.studentId, `${student.user.firstName} ${student.user.lastName}`, "Payment confirmed", body);
       }
-      return { status: "SUCCESS", payment, invoice, access };
+      return { status: "SUCCESS", payment, invoice, access, schoolFeeOwing };
+    },
+
+    // Student/parent self-service payment against the CORE school fee
+    // (never an Invoice — that's the separate "other fees" system). Mirrors
+    // initPayment's shape/safety exactly: paystackConfigured() throws in
+    // production if no real gateway key is set, so this can never silently
+    // mark a real payment "successful" before a gateway is actually wired
+    // up — it only mock-succeeds in local development.
+    initSchoolFeePayment: async (ctx) => {
+      can(ctx, "payments:make");
+      const schoolId = ctx.session.user.schoolId;
+      const role = ctx.session.user.role;
+      const studentId = str(ctx.body.studentId) ?? (role === "STUDENT" ? ctx.session.user.student?.id : undefined);
+      if (!studentId) throw new Error("studentId required");
+      if (role === "STUDENT" && studentId !== ctx.session.user.student?.id) throw new Error("Not your account");
+      if (role === "PARENT") {
+        const linked = await prisma.studentParent.findFirst({ where: { parentId: ctx.session.user.parent?.id, studentId } });
+        if (!linked) throw new Error("Not your child");
+      }
+      const student = await prisma.student.findFirst({ where: { id: studentId, schoolId }, include: { user: true } });
+      if (!student) throw new Error("Student not found");
+      const ledger = (await schoolFeeLedgerFor(schoolId, [student])).get(student.id)!;
+      const amount = num(ctx.body.amount) ?? ledger.owing;
+      if (amount === undefined || amount <= 0) throw new Error("Nothing is currently owed on the school fee");
+      if (amount > ledger.owing) throw new Error("Amount cannot exceed the outstanding school-fee balance");
+
+      const reference = generateReference("PYM");
+      const payment = await prisma.payment.create({
+        data: {
+          schoolId,
+          studentId,
+          invoiceId: null,
+          amount,
+          method: "TRANSFER",
+          status: "PENDING",
+          reference,
+          gateway: "PAYSTACK",
+          meta: { initiator: ctx.session.user.id, source: "school_fee_self_pay" },
+        },
+      });
+
+      if (!(await paystackConfigured())) {
+        await prisma.payment.update({ where: { id: payment.id }, data: { status: "SUCCESS", paidAt: new Date(), gatewayRef: `MOCK-${reference}`, receiptNumber: `RCPT-${reference.slice(-6)}` } });
+        const access = await recomputeFeeAccess(schoolId, studentId);
+        await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.schoolFeePaymentMocked", entityType: "Payment", entityId: payment.id, meta: { reference, amount } });
+        return { mock: true, reference, authorization_url: "/portal/fees", status: "SUCCESS", access };
+      }
+
+      const data = await initializePayment({
+        email: student.user.email ?? "noreply@duga.school",
+        amountKobo: Math.round(amount * 100),
+        reference,
+        callbackUrl: `${process.env.PAYSTACK_CALLBACK_URL ?? `https://portal.dugaakwanga.com/portal/fees`}?reference=${reference}`,
+        metadata: { studentId, source: "school_fee_self_pay" },
+      });
+      return { mock: false, reference, authorization_url: data.authorization_url };
     },
 
     // Send fee reminders to parents with unpaid/partial invoices. Also runs

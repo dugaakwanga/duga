@@ -75,11 +75,11 @@ interface ClassGroup {
   level: { id: string; name: string };
 }
 
-interface OwingStudent {
+interface SchoolFeeStudent {
   id: string;
   admissionNumber: string;
   user: { firstName: string; lastName: string };
-  fee: { feePaidThrough: string | null; daysRemaining: number; expired: boolean };
+  schoolFee: { feeAmount: number; paid: number; owing: number };
   classGroup: StudentClassGroup | null;
 }
 
@@ -150,7 +150,7 @@ export default function FeesPage() {
   const [form, setForm] = useState<Record<string, string>>({});
   const [paying, setPaying] = useState<string | null>(null);
   const [paymentRecordsVisible, setPaymentRecordsVisible] = useState(true);
-  const [owingStudents, setOwingStudents] = useState<OwingStudent[]>([]);
+  const [schoolFeeStudents, setSchoolFeeStudents] = useState<SchoolFeeStudent[]>([]);
   const [byChild, setByChild] = useState<ChildFeeSummary[] | undefined>(undefined);
   const [payTarget, setPayTarget] = useState<string | null>(null);
   const [payForm, setPayForm] = useState({ amount: "", method: "CASH", coversTo: "" });
@@ -193,7 +193,7 @@ export default function FeesPage() {
       levels: ClassLevel[];
       classGroups: ClassGroup[];
       paymentRecordsVisible?: boolean;
-      owingStudents?: OwingStudent[];
+      schoolFeeStudents?: SchoolFeeStudent[];
       byChild?: ChildFeeSummary[];
       overrides?: Override[];
     }>("fees");
@@ -206,7 +206,7 @@ export default function FeesPage() {
     setLevels(d.levels ?? []);
     setClassGroups(d.classGroups ?? []);
     setPaymentRecordsVisible(d.paymentRecordsVisible !== false);
-    setOwingStudents(d.owingStudents ?? []);
+    setSchoolFeeStudents(d.schoolFeeStudents ?? []);
     setByChild(d.byChild);
     setOverrides(d.overrides ?? []);
   }, [section]);
@@ -592,13 +592,13 @@ export default function FeesPage() {
         </div>
       )}
 
-      {isStaff && owingStudents.length > 0 && (
-        <Card title={`Students owing (${owingStudents.length})`} style={{ marginBottom: 20 }}>
+      {isStaff && schoolFeeStudents.length > 0 && (
+        <Card title={`School fees — ${schoolFeeStudents.length} student${schoolFeeStudents.length === 1 ? "" : "s"} with a fee set`} style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 13, color: "var(--duga-muted)", marginBottom: 10 }}>
-            Their fee-access window has lapsed — whichever features are set to require payment (Settings → Restrictions) are currently blocked for them. Grouped by class.
+            Every student with a core school fee set (via &quot;Set school fees&quot; on the Students page) — what they&apos;ve paid and what they still owe, grouped by class. This is exactly what the dashboard&apos;s totals are built from; use it to check any figure there against the actual students behind it.
           </div>
           {Array.from(
-            [...owingStudents]
+            [...schoolFeeStudents]
               .sort((a, b) => classGroupSortKey(a.classGroup).localeCompare(classGroupSortKey(b.classGroup)) || a.admissionNumber.localeCompare(b.admissionNumber))
               .reduce((map, s) => {
                 const key = classLabel(s.classGroup);
@@ -606,46 +606,63 @@ export default function FeesPage() {
                 list.push(s);
                 map.set(key, list);
                 return map;
-              }, new Map<string, OwingStudent[]>()),
-          ).map(([className, rows]) => (
-            <details key={className} open={owingStudents.length <= 20} style={{ marginBottom: 10 }}>
-              <summary
-                style={{
-                  cursor: "pointer",
-                  padding: "10px 12px",
-                  borderRadius: 8,
-                  background: "var(--duga-surface-2, #f4f6f9)",
-                  fontWeight: 700,
-                  fontSize: 14,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                }}
-              >
-                {className}
-                <span style={{ fontWeight: 400, fontSize: 12.5, color: "var(--duga-muted)" }}>
-                  {rows.length} student{rows.length === 1 ? "" : "s"}
-                </span>
-              </summary>
-              <div style={{ marginTop: 8 }}>
-                <Table headers={["Student", "Admission no.", "Paid through", "", ""]}>
-                  {rows.map((s) => (
-                    <tr key={s.id}>
-                      <td>{s.user.firstName} {s.user.lastName}</td>
-                      <td>{s.admissionNumber}</td>
-                      <td>{s.fee.feePaidThrough ? new Date(s.fee.feePaidThrough).toLocaleDateString() : "Never paid"}</td>
-                      <td><Badge tone="danger">Owing</Badge></td>
-                      <td>
-                        <Button size="sm" variant="outline" onClick={() => openGrantOverride({ id: s.id, name: `${s.user.firstName} ${s.user.lastName}` })}>
-                          Grant exception
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </Table>
-              </div>
-            </details>
-          ))}
+              }, new Map<string, SchoolFeeStudent[]>()),
+          ).map(([className, rows]) => {
+            const classTotal = rows.reduce((a, s) => a + s.schoolFee.feeAmount, 0);
+            const classPaid = rows.reduce((a, s) => a + s.schoolFee.paid, 0);
+            const classOwing = rows.reduce((a, s) => a + s.schoolFee.owing, 0);
+            return (
+              <details key={className} open={schoolFeeStudents.length <= 20} style={{ marginBottom: 10 }}>
+                <summary
+                  style={{
+                    cursor: "pointer",
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    background: "var(--duga-surface-2, #f4f6f9)",
+                    fontWeight: 700,
+                    fontSize: 14,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  {className}
+                  <span style={{ fontWeight: 400, fontSize: 12.5, color: "var(--duga-muted)" }}>
+                    {rows.length} student{rows.length === 1 ? "" : "s"} · expected {naira(classTotal)}
+                  </span>
+                  <Badge tone="success">{naira(classPaid)} collected</Badge>
+                  {classOwing > 0 && <Badge tone="danger">{naira(classOwing)} owing</Badge>}
+                </summary>
+                <div style={{ marginTop: 8 }}>
+                  <Table headers={["Student", "Admission no.", "Fee", "Paid", "Owing", ""]}>
+                    {rows.map((s) => (
+                      <tr key={s.id}>
+                        <td>{s.user.firstName} {s.user.lastName}</td>
+                        <td>{s.admissionNumber}</td>
+                        <td>{naira(s.schoolFee.feeAmount)}</td>
+                        <td style={{ color: "var(--duga-success, #1a7f37)" }}>{naira(s.schoolFee.paid)}</td>
+                        <td>
+                          {s.schoolFee.owing > 0 ? (
+                            <Badge tone="danger">{naira(s.schoolFee.owing)}</Badge>
+                          ) : (
+                            <Badge tone="success">Paid in full</Badge>
+                          )}
+                        </td>
+                        <td>
+                          {s.schoolFee.owing > 0 && (
+                            <Button size="sm" variant="outline" onClick={() => openGrantOverride({ id: s.id, name: `${s.user.firstName} ${s.user.lastName}` })}>
+                              Grant exception
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </Table>
+                </div>
+              </details>
+            );
+          })}
         </Card>
       )}
 
