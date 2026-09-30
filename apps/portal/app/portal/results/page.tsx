@@ -1013,7 +1013,7 @@ export default function ResultsPage() {
           <EmptyState title="No report cards yet" hint="Published report cards will appear here." />
         ) : (
           cards.map((rc) => (
-            <Card key={rc.id} title={`${rc.student.user.firstName} ${rc.student.user.lastName}`} style={{ marginBottom: 16 }}>
+            <Card key={rc.id} title={`${rc.student.user.lastName} ${rc.student.user.firstName}`} style={{ marginBottom: 16 }}>
               <div style={{ display: "flex", gap: 16, marginBottom: 12 }}>
                 {rc.student.photoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -1096,7 +1096,7 @@ export default function ResultsPage() {
                   <Table headers={["Student", "Term", "Average", "Position", "Status", ""]}>
                     {rows.map((rc) => (
                       <tr key={rc.id}>
-                        <td>{rc.student.user.firstName} {rc.student.user.lastName}</td>
+                        <td>{rc.student.user.lastName} {rc.student.user.firstName}</td>
                         <td>{rc.term?.name}</td>
                         <td>{rc.average !== null ? Number(rc.average).toFixed(1) : "—"}</td>
                         <td>{rc.position ?? "—"}</td>

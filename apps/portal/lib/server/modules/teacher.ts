@@ -104,7 +104,7 @@ export const teacherModule: Module = {
       const students = await prisma.student.findMany({
         where: { schoolId, currentClassGroupId: classGroupId, status: "ACTIVE" },
         include: { user: { select: { firstName: true, lastName: true } } },
-        orderBy: { admissionNumber: "asc" },
+        orderBy: [{ user: { lastName: "asc" } }, { user: { firstName: "asc" } }],
       });
 
       const date = ctx.query.get("date");
@@ -216,7 +216,7 @@ export const teacherModule: Module = {
         prisma.student.findMany({
           where: { schoolId, currentClassGroupId: selected.id, status: "ACTIVE" },
           include: { user: { select: { firstName: true, lastName: true } } },
-          orderBy: { admissionNumber: "asc" },
+          orderBy: [{ user: { lastName: "asc" } }, { user: { firstName: "asc" } }],
         }),
         prisma.classSubject.findMany({
           where: { schoolId, classGroupId: selected.id },
@@ -307,7 +307,7 @@ export const teacherModule: Module = {
         const a = attendanceByStudent.get(s.id);
         return {
           id: s.id,
-          name: `${s.user.firstName} ${s.user.lastName}`,
+          name: `${s.user.lastName} ${s.user.firstName}`,
           admissionNumber: s.admissionNumber,
           attendanceRate: a && a.total > 0 ? Math.round((a.present / a.total) * 100) : null,
         };
@@ -371,7 +371,7 @@ export const teacherModule: Module = {
       ]);
 
       return {
-        student: { id: student.id, name: `${student.user.firstName} ${student.user.lastName}`, admissionNumber: student.admissionNumber, photoUrl: student.photoUrl },
+        student: { id: student.id, name: `${student.user.lastName} ${student.user.firstName}`, admissionNumber: student.admissionNumber, photoUrl: student.photoUrl },
         classGroupName: `${student.classGroup.level.name} ${student.classGroup.name}`,
         activeTerm: activeTerm ? { id: activeTerm.id, name: activeTerm.name, startDate: activeTerm.startDate, endDate: activeTerm.endDate, sessionName: activeTerm.session?.name ?? null } : null,
         reportCard: reportCard ? { ...reportCard, gpa: gpaOf(reportCard.items) } : null,

@@ -244,7 +244,7 @@ export default function TeacherAssignmentsPage() {
                       setTargetStudents((prev) => (e.target.checked ? [...prev, s.id] : prev.filter((id) => id !== s.id)))
                     }
                   />
-                  {s.firstName} {s.lastName} <span style={{ color: "var(--duga-muted)" }}>({s.admissionNumber})</span>
+                  {s.lastName} {s.firstName} <span style={{ color: "var(--duga-muted)" }}>({s.admissionNumber})</span>
                 </label>
               ))}
             </div>
@@ -280,7 +280,7 @@ export default function TeacherAssignmentsPage() {
                     const row = grading.scores[sub?.id ?? ""];
                     return (
                       <tr key={s.id}>
-                        <td>{s.firstName} {s.lastName}</td>
+                        <td>{s.lastName} {s.firstName}</td>
                         <td>
                           {!sub ? <Badge tone="danger">Not submitted</Badge> : sub.score != null ? <Badge tone="success">{sub.score}/{grading.assignment.maxScore}</Badge> : <Badge tone="warning">Submitted</Badge>}
                         </td>

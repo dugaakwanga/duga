@@ -94,7 +94,7 @@ export default function StudentsArchivePage() {
               {rows.map((s) => (
                 <tr key={s.id}>
                   <td>{s.admissionNumber}</td>
-                  <td>{s.user.firstName} {s.user.lastName}</td>
+                  <td>{s.user.lastName} {s.user.firstName}</td>
                   <td style={{ fontSize: 12.5, color: "var(--duga-muted)" }}>{s.user.email || s.user.phone || "—"}</td>
                   <td>{new Date(s.updatedAt).toLocaleDateString()}</td>
                   <td>

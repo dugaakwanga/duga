@@ -234,7 +234,7 @@ export const attendanceModule: Module = {
       const students = await prisma.student.findMany({
         where: { schoolId, currentClassGroupId: classGroupId, status: "ACTIVE" },
         include: { user: { select: { firstName: true, lastName: true } } },
-        orderBy: { admissionNumber: "asc" },
+        orderBy: [{ user: { lastName: "asc" } }, { user: { firstName: "asc" } }],
       });
       const existing = await prisma.studentAttendance.findMany({ where: { schoolId, classGroupId, date: dateObj } });
       const byStudent = new Map(existing.map((r) => [r.studentId, r]));

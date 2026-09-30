@@ -585,7 +585,7 @@ export default function StudentsPage() {
                         </div>
                       )}
                       <span>
-                        {s.user.firstName} {s.user.lastName}
+                        {s.user.lastName} {s.user.firstName}
                         <div style={{ fontSize: 12, color: "var(--duga-muted)" }}>{s.user.email || "—"}</div>
                       </span>
                     </div>

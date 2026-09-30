@@ -161,7 +161,7 @@ export const studentsModule: Module = {
         classGroup: { include: { level: true } },
         parentLinks: { include: { parent: { include: { user: { select: { firstName: true, lastName: true, email: true, phone: true } } } } } },
       },
-      orderBy: { admissionNumber: "asc" },
+      orderBy: [{ user: { lastName: "asc" } }, { user: { firstName: "asc" } }],
       take: 300,
     });
 
@@ -549,7 +549,7 @@ export const studentsModule: Module = {
           ...(classGroupId ? { currentClassGroupId: classGroupId } : { id: { in: studentIds } }),
         },
         include: { user: { select: { firstName: true, lastName: true } }, classGroup: { include: { level: true } } },
-        orderBy: { admissionNumber: "asc" },
+        orderBy: [{ user: { lastName: "asc" } }, { user: { firstName: "asc" } }],
       });
       if (students.length === 0) throw new Error("No active students found");
       const [school, theme] = await Promise.all([

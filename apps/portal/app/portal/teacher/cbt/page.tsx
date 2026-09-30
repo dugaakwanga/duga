@@ -393,7 +393,7 @@ async function openResults(c: Cbt) {
                 <label key={s.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", fontSize: 13.5 }}>
                   <input type="checkbox" checked={targetStudentIds.includes(s.id)}
                     onChange={(e) => setTargetStudentIds((prev) => (e.target.checked ? [...prev, s.id] : prev.filter((id) => id !== s.id)))} />
-                  {s.firstName} {s.lastName} <span style={{ color: "var(--duga-muted)" }}>({s.admissionNumber})</span>
+                  {s.lastName} {s.firstName} <span style={{ color: "var(--duga-muted)" }}>({s.admissionNumber})</span>
                 </label>
               ))}
             </div>

@@ -100,9 +100,9 @@ export const paperExamModule: Module = {
       const students = await prisma.student.findMany({
         where: { schoolId, currentClassGroupId: classSubject.classGroupId, status: "ACTIVE" },
         include: { user: { select: { firstName: true, lastName: true } } },
-        orderBy: { admissionNumber: "asc" },
+        orderBy: [{ user: { lastName: "asc" } }, { user: { firstName: "asc" } }],
       });
-      return { items: students.map((s) => ({ id: s.id, name: `${s.user.firstName} ${s.user.lastName}`, admissionNumber: s.admissionNumber })) };
+      return { items: students.map((s) => ({ id: s.id, name: `${s.user.lastName} ${s.user.firstName}`, admissionNumber: s.admissionNumber })) };
     },
 
     // Exam definitions a teacher has built for their subjects (or, for

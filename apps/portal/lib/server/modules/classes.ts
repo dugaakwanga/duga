@@ -104,7 +104,7 @@ export const classesModule: Module = {
         session: true,
         formTeacher: { include: { user: { select: { firstName: true, lastName: true } } } },
         classSubjects: { include: { subject: true, teacher: { include: { user: { select: { firstName: true, lastName: true } } } } } },
-        students: { include: { user: { select: { firstName: true, lastName: true, status: true } } }, orderBy: { admissionNumber: "asc" } },
+        students: { include: { user: { select: { firstName: true, lastName: true, status: true } } }, orderBy: [{ user: { lastName: "asc" } }, { user: { firstName: "asc" } }] },
         timetableEntries: { include: { subject: true, teacher: { include: { user: { select: { firstName: true, lastName: true } } } } } },
       },
     });

@@ -48,7 +48,7 @@ export const promotionModule: Module = {
           where: { schoolId, sessionId: fromSessionId, ...(section ? { level: { section } } : {}) },
           include: {
             level: true,
-            students: { where: { user: { status: "ACTIVE" } }, include: { user: { select: { firstName: true, lastName: true } } } },
+            students: { where: { user: { status: "ACTIVE" } }, include: { user: { select: { firstName: true, lastName: true } } }, orderBy: [{ user: { lastName: "asc" } }, { user: { firstName: "asc" } }] },
           },
           orderBy: [{ level: { order: "asc" } }, { name: "asc" }],
         }),

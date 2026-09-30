@@ -375,8 +375,8 @@ export default function AttendancePage() {
           <Table headers={isParent ? ["Student", "Date", "Status", "Remark"] : isStudent ? ["Date", "Status", "Remark"] : ["Student", "Class", "Status", "Remark"]}>
             {items.map((r) => (
               <tr key={r.id}>
-                {isParent && <td>{r.student.user.firstName} {r.student.user.lastName}</td>}
-                {!isParent && !isStudent && <td>{r.student.user.firstName} {r.student.user.lastName}</td>}
+                {isParent && <td>{r.student.user.lastName} {r.student.user.firstName}</td>}
+                {!isParent && !isStudent && <td>{r.student.user.lastName} {r.student.user.firstName}</td>}
                 {isRangeView ? <td>{fmtDate(r.date)}</td> : !isStudent && <td>{r.classGroup ? `${r.classGroup.level.name} ${r.classGroup.name}` : "—"}</td>}
                 <td>
                   <Badge tone={statusTone(r.status)}>{r.status}</Badge>
