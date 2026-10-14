@@ -282,12 +282,12 @@ export const schemeModule: Module = {
       } else if (role === "PARENT") {
         const links = await prisma.studentParent.findMany({
           where: { parent: { userId: ctx.session.user.id } },
-          select: { student: { select: { classGroupId: true, classGroup: { select: { level: { select: { name: true } } } } } } },
+          select: { student: { select: { currentClassGroupId: true, classGroup: { select: { level: { select: { name: true } } } } } } },
         });
         allowedLevels = [
           ...new Set(links.map((l) => l.student.classGroup?.level.name).filter((v): v is string => !!v).map(normalize)),
         ];
-        const classGroupIds = links.map((l) => l.student.classGroupId).filter((v): v is string => !!v);
+        const classGroupIds = links.map((l) => l.student.currentClassGroupId).filter((v): v is string => !!v);
         const cs = classGroupIds.length
           ? await prisma.classSubject.findMany({ where: { schoolId, classGroupId: { in: classGroupIds } }, select: { subject: { select: { name: true } }, classGroup: { select: { level: { select: { name: true } } } } } })
           : [];

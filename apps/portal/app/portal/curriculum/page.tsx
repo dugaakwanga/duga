@@ -433,7 +433,7 @@ export default function CurriculumPage() {
                                       >
                                         <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 13.5 }}>
                                           <span>{c.term ? `${c.term} Term` : "Term not specified"}</span>
-                                          {sourceTitle && <Badge tone="neutral" style={{ marginLeft: 8 }}>{sourceTitle}</Badge>}
+                                          {sourceTitle && <span style={{ marginLeft: 8, display: "inline-flex" }}><Badge tone="neutral">{sourceTitle}</Badge></span>}
                                         </summary>
                                         {table ? (
                                           <Table headers={table.columns}>
