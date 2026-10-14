@@ -321,11 +321,6 @@ export const feesModule: Module = {
 
     const section = await resolveSection(ctx);
     const studentSectionWhere = section ? { student: { is: { section } } } : {};
-    const agg = await prisma.invoice.aggregate({
-      where: { schoolId, ...studentSectionWhere },
-      _sum: { totalAmount: true, paidAmount: true, balance: true },
-    });
-    const { totalAmount, paidAmount, balance } = agg._sum;
     const invoices = await prisma.invoice.findMany({
       where: { schoolId, ...studentSectionWhere },
       include: {
@@ -396,11 +391,22 @@ export const feesModule: Module = {
       .map((s) => ({ ...s, schoolFee: schoolFeeLedger.get(s.id)! }))
       .sort(byClassThenAdmission);
     const owingStudents = schoolFeeStudents.filter((s) => s.schoolFee.owing > 0);
+    const schoolFeeSummary = schoolFeeStudents.reduce(
+      (totals, student) => ({
+        total: totals.total + student.schoolFee.feeAmount,
+        paid: totals.paid + student.schoolFee.paid,
+        balance: totals.balance + student.schoolFee.owing,
+      }),
+      { total: 0, paid: 0, balance: 0 },
+    );
     return {
       role,
       paymentRecordsVisible: true,
       schoolFeeStudents,
-      summary: { total: totalAmount ?? 0, paid: paidAmount ?? 0, balance: balance ?? 0 },
+      // Summary cards must match the core school-fee ledger shown below.
+      // Invoice totals are supplementary fees and can legitimately be zero
+      // even when students already have school fees configured.
+      summary: schoolFeeSummary,
       invoices,
       feeTypes,
       feeStructures,
