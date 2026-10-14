@@ -423,6 +423,7 @@ export default function CurriculumPage() {
                                   const table = tables[c.id] ?? c.tableJson;
                                   const isFormatting = formattingId === c.id;
                                   const formatError = formatErrors[c.id];
+                                  const sourceTitle = data.schemes.find((s) => s.id === c.schemeId)?.title;
                                   return (
                                     <Card key={c.id} style={{ background: "var(--duga-surface-2, #f8f9fb)" }}>
                                       <details
@@ -431,7 +432,8 @@ export default function CurriculumPage() {
                                         }}
                                       >
                                         <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 13.5 }}>
-                                          {c.term ? `${c.term} Term` : "Term not specified"}
+                                          <span>{c.term ? `${c.term} Term` : "Term not specified"}</span>
+                                          {sourceTitle && <Badge tone="neutral" style={{ marginLeft: 8 }}>{sourceTitle}</Badge>}
                                         </summary>
                                         {table ? (
                                           <Table headers={table.columns}>

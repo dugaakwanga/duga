@@ -289,6 +289,17 @@ export default function AttendancePage() {
   const isStaffFilter = isAdmin || role === "TEACHER";
   const isParent = role === "PARENT";
   const isStudent = role === "STUDENT";
+  const parentGroups = isParent
+    ? Array.from(
+        items.reduce((map, row) => {
+          const key = row.student.user.lastName + "\u0000" + row.student.user.firstName;
+          const group = map.get(key) ?? { name: `${row.student.user.lastName} ${row.student.user.firstName}`, rows: [] as RecordRow[] };
+          group.rows.push(row);
+          map.set(key, group);
+          return map;
+        }, new Map<string, { name: string; rows: RecordRow[] }>()),
+      )
+    : [];
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -371,21 +382,36 @@ export default function AttendancePage() {
           }
         />
       ) : (
-        <Card>
-          <Table headers={isParent ? ["Student", "Date", "Status", "Remark"] : isStudent ? ["Date", "Status", "Remark"] : ["Student", "Class", "Status", "Remark"]}>
-            {items.map((r) => (
-              <tr key={r.id}>
-                {isParent && <td>{r.student.user.lastName} {r.student.user.firstName}</td>}
-                {!isParent && !isStudent && <td>{r.student.user.lastName} {r.student.user.firstName}</td>}
-                {isRangeView ? <td>{fmtDate(r.date)}</td> : !isStudent && <td>{r.classGroup ? `${r.classGroup.level.name} ${r.classGroup.name}` : "—"}</td>}
-                <td>
-                  <Badge tone={statusTone(r.status)}>{r.status}</Badge>
-                </td>
-                <td>{r.remark ?? "—"}</td>
-              </tr>
+        isParent ? (
+          <div style={{ display: "grid", gap: 16 }}>
+            {parentGroups.map(([key, group]) => (
+              <Card key={key} title={group.name}>
+                <Table headers={["Date", "Status", "Remark"]}>
+                  {group.rows.map((r) => (
+                    <tr key={r.id}>
+                      <td>{fmtDate(r.date)}</td>
+                      <td><Badge tone={statusTone(r.status)}>{r.status}</Badge></td>
+                      <td>{r.remark ?? "—"}</td>
+                    </tr>
+                  ))}
+                </Table>
+              </Card>
             ))}
-          </Table>
-        </Card>
+          </div>
+        ) : (
+          <Card>
+            <Table headers={isStudent ? ["Date", "Status", "Remark"] : ["Student", "Class", "Status", "Remark"]}>
+              {items.map((r) => (
+                <tr key={r.id}>
+                  {!isStudent && <td>{r.student.user.lastName} {r.student.user.firstName}</td>}
+                  {isRangeView ? <td>{fmtDate(r.date)}</td> : !isStudent && <td>{r.classGroup ? `${r.classGroup.level.name} ${r.classGroup.name}` : "—"}</td>}
+                  <td><Badge tone={statusTone(r.status)}>{r.status}</Badge></td>
+                  <td>{r.remark ?? "—"}</td>
+                </tr>
+              ))}
+            </Table>
+          </Card>
+        )
       )}
     </div>
   );

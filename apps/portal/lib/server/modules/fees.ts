@@ -283,7 +283,7 @@ export const feesModule: Module = {
     if (role === "PARENT") {
       const links = await prisma.studentParent.findMany({
         where: { parentId: ctx.session.user.parent!.id },
-        include: { student: { select: { id: true, user: { select: { firstName: true, lastName: true } } } } },
+        include: { student: { select: { id: true, feeAmount: true, feeDays: true, feeStartDate: true, feePaidThrough: true, user: { select: { firstName: true, lastName: true } } } } },
       });
       const childIds = links.map((l) => l.studentId);
       const invoices = await prisma.invoice.findMany({
@@ -296,6 +296,7 @@ export const feesModule: Module = {
         paid: invoices.reduce((a, i) => a + Number(i.paidAmount), 0),
         balance: invoices.reduce((a, i) => a + Number(i.balance), 0),
       };
+      const schoolFeeLedger = await schoolFeeLedgerFor(schoolId, links.map((link) => link.student));
       // Per-child breakdown — every linked child appears even with zero
       // invoices yet, so a parent sees "nothing billed" rather than nothing.
       const byChild = links.map((link) => {
@@ -307,6 +308,7 @@ export const feesModule: Module = {
           paid: childInvoices.reduce((a, i) => a + Number(i.paidAmount), 0),
           balance: childInvoices.reduce((a, i) => a + Number(i.balance), 0),
           invoiceCount: childInvoices.length,
+          schoolFee: schoolFeeLedger.get(link.studentId) ?? null,
         };
       });
       return { role, invoices, summary, byChild };

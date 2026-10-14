@@ -256,12 +256,14 @@ export const schemeModule: Module = {
 
       let allowedLevels: string[] | null = null;
       let allowedSubjects: string[] | null = null;
+      let allowedPairs: Array<{ level: string; subject: string }> | null = null;
       if (role === "TEACHER") {
         const cs = await prisma.classSubject.findMany({
           where: { schoolId, teacherId: ctx.session.user.teacher?.id ?? "none" },
-          select: { subject: { select: { name: true } } },
+          select: { subject: { select: { name: true } }, classGroup: { select: { level: { select: { name: true } } } } },
         });
         allowedSubjects = [...new Set(cs.map((c) => normalize(c.subject.name)))];
+        allowedPairs = cs.map((c) => ({ level: normalize(c.classGroup.level.name), subject: normalize(c.subject.name) }));
       } else if (role === "STUDENT") {
         const student = await prisma.student.findFirst({
           where: { id: ctx.session.user.student?.id ?? "none" },
@@ -273,17 +275,23 @@ export const schemeModule: Module = {
         // scope to what this student's OWN class is actually assigned,
         // not everything anyone at their level might see.
         const cs = student?.currentClassGroupId
-          ? await prisma.classSubject.findMany({ where: { schoolId, classGroupId: student.currentClassGroupId }, select: { subject: { select: { name: true } } } })
+          ? await prisma.classSubject.findMany({ where: { schoolId, classGroupId: student.currentClassGroupId }, select: { subject: { select: { name: true } }, classGroup: { select: { level: { select: { name: true } } } } } })
           : [];
         allowedSubjects = [...new Set(cs.map((c) => normalize(c.subject.name)))];
+        allowedPairs = cs.map((c) => ({ level: normalize(c.classGroup.level.name), subject: normalize(c.subject.name) }));
       } else if (role === "PARENT") {
         const links = await prisma.studentParent.findMany({
           where: { parent: { userId: ctx.session.user.id } },
-          select: { student: { select: { classGroup: { select: { level: { select: { name: true } } } } } } },
+          select: { student: { select: { classGroupId: true, classGroup: { select: { level: { select: { name: true } } } } } } },
         });
         allowedLevels = [
           ...new Set(links.map((l) => l.student.classGroup?.level.name).filter((v): v is string => !!v).map(normalize)),
         ];
+        const classGroupIds = links.map((l) => l.student.classGroupId).filter((v): v is string => !!v);
+        const cs = classGroupIds.length
+          ? await prisma.classSubject.findMany({ where: { schoolId, classGroupId: { in: classGroupIds } }, select: { subject: { select: { name: true } }, classGroup: { select: { level: { select: { name: true } } } } } })
+          : [];
+        allowedPairs = cs.map((c) => ({ level: normalize(c.classGroup.level.name), subject: normalize(c.subject.name) }));
       }
 
       const allChunks = schemeIds.length
@@ -301,6 +309,7 @@ export const schemeModule: Module = {
         if (section && normalize(c.section) !== normalize(section)) return false;
         if (allowedLevels && (!c.levelName || !allowedLevels.includes(normalize(c.levelName)))) return false;
         if (allowedSubjects && !allowedSubjects.some((s) => normalize(c.subjectName).includes(s) || s.includes(normalize(c.subjectName)))) return false;
+        if (allowedPairs && allowedPairs.length > 0 && !allowedPairs.some((p) => normalize(c.levelName ?? "") === p.level && (normalize(c.subjectName).includes(p.subject) || p.subject.includes(normalize(c.subjectName))))) return false;
         return true;
       });
 

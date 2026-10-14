@@ -101,6 +101,7 @@ interface ChildFeeSummary {
   paid: number;
   balance: number;
   invoiceCount: number;
+  schoolFee: { feeAmount: number; paid: number; owing: number } | null;
 }
 
 function naira(v: string | number | undefined): string {
@@ -570,6 +571,13 @@ export default function FeesPage() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 14, marginBottom: 20 }}>
           {byChild.map((c) => (
             <Card key={c.studentId} title={c.name}>
+              {c.schoolFee && c.schoolFee.feeAmount > 0 && (
+                <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: c.invoiceCount > 0 ? 14 : 0 }}>
+                  <Stat label="School fee" value={naira(c.schoolFee.feeAmount)} />
+                  <Stat label="Paid" value={naira(c.schoolFee.paid)} tone="success" />
+                  <Stat label="Owing" value={naira(c.schoolFee.owing)} tone={c.schoolFee.owing > 0 ? "danger" : "success"} />
+                </div>
+              )}
               {c.invoiceCount === 0 ? (
                 <div style={{ fontSize: 13, color: "var(--duga-muted)" }}>No invoices generated yet.</div>
               ) : (

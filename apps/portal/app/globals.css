@@ -245,6 +245,15 @@ html, body {
   .portal-content { padding: 16px; }
 }
 
+/* Keep dense portal controls and tables usable on narrow phones. */
+@media (max-width: 560px) {
+  .duga-card { min-width: 0; }
+  .duga-card__pad { padding: 14px; }
+  .duga-table th, .duga-table td { padding: 9px 10px; }
+  .duga-table-wrap { max-width: 100%; -webkit-overflow-scrolling: touch; }
+  .duga-btn { max-width: 100%; }
+}
+
 /* ---------- Notifications ---------- */
 .portal-bell { position: relative; }
 .portal-bell__dot {
