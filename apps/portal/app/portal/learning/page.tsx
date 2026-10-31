@@ -24,10 +24,14 @@ interface Item {
   status?: string;
   maxScore?: number;
   isPublished?: boolean;
-  attachments?: string[] | null;
+  attachments?: unknown;
   joinLink?: string;
-  classSubject: { subject: { name: string }; classGroup?: { level: { name: string }; name: string } | null; teacher?: { user: { firstName: string; lastName: string } } | null } | null;
+  classSubject: { subject?: { name: string } | null; classGroup?: { level?: { name: string } | null; name: string } | null; teacher?: { user: { firstName: string; lastName: string } } | null } | null;
   _count?: { questions?: number; attempts?: number; submissions?: number };
+}
+
+function attachmentUrls(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
 }
 
 export default function LearningPage() {
@@ -60,7 +64,7 @@ export default function LearningPage() {
           .then((j) => (j.ok ? j.user : null))
           .catch(() => null),
       ]);
-      setItems(d.items);
+      setItems(Array.isArray(d.items) ? d.items : []);
       setOptions(opts);
       setIsStudent(me?.role === "STUDENT");
       setRole(me?.role ?? null);
@@ -70,6 +74,11 @@ export default function LearningPage() {
       setLoading(false);
     }
   }, [kind]);
+
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("kind");
+    if (requested === "notes" || requested === "assignments" || requested === "tests" || requested === "live") setKind(requested);
+  }, []);
 
   useEffect(() => {
     load();
@@ -258,12 +267,12 @@ export default function LearningPage() {
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
                 <Badge tone="info">{item.classSubject?.subject?.name ?? "—"}</Badge>
                 {item.classSubject?.classGroup && (
-                  <Badge tone="neutral">{item.classSubject.classGroup.level.name} {item.classSubject.classGroup.name}</Badge>
+                  <Badge tone="neutral">{item.classSubject.classGroup.level?.name ?? "Class"} {item.classSubject.classGroup.name}</Badge>
                 )}
               </div>
-              {kind === "notes" && item.attachments && item.attachments.some(Boolean) && (
+              {kind === "notes" && attachmentUrls(item.attachments).length > 0 && (
                 <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 8 }}>
-                  {item.attachments.filter(Boolean).map((url, i) => (
+                  {attachmentUrls(item.attachments).map((url, i) => (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img key={i} src={url} alt="" style={{ width: 100, height: 76, objectFit: "cover", borderRadius: 6, flexShrink: 0 }} />
                   ))}
@@ -448,7 +457,7 @@ export default function LearningPage() {
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               <Badge tone="info">{viewItem.classSubject?.subject?.name ?? "—"}</Badge>
               {viewItem.classSubject?.classGroup && (
-                <Badge tone="neutral">{viewItem.classSubject.classGroup.level.name} {viewItem.classSubject.classGroup.name}</Badge>
+                <Badge tone="neutral">{viewItem.classSubject.classGroup.level?.name ?? "Class"} {viewItem.classSubject.classGroup.name}</Badge>
               )}
               {viewItem.week ? <Badge tone="accent">Week {viewItem.week}</Badge> : null}
             </div>
@@ -458,14 +467,14 @@ export default function LearningPage() {
                 drops each image in exactly where the AI placed it in the
                 text, instead of a flat gallery disconnected from the words
                 that describe it. */}
-                <LessonContent content={viewItem.content ?? ""} images={viewItem.attachments ?? []} />
+                <LessonContent content={viewItem.content ?? ""} images={attachmentUrls(viewItem.attachments)} />
                 {isStudent && <SelfCheckPanel key={viewItem.id} noteId={viewItem.id} />}
               </>
             ) : (
               <>
-                {viewItem.attachments && viewItem.attachments.some(Boolean) && (
+                {attachmentUrls(viewItem.attachments).length > 0 && (
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {viewItem.attachments.filter(Boolean).map((url, i) => (
+                    {attachmentUrls(viewItem.attachments).map((url, i) => (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img key={i} src={url} alt="" style={{ width: 220, height: 160, objectFit: "cover", borderRadius: 8, border: "1px solid var(--duga-border)" }} />
                     ))}
