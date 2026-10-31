@@ -1,9 +1,13 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PageHeader, Card, Badge, Alert, Spinner, EmptyState, Button, Modal, Field, Input, Select, Textarea, Icon } from "@duga/ui";
 import { api } from "@/lib/client/api";
-import { DocumentViewerModal } from "@/components/DocumentViewer";
+const DocumentViewerModal = dynamic(
+  () => import("@/components/DocumentViewer").then((module) => module.DocumentViewerModal),
+  { ssr: false },
+);
 
 type Category = "RECIPES" | "PARENTING_TIPS" | "CHILD_HEALTH" | "STUDY_SUPPORT" | "FUN_ACTIVITIES";
 

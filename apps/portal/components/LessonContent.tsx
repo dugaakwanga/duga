@@ -1,7 +1,16 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useState, type MouseEvent, type ReactNode } from "react";
-import { DocumentViewerModal, isDocumentLink } from "@/components/DocumentViewer";
+
+const DocumentViewerModal = dynamic(
+  () => import("@/components/DocumentViewer").then((module) => module.DocumentViewerModal),
+  { ssr: false },
+);
+
+function isDocumentLink(url: string): boolean {
+  return /\.(pdf|docx?)(\?|$)/i.test(url);
+}
 
 // Renders a lesson note the way it's meant to be read — section headings,
 // bullet lists, and paragraphs styled like a real document, with each
