@@ -150,6 +150,7 @@ export default function FeesPage() {
   const [editingSetupId, setEditingSetupId] = useState<string | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
   const [paying, setPaying] = useState<string | null>(null);
+  const [schoolFeePaying, setSchoolFeePaying] = useState<string | null>(null);
   const [paymentRecordsVisible, setPaymentRecordsVisible] = useState(true);
   const [schoolFeeStudents, setSchoolFeeStudents] = useState<SchoolFeeStudent[]>([]);
   const [byChild, setByChild] = useState<ChildFeeSummary[] | undefined>(undefined);
@@ -251,6 +252,25 @@ export default function FeesPage() {
       alert((e as Error).message);
     } finally {
       setPaying(null);
+    }
+  }
+
+  async function payFullSchoolFee(studentId: string) {
+    setSchoolFeePaying(studentId);
+    try {
+      const d = await api<{ mock?: boolean; authorization_url?: string; status?: string }>("fees/initSchoolFeePayment", {
+        method: "POST",
+        body: { studentId },
+      });
+      if (d.authorization_url && !d.mock && d.authorization_url !== "/portal/fees") window.location.href = d.authorization_url;
+      else {
+        alert(d.mock || d.status === "SUCCESS" ? "Full school fee payment recorded." : "Payment initialized.");
+        await load();
+      }
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setSchoolFeePaying(null);
     }
   }
 
@@ -576,6 +596,13 @@ export default function FeesPage() {
                   <Stat label="School fee" value={naira(c.schoolFee.feeAmount)} />
                   <Stat label="Paid" value={naira(c.schoolFee.paid)} tone="success" />
                   <Stat label="Owing" value={naira(c.schoolFee.owing)} tone={c.schoolFee.owing > 0 ? "danger" : "success"} />
+                  {c.schoolFee.owing > 0 && (
+                    <div style={{ width: "100%", marginTop: 4 }}>
+                      <Button size="sm" loading={schoolFeePaying === c.studentId} onClick={() => payFullSchoolFee(c.studentId)}>
+                        Pay full school fee
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
               {c.invoiceCount === 0 ? (

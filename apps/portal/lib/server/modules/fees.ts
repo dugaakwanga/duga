@@ -291,12 +291,16 @@ export const feesModule: Module = {
         include: { items: true, student: { include: { user: { select: { firstName: true, lastName: true } } } }, payments: { orderBy: { createdAt: "desc" } }, term: true, installmentPlan: { include: { installments: { orderBy: { sequence: "asc" } } } } },
         orderBy: { createdAt: "desc" },
       });
-      const summary = {
-        total: invoices.reduce((a, i) => a + Number(i.totalAmount), 0),
-        paid: invoices.reduce((a, i) => a + Number(i.paidAmount), 0),
-        balance: invoices.reduce((a, i) => a + Number(i.balance), 0),
-      };
       const schoolFeeLedger = await schoolFeeLedgerFor(schoolId, links.map((link) => link.student));
+      const schoolFeeTotals = [...schoolFeeLedger.values()].reduce(
+        (totals, fee) => ({ total: totals.total + fee.feeAmount, paid: totals.paid + fee.paid, balance: totals.balance + fee.owing }),
+        { total: 0, paid: 0, balance: 0 },
+      );
+      const summary = {
+        total: invoices.reduce((a, i) => a + Number(i.totalAmount), 0) + schoolFeeTotals.total,
+        paid: invoices.reduce((a, i) => a + Number(i.paidAmount), 0) + schoolFeeTotals.paid,
+        balance: invoices.reduce((a, i) => a + Number(i.balance), 0) + schoolFeeTotals.balance,
+      };
       // Per-child breakdown — every linked child appears even with zero
       // invoices yet, so a parent sees "nothing billed" rather than nothing.
       const byChild = links.map((link) => {
