@@ -1,7 +1,7 @@
 import { prisma, logAudit } from "@duga/core/server";
 import { getResultConfig, computeScoreTotals } from "@duga/core/server";
 import type { Module } from ".";
-import { can, str, num } from "../helpers";
+import { can, str, num, canonicalAdmissionNumber } from "../helpers";
 import { generateVision } from "./ai";
 
 // A student's photographed answer script is graded by AI only as a
@@ -102,7 +102,7 @@ export const paperExamModule: Module = {
         include: { user: { select: { firstName: true, lastName: true } } },
         orderBy: [{ user: { lastName: "asc" } }, { user: { firstName: "asc" } }],
       });
-      return { items: students.map((s) => ({ id: s.id, name: `${s.user.lastName} ${s.user.firstName}`, admissionNumber: s.admissionNumber })) };
+      return { items: students.map((s) => ({ id: s.id, name: `${s.user.lastName} ${s.user.firstName}`, admissionNumber: canonicalAdmissionNumber(s.admissionNumber) })) };
     },
 
     // Exam definitions a teacher has built for their subjects (or, for

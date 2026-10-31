@@ -1,6 +1,6 @@
 import { prisma, getDefaultGradingScale, getResultConfig } from "@duga/core/server";
 import type { Module } from ".";
-import { can, str, resolveSection } from "../helpers";
+import { can, str, resolveSection, canonicalAdmissionNumber } from "../helpers";
 import { gpaCalculator, schoolAndReportCardConfig } from "./results";
 
 async function taughtClassIds(teacherId: string, withTeacher: boolean): Promise<string[] | undefined> {
@@ -119,7 +119,7 @@ export const teacherModule: Module = {
         date: date ?? null,
         roster: students.map((s) => ({
           id: s.id,
-          admissionNumber: s.admissionNumber,
+          admissionNumber: canonicalAdmissionNumber(s.admissionNumber),
           firstName: s.user.firstName,
           lastName: s.user.lastName,
           attendance: attendance.find((a) => a.studentId === s.id)?.status ?? null,

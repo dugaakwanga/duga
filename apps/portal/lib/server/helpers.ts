@@ -18,6 +18,12 @@ export function generateTempPassword(length = 10): string {
   return out;
 }
 
+export function canonicalAdmissionNumber(value: string): string {
+  const raw = value.trim();
+  const match = raw.match(/^DUGA\/(?:[^/]+\/)?(\d{4})\/(\d+)$/i);
+  return match ? `DUGA/${match[1]}/${match[2]!.padStart(4, "0")}` : raw;
+}
+
 // Fee-access window logic (feeInfoOf, assertFeeAccess, FeeGatedFeature, ...)
 // now lives in packages/core/src/server/school.ts so resolveResultsAccess
 // there can share it — re-exported here so existing callers that import from

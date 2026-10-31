@@ -108,7 +108,7 @@ export const applicationsModule: Module = {
       const nameParts = app.applicantName.trim().split(/\s+/);
       const firstName = nameParts[0] ?? "Student";
       const lastName = nameParts.slice(1).join(" ") || "Applicant";
-      const admissionNumber = `DUGA/${classGroup.levelId.slice(0, 3).toUpperCase()}/${new Date().getFullYear()}/${String(
+      const admissionNumber = `DUGA/${new Date().getFullYear()}/${String(
         (await prisma.student.count({ where: { schoolId } })) + 1,
       ).padStart(4, "0")}`;
       const tempPassword = str(ctx.body.tempPassword) ?? admissionNumber;

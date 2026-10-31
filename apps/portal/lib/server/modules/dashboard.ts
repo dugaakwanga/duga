@@ -128,7 +128,7 @@ export const dashboardModule: Module = {
       const parent = ctx.session.user.parent!;
       const children = await prisma.studentParent.findMany({
         where: { parentId: parent.id },
-        include: { student: { include: { classGroup: { include: { level: true } } } } },
+        include: { student: { include: { user: { select: { firstName: true, lastName: true } }, classGroup: { include: { level: true } } } } },
       });
       const childIds = children.map((c) => c.studentId);
       // The real core school-fee ledger per child — never the Invoice
@@ -187,6 +187,8 @@ export const dashboardModule: Module = {
           ...c,
           student: {
             ...c.student,
+            firstName: c.student.user.firstName,
+            lastName: c.student.user.lastName,
             reportAverage: cardById.get(c.studentId) ?? null,
             schoolFee: schoolFeeLedger.get(c.studentId) ?? null,
             otherFeesBalance: invoiceById.get(c.studentId)?.balance ?? null,

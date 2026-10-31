@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import { prisma, signGateToken, schoolFeeLedgerFor } from "@duga/core/server";
 import { hasPermission } from "@duga/core";
 import type { Module } from ".";
-import { can, pick, str, num, bool, idArray, studentScope, feeInfoOf, feeDaysBetween, assertContactFree, resolveSection, generateTempPassword } from "../helpers";
+import { can, pick, str, num, bool, idArray, studentScope, feeInfoOf, feeDaysBetween, assertContactFree, resolveSection, generateTempPassword, canonicalAdmissionNumber } from "../helpers";
 
 const ID_CARD_THEME_KEY = "idCardTheme";
 
@@ -204,6 +204,7 @@ export const studentsModule: Module = {
     return {
       items: students.map((s) => ({
         ...s,
+        admissionNumber: canonicalAdmissionNumber(s.admissionNumber),
         fee: feeInfoOf(s),
         schoolFee: schoolFeeLedger.get(s.id) ?? null,
         scholarshipOverrideId: scholarshipOverrideByStudent.get(s.id) ?? null,
@@ -272,7 +273,7 @@ export const studentsModule: Module = {
 
     const admissionNumber =
       str(b.admissionNumber) ??
-      `DUGA/${classGroup.levelId.slice(0, 3).toUpperCase()}/${new Date().getFullYear()}/${String(
+      `DUGA/${new Date().getFullYear()}/${String(
         (await prisma.student.count({ where: { schoolId } })) + 1,
       ).padStart(4, "0")}`;
 
@@ -567,7 +568,7 @@ export const studentsModule: Module = {
           studentId: s.id,
           firstName: s.user.firstName,
           lastName: s.user.lastName,
-          admissionNumber: s.admissionNumber,
+          admissionNumber: canonicalAdmissionNumber(s.admissionNumber),
           className: s.classGroup ? `${s.classGroup.level.name} ${s.classGroup.name}` : null,
           section: s.section,
           dateOfBirth: s.dateOfBirth,

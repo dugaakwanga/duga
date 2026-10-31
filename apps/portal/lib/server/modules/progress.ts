@@ -80,6 +80,17 @@ async function attendanceSeries(schoolId: string, studentIds?: string[]) {
   }));
 }
 
+async function attendanceSummary(schoolId: string, studentIds?: string[]) {
+  const since = new Date();
+  since.setDate(since.getDate() - 30);
+  const rows = await prisma.studentAttendance.findMany({
+    where: { schoolId, date: { gte: since }, ...(studentIds ? { studentId: { in: studentIds } } : {}) } as never,
+    select: { status: true },
+  });
+  const present = rows.filter((row) => row.status === "PRESENT" || row.status === "LATE").length;
+  return { rate: rows.length ? Math.round((present / rows.length) * 100) : 0, daysPresent: present, daysRecorded: rows.length };
+}
+
 async function enrollmentSeries(schoolId: string, studentIds?: string[]) {
   const since = new Date();
   since.setMonth(since.getMonth() - 5);
@@ -237,9 +248,10 @@ export const progressModule: Module = {
       ? (await prisma.classSubject.findMany({ where: { teacherId: teacher.id }, select: { id: true } })).map((item) => item.id)
       : [];
 
-    const [fees, attendance, enrollment, scores, feeSum, scopeStats] = await Promise.all([
+    const [fees, attendance, attendanceStats, enrollment, scores, feeSum, scopeStats] = await Promise.all([
       showFees ? feesSeries(schoolId, ids) : Promise.resolve([] as Array<{ label: string; value: number }>),
       sections.attendance ? attendanceSeries(schoolId, ids) : Promise.resolve([] as Array<{ label: string; value: number }>),
+      sections.attendance ? attendanceSummary(schoolId, ids) : Promise.resolve({ rate: 0, daysPresent: 0, daysRecorded: 0 }),
       sections.enrollment ? enrollmentSeries(schoolId, ids) : Promise.resolve([] as Array<{ label: string; value: number }>),
       sections.scores
         ? role === "TEACHER"
@@ -299,7 +311,7 @@ export const progressModule: Module = {
       myClasses,
       subjects,
       fees: showFees ? { series: fees, summary: feeSum } : null,
-      attendance: sections.attendance ? { series: attendance } : null,
+      attendance: sections.attendance ? { series: attendance, summary: attendanceStats } : null,
       enrollment: sections.enrollment ? { series: enrollment } : null,
       scores: sections.scores ? { series: scores } : null,
       generatedAt: new Date().toISOString(),

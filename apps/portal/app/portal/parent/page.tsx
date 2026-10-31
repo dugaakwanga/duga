@@ -105,7 +105,7 @@ export default function ParentHomePage() {
               const s = c.student;
               const firstName = s.user?.firstName ?? s.firstName ?? "";
               const lastName = s.user?.lastName ?? s.lastName ?? "";
-              const name = `${lastName} ${firstName}`.trim() || s.admissionNumber;
+              const name = `${lastName} ${firstName}`.trim() || "Unnamed student";
               const className = s.classGroup ? `${s.classGroup.level.name} ${s.classGroup.name}`.trim() : "Not assigned";
               const section = s.classGroup?.level.name?.includes("JSS") || s.classGroup?.level.name?.includes("SSS") ? "SECONDARY" : "PRIMARY";
               const average = s.reportAverage;

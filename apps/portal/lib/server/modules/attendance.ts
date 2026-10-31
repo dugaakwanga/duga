@@ -2,7 +2,7 @@ import { prisma } from "@duga/core/server";
 import { withinRadiusMeters, schoolConfig } from "@duga/core";
 import { logAudit, getSetting } from "@duga/core/server";
 import type { Module } from ".";
-import { can, todayUTC, isoDay, str, num, resolveSection, sectionsOfTeacher } from "../helpers";
+import { can, todayUTC, isoDay, str, num, resolveSection, sectionsOfTeacher, canonicalAdmissionNumber } from "../helpers";
 import type { Ctx } from "@/app/api/v1/[...path]/route";
 
 // Resolve the staff member to clock for. When `targetUserId` is supplied the
@@ -247,7 +247,7 @@ export const attendanceModule: Module = {
         const row = byStudent.get(s.id);
         return {
           studentId: s.id,
-          admissionNumber: s.admissionNumber,
+          admissionNumber: canonicalAdmissionNumber(s.admissionNumber),
           name: `${s.user.firstName} ${s.user.lastName}`,
           status: row?.status ?? "UNMARKED",
           remark: row?.remark ?? null,

@@ -13,7 +13,7 @@ interface ProgressData {
   myClasses: Array<{ id: string; name: string; levelName: string; studentCount: number }>;
   subjects: Array<{ id: string; name: string; section: string; classGroupName: string; value: number; students: number; count: number }>;
   fees: { series: Array<{ label: string; value: number }>; summary: { total: number; paid: number; balance: number } } | null;
-  attendance: { series: Array<{ label: string; value: number }> } | null;
+  attendance: { series: Array<{ label: string; value: number }>; summary: { rate: number; daysPresent: number; daysRecorded: number } } | null;
   enrollment: { series: Array<{ label: string; value: number }> } | null;
   scores: { series: Array<{ label: string; value: number; passRate: number }> } | null;
   generatedAt: string;
@@ -72,14 +72,14 @@ export default function ProgressPage() {
             <>
               <Stat label="My students" value={formatNumber(data.classes.studentCount)} />
               <Stat label="My classes" value={formatNumber(data.classes.classCount)} />
-              <Stat label="Attendance" value={lastAttendance ? `${lastAttendance.value}%` : "—"} tone="info" />
+              <Stat label="Attendance" value={data.attendance ? `${data.attendance.summary.rate}%` : "—"} tone="info" />
               {lastAvg && <Stat label="Average score" value={String(lastAvg.value)} tone="accent" />}
             </>
           ) : isStudent || isParent ? (
             <>
-              <Stat label="Attendance" value={lastAttendance ? `${lastAttendance.value}%` : "—"} tone="info" />
+              <Stat label="Attendance" value={data.attendance ? `${data.attendance.summary.rate}%` : "—"} tone="info" />
               {lastAvg && <Stat label="Average score" value={String(lastAvg.value)} tone="accent" />}
-              {data.attendance && <Stat label="Days present (7d)" value={formatNumber(data.classes.studentCount)} tone="info" />}
+              {data.attendance && <Stat label="Days present (30d)" value={formatNumber(data.attendance.summary.daysPresent)} tone="info" />}
             </>
           ) : (
             <>

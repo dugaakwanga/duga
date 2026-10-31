@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma, logAudit, checkRateLimit, clientIp, signPortalToken } from "@duga/core/server";
 import { cookieOptions, getJwtLifetimeSeconds, COOKIE_NAMES } from "@duga/core";
+import { canonicalAdmissionNumber } from "@/lib/server/helpers";
 
 // A real bcrypt hash of a value nobody will ever guess, compared against on
 // every "account not found" path so a nonexistent-identifier request costs
@@ -88,6 +89,11 @@ export async function POST(request: NextRequest) {
       });
       if (student) user = await prisma.user.findUnique({ where: { id: student.userId } });
     }
+    if (!user) {
+      const students = await prisma.student.findMany({ select: { userId: true, admissionNumber: true }, take: 5000 });
+      const student = students.find((s) => canonicalAdmissionNumber(s.admissionNumber).toLowerCase() === canonicalAdmissionNumber(identifier).toLowerCase());
+      if (student) user = await prisma.user.findUnique({ where: { id: student.userId } });
+    }
 
     // Password is checked before anything else is revealed about the
     // account — always via bcrypt.compare (dummy hash when no account
@@ -103,7 +109,7 @@ export async function POST(request: NextRequest) {
       let initialPassword = false;
       if (user.role === "STUDENT") {
         const student = await prisma.student.findUnique({ where: { userId: user.id }, select: { admissionNumber: true } });
-        initialPassword = !!student && student.admissionNumber.toLowerCase() === password.trim().toLowerCase();
+        initialPassword = !!student && canonicalAdmissionNumber(student.admissionNumber).toLowerCase() === canonicalAdmissionNumber(password).toLowerCase();
       } else if (user.role === "PARENT" && user.phone) {
         initialPassword = phoneVariants(user.phone).includes(password.trim()) || phoneVariants(password).includes(user.phone);
       }

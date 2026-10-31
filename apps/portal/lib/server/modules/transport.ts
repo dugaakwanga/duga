@@ -1,7 +1,7 @@
 import { prisma } from "@duga/core/server";
 import { logAudit } from "@duga/core/server";
 import type { Module } from ".";
-import { can, str } from "../helpers";
+import { can, str, canonicalAdmissionNumber } from "../helpers";
 
 async function assertOwnedRoute(schoolId: string, routeId: string) {
   const route = await prisma.transportRoute.findFirst({ where: { id: routeId, schoolId }, select: { id: true } });
@@ -46,7 +46,7 @@ export const transportModule: Module = {
       orderBy: { admissionNumber: "asc" },
       take: 500,
     });
-    return { role, routes, vehicles, drivers, students };
+    return { role, routes, vehicles, drivers, students: students.map((s) => ({ ...s, admissionNumber: canonicalAdmissionNumber(s.admissionNumber) })) };
   },
 
   actions: {
