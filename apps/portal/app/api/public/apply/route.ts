@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
 
     // Link to an existing parent account if the email matches
     const existingUser = await prisma.user.findFirst({
-      where: { email, role: "PARENT" },
+      where: { OR: [{ email, role: "PARENT" }, { phone, role: "PARENT" }] },
       include: { parent: true },
     });
 

@@ -103,7 +103,9 @@ export default function ParentHomePage() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 16 }}>
             {children.map((c) => {
               const s = c.student;
-              const name = `${s.user?.firstName ?? ""} ${s.user?.lastName ?? ""}`.trim() || s.admissionNumber;
+              const firstName = s.user?.firstName ?? s.firstName ?? "";
+              const lastName = s.user?.lastName ?? s.lastName ?? "";
+              const name = `${lastName} ${firstName}`.trim() || s.admissionNumber;
               const className = s.classGroup ? `${s.classGroup.level.name} ${s.classGroup.name}`.trim() : "Not assigned";
               const section = s.classGroup?.level.name?.includes("JSS") || s.classGroup?.level.name?.includes("SSS") ? "SECONDARY" : "PRIMARY";
               const average = s.reportAverage;
@@ -135,7 +137,6 @@ export default function ParentHomePage() {
                       </div>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontWeight: 800, fontSize: 16, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
-                        <div style={{ fontSize: 12.5, color: "var(--duga-muted)" }}>{s.admissionNumber}</div>
                       </div>
                     </div>
 
@@ -203,7 +204,7 @@ export default function ParentHomePage() {
                     <div key={inv.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, border: "1px solid var(--duga-border)", borderRadius: 10, padding: "10px 12px" }}>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontSize: 13.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {inv.student?.user?.firstName ? `${inv.student.user.firstName} ${inv.student.user.lastName}`.trim() : "Student"}
+                          {inv.student?.user?.firstName ? `${inv.student.user.lastName} ${inv.student.user.firstName}`.trim() : "Student"}
                         </div>
                         <Badge tone={inv.status === "PARTIAL" ? "warning" : "danger"}>{inv.status}</Badge>
                       </div>

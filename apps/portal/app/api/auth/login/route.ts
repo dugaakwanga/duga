@@ -94,7 +94,24 @@ export async function POST(request: NextRequest) {
     // matched at all), so neither the response message nor its timing lets
     // an attacker learn whether an identifier belongs to a real, suspended,
     // or nonexistent account without first supplying a correct password.
-    const valid = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
+    let valid = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
+    // Existing family accounts created before identifier-based onboarding may
+    // still have a generated password. Allow their original identifier as a
+    // one-time password while mustChangePassword is set, then store it as the
+    // normal bcrypt password for the next login.
+    if (!valid && user?.mustChangePassword) {
+      let initialPassword = false;
+      if (user.role === "STUDENT") {
+        const student = await prisma.student.findUnique({ where: { userId: user.id }, select: { admissionNumber: true } });
+        initialPassword = !!student && student.admissionNumber.toLowerCase() === password.trim().toLowerCase();
+      } else if (user.role === "PARENT" && user.phone) {
+        initialPassword = phoneVariants(user.phone).includes(password.trim()) || phoneVariants(password).includes(user.phone);
+      }
+      if (initialPassword) {
+        valid = true;
+        await prisma.user.update({ where: { id: user.id }, data: { passwordHash: await bcrypt.hash(password.trim(), 12) } });
+      }
+    }
     if (!user || !valid) {
       return NextResponse.json({ ok: false, error: "Invalid credentials" }, { status: 401 });
     }

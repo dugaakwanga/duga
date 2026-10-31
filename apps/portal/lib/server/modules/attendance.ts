@@ -146,7 +146,7 @@ export const attendanceModule: Module = {
     if (role === "PARENT" && childIds) {
       const map = new Map<string, { studentId: string; name: string; summary: Record<string, number>; total: number }>();
       for (const r of records) {
-        const entry = map.get(r.studentId) ?? { studentId: r.studentId, name: `${r.student.user.firstName} ${r.student.user.lastName}`, summary: {}, total: 0 };
+        const entry = map.get(r.studentId) ?? { studentId: r.studentId, name: `${r.student.user.lastName} ${r.student.user.firstName}`, summary: {}, total: 0 };
         entry.summary[r.status] = (entry.summary[r.status] ?? 0) + 1;
         entry.total += 1;
         map.set(r.studentId, entry);

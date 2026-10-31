@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import { prisma, signApplicationTestToken } from "@duga/core/server";
 import { logAudit, dispatchNotification, sendRawEmail } from "@duga/core/server";
 import type { Module } from ".";
-import { can, str, generateTempPassword } from "../helpers";
+import { can, str } from "../helpers";
 
 // Attaches each application's admissions-test attempt (if any) as a light
 // `test` summary — a second query batched across every listed application,
@@ -108,7 +108,10 @@ export const applicationsModule: Module = {
       const nameParts = app.applicantName.trim().split(/\s+/);
       const firstName = nameParts[0] ?? "Student";
       const lastName = nameParts.slice(1).join(" ") || "Applicant";
-      const tempPassword = str(ctx.body.tempPassword) ?? generateTempPassword();
+      const admissionNumber = `DUGA/${classGroup.levelId.slice(0, 3).toUpperCase()}/${new Date().getFullYear()}/${String(
+        (await prisma.student.count({ where: { schoolId } })) + 1,
+      ).padStart(4, "0")}`;
+      const tempPassword = str(ctx.body.tempPassword) ?? admissionNumber;
       const passwordHash = await bcrypt.hash(tempPassword, 12);
 
       // Reuse an existing student user for this email if one already exists.
@@ -126,13 +129,11 @@ export const applicationsModule: Module = {
             mustChangePassword: true,
           },
         });
+      } else if (!str(ctx.body.tempPassword)) {
+        await prisma.user.update({ where: { id: user.id }, data: { passwordHash, mustChangePassword: true, passwordChangedAt: new Date() } });
       }
       const existingStudent = await prisma.student.findFirst({ where: { userId: user.id, schoolId } });
       if (existingStudent) throw new Error("A student account already exists for this applicant");
-
-      const admissionNumber = `DUGA/${classGroup.levelId.slice(0, 3).toUpperCase()}/${new Date().getFullYear()}/${String(
-        (await prisma.student.count({ where: { schoolId } })) + 1,
-      ).padStart(4, "0")}`;
 
       const student = await prisma.student.create({
         data: {

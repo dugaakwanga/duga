@@ -38,6 +38,11 @@ const DEFAULT_ID_CARD_CONFIG: IdCardConfig = {
   showQrCode: true,
 };
 
+function phoneVariantsMatch(a: string, b: string): boolean {
+  const normalize = (value: string) => value.replace(/\D/g, "").replace(/^0/, "234").replace(/^\+/, "");
+  return normalize(a) === normalize(b);
+}
+
 // Reads from a plain schoolId+key setting row and merges over the defaults,
 // so adding a new config field here never requires a migration for schools
 // that saved a config before that field existed.
@@ -66,15 +71,16 @@ async function upsertParent(
     include: { parent: { include: { user: true } } },
   });
 
+  const phone = opts.phone;
   // Same parent already linked — just refresh name/phone.
-  if (current && email && current.parent.user.email?.toLowerCase() === email) {
+  if (current && ((email && current.parent.user.email?.toLowerCase() === email) || (phone && current.parent.user.phone && phoneVariantsMatch(current.parent.user.phone, phone)))) {
     const userData: Record<string, unknown> = {};
     if (opts.name) {
       const [fn, ...ln] = opts.name.trim().split(/\s+/);
       userData.firstName = fn ?? "Parent";
       userData.lastName = ln.join(" ") || "Guardian";
     }
-    if (opts.phone) userData.phone = opts.phone;
+    if (phone) userData.phone = phone;
     if (opts.tempPassword) {
       if (opts.tempPassword.length < 8) throw new Error("Parent password must be at least 8 characters");
       userData.passwordHash = await bcrypt.hash(opts.tempPassword, 12);
@@ -85,22 +91,22 @@ async function upsertParent(
     return opts.tempPassword;
   }
 
-  // A parent email is required to link a (new) parent.
-  if (!email) return undefined;
-  let parentUser = await prisma.user.findUnique({ where: { schoolId_email: { schoolId, email } } });
+  if (!email && !phone) return undefined;
+  let parentUser = email ? await prisma.user.findUnique({ where: { schoolId_email: { schoolId, email } } }) : null;
+  if (!parentUser && phone) parentUser = await prisma.user.findFirst({ where: { schoolId, phone, role: "PARENT" } });
   let usedTempPassword: string | undefined;
   if (!parentUser) {
     const name = opts.name?.trim() ?? "";
-    usedTempPassword = opts.tempPassword ?? generateTempPassword();
+    usedTempPassword = opts.tempPassword ?? phone ?? generateTempPassword();
     parentUser = await prisma.user.create({
       data: {
         schoolId,
         role: "PARENT",
-        email,
+        email: email ?? null,
         passwordHash: await bcrypt.hash(usedTempPassword, 12),
         firstName: name.split(/\s+/)[0] ?? "Parent",
         lastName: name.split(/\s+/).slice(1).join(" ") || "Guardian",
-        phone: opts.phone || null,
+        phone: phone || null,
         mustChangePassword: true,
       },
     });
@@ -112,8 +118,8 @@ async function upsertParent(
       where: { id: parentUser.id },
       data: { passwordHash: await bcrypt.hash(opts.tempPassword, 12), mustChangePassword: true, passwordChangedAt: new Date() },
     });
-  } else if (opts.phone && !parentUser.phone) {
-    await prisma.user.update({ where: { id: parentUser.id }, data: { phone: opts.phone } });
+  } else if (phone && !parentUser.phone) {
+    await prisma.user.update({ where: { id: parentUser.id }, data: { phone } });
   }
   const parentProfile = await prisma.parent.findUnique({ where: { userId: parentUser.id } });
   if (parentProfile) {
@@ -270,7 +276,7 @@ export const studentsModule: Module = {
         (await prisma.student.count({ where: { schoolId } })) + 1,
       ).padStart(4, "0")}`;
 
-    const studentTempPassword = str(b.tempPassword) ?? generateTempPassword();
+    const studentTempPassword = str(b.tempPassword) ?? admissionNumber;
     const passwordHash = await bcrypt.hash(studentTempPassword, 12);
 
     // This config is a price and duration, not a payment. Access begins only
@@ -324,7 +330,7 @@ export const studentsModule: Module = {
     });
 
     let parentTempPassword: string | undefined;
-    if (b.parentEmail || b.parentName) {
+    if (b.parentEmail || b.parentName || b.parentPhone) {
       parentTempPassword = await upsertParent(schoolId, student.id, {
         email: str(b.parentEmail),
         name: str(b.parentName),

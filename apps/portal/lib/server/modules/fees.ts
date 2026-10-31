@@ -303,7 +303,7 @@ export const feesModule: Module = {
         const childInvoices = invoices.filter((i) => i.studentId === link.studentId);
         return {
           studentId: link.studentId,
-          name: `${link.student.user.firstName} ${link.student.user.lastName}`,
+          name: `${link.student.user.lastName} ${link.student.user.firstName}`,
           total: childInvoices.reduce((a, i) => a + Number(i.totalAmount), 0),
           paid: childInvoices.reduce((a, i) => a + Number(i.paidAmount), 0),
           balance: childInvoices.reduce((a, i) => a + Number(i.balance), 0),
