@@ -1,6 +1,7 @@
 import { prisma, logAudit } from "@duga/core/server";
 import { getResultConfig, computeScoreTotals } from "@duga/core/server";
 import type { Module } from ".";
+import { assessmentWindowOpen } from "./calendar";
 import { can, str, num, canonicalAdmissionNumber } from "../helpers";
 import { generateVision } from "./ai";
 
@@ -377,31 +378,49 @@ export const paperExamModule: Module = {
       score = Math.max(0, Math.min(submission.maxScore, score));
       if (!submission.termId) throw new Error("This submission has no term set — cannot write a score");
 
-      const lock = await prisma.assessmentLock.findUnique({ where: { classSubjectId_termId_component: { classSubjectId: submission.classSubjectId, termId: submission.termId, component: submission.component } } });
-      if (lock) throw new Error(`"${submission.component}" is locked for this term — ask an admin to reopen it first.`);
+      const termId = submission.termId;
+      const section = submission.classSubject.classGroup.level.section;
+      const config = await getResultConfig(schoolId, section);
+      const component = config.components.find((item) => item.name === submission.component);
+      if (!component) throw new Error("This assessment component is no longer configured for the class.");
+      const approvedScore = Math.min(score, component.max);
+      if (ctx.session.user.role === "TEACHER" && !(await assessmentWindowOpen(schoolId, "RESULTS", { classSubjectId: submission.classSubjectId, termId, section }))) {
+        throw new Error("The results entry window is closed for this term.");
+      }
 
-      const config = await getResultConfig(schoolId, submission.classSubject.classGroup.level.section);
-      const existing = await prisma.subjectScore.findUnique({ where: { classSubjectId_studentId_termId: { classSubjectId: submission.classSubjectId, studentId: submission.studentId, termId: submission.termId } } });
-      const scores: Record<string, number> = { ...((existing?.scores as Record<string, number> | null | undefined) ?? {}), [submission.component]: score };
-      const { ca, exam, total } = computeScoreTotals(config, scores);
+      const updated = await prisma.$transaction(async (tx) => {
+        const student = await tx.student.findFirst({
+          where: { id: submission.studentId, schoolId, status: "ACTIVE", currentClassGroupId: submission.classSubject.classGroupId },
+          select: { scoreEntryBlocked: true },
+        });
+        if (!student) throw new Error("This student is no longer active in the class.");
+        if (student.scoreEntryBlocked && ctx.session.user.role === "TEACHER") throw new Error("Score entry is blocked for this student.");
 
-      await prisma.subjectScore.upsert({
-        where: { classSubjectId_studentId_termId: { classSubjectId: submission.classSubjectId, studentId: submission.studentId, termId: submission.termId } },
-        update: { scores: scores as never, caTotal: ca, examTotal: exam, total, enteredByTeacherId: ctx.session.user.teacher?.id },
-        create: { schoolId, classSubjectId: submission.classSubjectId, studentId: submission.studentId, termId: submission.termId, scores: scores as never, caTotal: ca, examTotal: exam, total, enteredByTeacherId: ctx.session.user.teacher?.id },
-      });
+        const lock = await tx.assessmentLock.findUnique({ where: { classSubjectId_termId_component: { classSubjectId: submission.classSubjectId, termId, component: submission.component } } });
+        if (lock) throw new Error(`"${submission.component}" is locked for this term — ask an admin to reopen it first.`);
 
-      const updated = await prisma.paperExamSubmission.update({
-        where: { id: submission.id },
-        data: {
-          status: "APPROVED",
-          teacherScore: score,
-          reviewedByUserId: ctx.session.user.id,
-          reviewedAt: new Date(),
-          ...(newBreakdown ? { aiBreakdown: newBreakdown as never } : {}),
-        },
-      });
-      await logAudit({ schoolId, userId: ctx.session.user.id, action: "paperExam.approved", entityType: "PaperExamSubmission", entityId: submission.id, meta: { score, component: submission.component } });
+        const existing = await tx.subjectScore.findUnique({ where: { classSubjectId_studentId_termId: { classSubjectId: submission.classSubjectId, studentId: submission.studentId, termId } } });
+        const scores: Record<string, number> = { ...((existing?.scores as Record<string, number> | null | undefined) ?? {}), [submission.component]: approvedScore };
+        const { ca, exam, total } = computeScoreTotals(config, scores);
+
+        await tx.subjectScore.upsert({
+          where: { classSubjectId_studentId_termId: { classSubjectId: submission.classSubjectId, studentId: submission.studentId, termId } },
+          update: { scores: scores as never, caTotal: ca, examTotal: exam, total, enteredByTeacherId: ctx.session.user.teacher?.id },
+          create: { schoolId, classSubjectId: submission.classSubjectId, studentId: submission.studentId, termId, scores: scores as never, caTotal: ca, examTotal: exam, total, enteredByTeacherId: ctx.session.user.teacher?.id },
+        });
+
+        return tx.paperExamSubmission.update({
+          where: { id: submission.id },
+          data: {
+            status: "APPROVED",
+            teacherScore: approvedScore,
+            reviewedByUserId: ctx.session.user.id,
+            reviewedAt: new Date(),
+            ...(newBreakdown ? { aiBreakdown: newBreakdown as never } : {}),
+          },
+        });
+      }, { isolationLevel: "Serializable" });
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "paperExam.approved", entityType: "PaperExamSubmission", entityId: submission.id, meta: { score: approvedScore, component: submission.component } });
       return updated;
     },
   },

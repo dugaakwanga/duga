@@ -125,6 +125,9 @@ interface EntryRow {
 }
 
 interface EntrySheet {
+  termId: string;
+  windowOpen: boolean;
+  canEdit: boolean;
   classSubject: { id: string; subject: string; class: string };
   config: ResultConfig;
   submitted: boolean;
@@ -235,15 +238,10 @@ export default function ResultsPage() {
   useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
-  // Auto-save drafts while a teacher is entering scores — the entry grid
-  // previously only held edits in local state with no save path at all
-  // until "Submit to admin" (which just flips a lock flag on rows that,
-  // without this, were never created). A short debounce after the last
-  // keystroke persists the draft via the same saveScores action, independent
-  // of the explicit submit step.
-  const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const skipNextAutoSave = useRef(false);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "pending" | "saving" | "saved" | "error">("idle");
+  const [scoreError, setScoreError] = useState<string | null>(null);
+  const dirtyScores = useRef(new Map<string, Record<string, number | null>>());
+  const saveInFlight = useRef<Promise<boolean> | null>(null);
 
   async function downloadPdf(rc: ReportCard) {
     if (!school || !reportCardConfig) return alert("Report card settings are still loading — try again in a moment.");
@@ -508,16 +506,20 @@ export default function ResultsPage() {
     }
     setSheetLoading(true);
     setError(null);
+    if (!(await persistScores())) {
+      setSheetLoading(false);
+      return;
+    }
     setRankMsg("");
     try {
       const data = await api<EntrySheet>("results/entrySheet", {
         method: "POST",
         body: { classSubjectId: csId, termId },
       });
-      skipNextAutoSave.current = true;
+      setScoreError(null);
       setAutoSaveStatus("idle");
       setSheet(data);
-      setConfig(data.config);
+
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -525,52 +527,87 @@ export default function ResultsPage() {
     }
   }
 
-  // Debounced auto-save: 1.5s after the last edit, persist every row's
-  // current scores as a draft (submitted stays false — only the explicit
-  // "Submit to admin" button locks them). Skipped for the load that just
-  // populated the sheet, and once it's already submitted/locked.
-  useEffect(() => {
-    if (!sheet || sheet.submitted) return;
-    if (skipNextAutoSave.current) {
-      skipNextAutoSave.current = false;
-      return;
-    }
-    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    autoSaveTimer.current = setTimeout(async () => {
-      setAutoSaveStatus("saving");
+  async function persistScores(): Promise<boolean> {
+    while (saveInFlight.current) await saveInFlight.current;
+    if (!sheet || dirtyScores.current.size === 0) return true;
+
+    const changes = [...dirtyScores.current];
+    setAutoSaveStatus("saving");
+    setScoreError(null);
+    const request = (async () => {
       try {
-        await api("results/saveScores", {
+        const result = await api<{ skipped: string[]; ignoredComponents?: string[] }>("results/saveScores", {
           method: "POST",
           loading: false,
           body: {
             classSubjectId: sheet.classSubject.id,
-            termId: activeTermId,
-            rows: sheet.rows.map((r) => ({ studentId: r.studentId, scores: r.scores })),
+            termId: sheet.termId,
+            patch: true,
+            rows: changes.map(([studentId, scores]) => ({ studentId, scores })),
           },
         });
-        setAutoSaveStatus("saved");
-      } catch {
+        if (result.skipped.length || result.ignoredComponents?.length) {
+          throw new Error("Some scores could not be saved because the roster or assessment locks changed. Discard the remaining edits and reopen the sheet to see the current setup.");
+        }
+        for (const [studentId, scores] of changes) {
+          if (dirtyScores.current.get(studentId) === scores) dirtyScores.current.delete(studentId);
+        }
+        setAutoSaveStatus(dirtyScores.current.size ? "pending" : "saved");
+        return true;
+      } catch (e) {
         setAutoSaveStatus("error");
+        setScoreError((e as Error).message);
+        return false;
       }
-    }, 1500);
-    return () => {
-      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    };
+    })();
+    saveInFlight.current = request;
+    try {
+      return await request;
+    } finally {
+      saveInFlight.current = null;
+    }
+  }
+
+  useEffect(() => {
+    if (!sheet || autoSaveStatus !== "pending" || saving || sheetLoading) return;
+    const timer = setTimeout(() => void persistScores(), 1500);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sheet?.rows]);
+  }, [sheet, autoSaveStatus, saving, sheetLoading]);
+
+  useEffect(() => {
+    if (autoSaveStatus === "idle" || autoSaveStatus === "saved") return;
+    const warnUnsaved = (event: BeforeUnloadEvent) => {
+      if (!dirtyScores.current.size) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnUnsaved);
+    return () => window.removeEventListener("beforeunload", warnUnsaved);
+  }, [autoSaveStatus]);
 
   function setRow(r: EntryRow, comp: string, val: string) {
     if (!sheet || sheet.lockedComponents.includes(comp)) return;
-    // Clamp to the component's admin-set maximum so what's stored always
-    // matches what's displayed — previously only the computed CA/Exam
-    // totals were capped server-side, while the raw per-component value
-    // (e.g. typing 999 into a 10-mark component) was stored as-is.
-    const max = sheet.config.components.find((c) => c.name === comp)?.max;
-    const v = val === "" ? null : Math.max(0, Math.min(Number(val), max ?? Number(val)));
+    const max = sheet.config.components.find((c) => c.name === comp)!.max;
+    const value = val === "" ? null : Math.max(0, Math.min(Number(val), max));
+    if (value !== null && !Number.isFinite(value)) return;
+    dirtyScores.current.set(r.studentId, { ...dirtyScores.current.get(r.studentId), [comp]: value });
+    setAutoSaveStatus("pending");
     setSheet({
       ...sheet,
-      rows: sheet.rows.map((row) => (row.studentId === r.studentId ? { ...row, scores: { ...row.scores, [comp]: v } } : row)),
+      rows: sheet.rows.map((row) => row.studentId === r.studentId ? { ...row, scores: { ...row.scores, [comp]: value } } : row),
     });
+  }
+
+  async function closeSheet(termId?: string) {
+    setSheetLoading(true);
+    try {
+      if (!(await persistScores())) return;
+      setSheet(null);
+      if (termId !== undefined) setActiveTermId(termId);
+    } finally {
+      setSheetLoading(false);
+    }
   }
 
   async function submitSheet() {
@@ -579,19 +616,8 @@ export default function ResultsPage() {
     setError(null);
     setRankMsg("");
     try {
-      // Flush the latest edits first (admin never enters scores directly, so
-      // there's nothing of theirs to flush, and the endpoint rejects an
-      // admin's call outright) — locking shouldn't race a teacher's
-      // debounced auto-save and lock in stale (or no) scores.
-      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-      if (role !== "ADMIN") {
-        await api("results/saveScores", {
-          method: "POST",
-          loading: false,
-          body: { classSubjectId: sheet.classSubject.id, termId: activeTermId, rows: sheet.rows.map((r) => ({ studentId: r.studentId, scores: r.scores })) },
-        });
-      }
-      const res = await api<{ locked: string[]; fullyLocked: boolean }>("results/submitScores", { method: "POST", body: { classSubjectId: sheet.classSubject.id, termId: activeTermId } });
+      if (!(await persistScores())) return;
+      const res = await api<{ locked: string[]; fullyLocked: boolean }>("results/submitScores", { method: "POST", body: { classSubjectId: sheet.classSubject.id, termId: sheet.termId } });
       setSheet((s) => (s ? { ...s, submitted: res.fullyLocked, lockedComponents: [...new Set([...s.lockedComponents, ...res.locked])], rows: s.rows.map((r) => ({ ...r, submitted: res.fullyLocked })) } : s));
       setRankMsg("Locked.");
     } catch (e) {
@@ -606,21 +632,17 @@ export default function ResultsPage() {
   // and exams remain open for progressive entry".
   async function lockComponent(name: string) {
     if (!sheet) return;
+    setSaving(true);
     setError(null);
     try {
-      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-      if (role !== "ADMIN") {
-        await api("results/saveScores", {
-          method: "POST",
-          loading: false,
-          body: { classSubjectId: sheet.classSubject.id, termId: activeTermId, rows: sheet.rows.map((r) => ({ studentId: r.studentId, scores: r.scores })) },
-        });
-      }
-      const res = await api<{ locked: string[]; fullyLocked: boolean }>("results/submitScores", { method: "POST", body: { classSubjectId: sheet.classSubject.id, termId: activeTermId, component: name } });
+      if (!(await persistScores())) return;
+      const res = await api<{ locked: string[]; fullyLocked: boolean }>("results/submitScores", { method: "POST", body: { classSubjectId: sheet.classSubject.id, termId: sheet.termId, component: name } });
       setSheet((s) => (s ? { ...s, submitted: res.fullyLocked, lockedComponents: [...new Set([...s.lockedComponents, ...res.locked])] } : s));
       setRankMsg(`"${name}" locked.`);
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -628,7 +650,7 @@ export default function ResultsPage() {
     if (!sheet) return;
     setError(null);
     try {
-      await api("results/reopenScores", { method: "POST", body: { classSubjectId: sheet.classSubject.id, termId: activeTermId, component: name } });
+      await api("results/reopenScores", { method: "POST", body: { classSubjectId: sheet.classSubject.id, termId: sheet.termId, component: name } });
       setSheet((s) => (s ? { ...s, submitted: false, lockedComponents: s.lockedComponents.filter((c) => c !== name) } : s));
       setRankMsg(`"${name}" reopened for editing.`);
     } catch (e) {
@@ -711,7 +733,7 @@ export default function ResultsPage() {
     }
   }
 
-  if (error) return <Alert tone="danger">{error}</Alert>;
+  if (error && !role) return <Alert tone="danger">{error}</Alert>;
   if (loading) return <Spinner size={28} />;
 
   const displayedCards = cards.filter((rc) => (!printClassId || rc.classGroupId === printClassId) && (!printTermId || rc.termId === printTermId));
@@ -750,7 +772,7 @@ export default function ResultsPage() {
             ? "Your children's published term report cards."
             : role === "STUDENT"
               ? "Your published term report cards."
-              : "Educators enter subject scores, submit them to the administration, and the admin publishes report cards per student."
+              : "Educators enter subject scores. Administrators review and lock assessments, then publish report cards."
         }
         actions={
           role === "ADMIN" || role === "OWNER" ? (
@@ -766,20 +788,18 @@ export default function ResultsPage() {
         }
       />
 
-      {/* Entry sheet — teachers enter their own scores; admin/owner can open
-          any subject read-only from "Subject submissions" to review what
-          was submitted without having to Reopen (and re-lock) it first. */}
+      {error && <Alert tone="danger">{error}</Alert>}
+
+      {/* Staff can open score sheets from their teaching assignments or the submissions overview. */}
       {(role === "TEACHER" || role === "ADMIN" || role === "OWNER") && sheet && (
         <Card
-          title={`${sheet.classSubject.subject} — ${sheet.classSubject.class}`}
+          title={`${sheet.classSubject.subject} — ${sheet.classSubject.class} · ${terms.find((term) => term.id === sheet.termId)?.name ?? "Selected term"}`}
           actions={
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               {role === "TEACHER" && (
                 <>
-                  {autoSaveStatus === "saving" && <span style={{ fontSize: 12, color: "var(--duga-muted)" }}>Saving…</span>}
-                  {autoSaveStatus === "saved" && <span style={{ fontSize: 12, color: "var(--duga-muted)" }}>Saved</span>}
-                  {autoSaveStatus === "error" && <span style={{ fontSize: 12, color: "var(--duga-danger, #b91c1c)" }}>Not saved — check your connection</span>}
-                  <Badge tone={sheet.submitted ? "success" : "neutral"}>{sheet.submitted ? "Locked by admin" : "Open for entry"}</Badge>
+
+                  <Badge tone={sheet.submitted ? "success" : "neutral"}>{sheet.submitted ? "Locked by admin" : sheet.windowOpen ? "Open for entry" : "Entry window closed"}</Badge>
                 </>
               )}
               {(role === "ADMIN" || role === "OWNER") && (
@@ -791,12 +811,30 @@ export default function ResultsPage() {
                   </Button>
                 )
               )}
-              <Button variant="outline" size="sm" onClick={() => setSheet(null)}>Close</Button>
+              {sheet.canEdit && (
+                <>
+                  {autoSaveStatus === "saved" && <span role="status">Saved</span>}
+                  {autoSaveStatus !== "idle" && autoSaveStatus !== "saved" && (
+                    <Button size="sm" loading={autoSaveStatus === "saving"} disabled={saving || sheetLoading} onClick={() => void persistScores()}>Save scores</Button>
+                  )}
+                </>
+              )}
+              <Button variant="outline" size="sm" disabled={saving || sheetLoading} onClick={() => void closeSheet()}>Close</Button>
             </div>
           }
           style={{ marginBottom: 24 }}
         >
           {rankMsg && <Alert tone={rankMsg.includes("Saved") || rankMsg.includes("Submitted") || rankMsg.includes("updated") ? "success" : "info"}>{rankMsg}</Alert>}
+          {!sheet.windowOpen && <Alert tone="warning">The results entry window is closed for this term.</Alert>}
+          {scoreError && <Alert tone="danger">{scoreError}</Alert>}
+          {scoreError && autoSaveStatus === "error" && (
+            <Button variant="outline" size="sm" onClick={() => {
+              if (!window.confirm("Discard unsaved score edits and close this sheet?")) return;
+              dirtyScores.current.clear();
+              setSheet(null);
+            }}>Discard unsaved edits</Button>
+          )}
+          {!sheet.rows.length && <EmptyState title="No active students" hint="Enroll students in this class to enter scores." />}
           {sheetLoading ? (
             <Spinner size={24} />
           ) : (
@@ -816,14 +854,14 @@ export default function ResultsPage() {
                               <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                                 <span style={{ fontSize: 10, fontWeight: 700, color: "var(--duga-muted)" }}>🔒 Locked</span>
                                 {(role === "ADMIN" || role === "OWNER") && (
-                                  <button className="duga-btn duga-btn--sm duga-btn--ghost" style={{ fontSize: 10, padding: "0 4px" }} onClick={() => reopenComponent(c.name)}>
+                                  <button className="duga-btn duga-btn--sm duga-btn--ghost" style={{ fontSize: 10, padding: "0 4px" }} disabled={saving || sheetLoading} onClick={() => reopenComponent(c.name)}>
                                     Reopen
                                   </button>
                                 )}
                               </span>
                             ) : (
                               (role === "ADMIN" || role === "OWNER") && (
-                                <button className="duga-btn duga-btn--sm duga-btn--ghost" style={{ fontSize: 10, padding: "0 4px" }} onClick={() => lockComponent(c.name)}>
+                                <button className="duga-btn duga-btn--sm duga-btn--ghost" style={{ fontSize: 10, padding: "0 4px" }} disabled={saving || sheetLoading} onClick={() => lockComponent(c.name)}>
                                   Lock
                                 </button>
                               )
@@ -856,14 +894,14 @@ export default function ResultsPage() {
                               type="number"
                               min={0}
                               max={c.max}
-                              disabled={sheet.lockedComponents.includes(c.name) || role === "ADMIN" || r.blocked}
+                              disabled={saving || !sheet.windowOpen || sheet.lockedComponents.includes(c.name) || !sheet.canEdit || r.blocked}
                               style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--duga-border)", borderRadius: 8, fontSize: 14 }}
                               value={r.scores[c.name] ?? ""}
-                              onChange={(e) => setRow(r, c.name, String(e.target.valueAsNumber ?? ""))}
+                              onChange={(e) => setRow(r, c.name, e.target.value)}
                             />
                           </td>
                         ))}
-                        <td style={{ fontWeight: 700 }}>{totals.total || "—"}</td>
+                        <td style={{ fontWeight: 700 }}>{Object.values(r.scores).some((score) => score !== null) ? totals.total : "—"}</td>
                       </tr>
                     );
                   })}
@@ -881,7 +919,7 @@ export default function ResultsPage() {
       {role === "TEACHER" && (
         <div style={{ marginBottom: 20 }}>
           <Field label="Active term" hint="Entered scores are recorded against this term.">
-            <Select value={activeTermId} onChange={(e) => setActiveTermId(e.target.value)}>
+            <Select value={activeTermId} disabled={saving || sheetLoading} onChange={(e) => void closeSheet(e.target.value)}>
               {terms.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name} · {t.session.name}{t.status === "ACTIVE" ? " (active)" : ""}
@@ -924,7 +962,7 @@ export default function ResultsPage() {
                           <span style={{ color: "var(--duga-danger)", fontWeight: 600 }}>{remaining} remaining</span>
                         )}
                       </div>
-                      <Button variant="outline" size="sm" disabled={sheetLoading} onClick={() => openSheet(cs.id)}>
+                      <Button variant="outline" size="sm" disabled={saving || sheetLoading} onClick={() => openSheet(cs.id)}>
                         <Icon name="assignment" size={14} /> {status.allSubmitted ? "View scores" : status.entered > 0 ? "Continue entering scores" : "Enter scores"}
                       </Button>
                     </Card>
@@ -986,7 +1024,7 @@ export default function ResultsPage() {
                           <td>
                             <div style={{ display: "flex", gap: 6 }}>
                               {row.status.entered > 0 && (
-                                <Button size="sm" variant="outline" disabled={sheetLoading} onClick={() => openSheet(row.classSubjectId, activeTermId)}>View</Button>
+                                <Button size="sm" variant="outline" disabled={saving || sheetLoading} onClick={() => openSheet(row.classSubjectId, activeTermId)}>View</Button>
                               )}
                               {row.status.submitted > 0 && (
                                 <Button size="sm" variant="ghost" onClick={() => reopenSubject(row.classSubjectId)}>Reopen</Button>

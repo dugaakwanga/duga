@@ -23,7 +23,8 @@ async function handle(
     return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 });
   }
   const [resource, ...rest] = params.path ?? [];
-  if (!resource || !modules[resource]) {
+  const mod = resource && Object.hasOwn(modules, resource) ? modules[resource] : undefined;
+  if (!resource || !mod) {
     return NextResponse.json({ error: "Unknown resource" }, { status: 404 });
   }
 
@@ -60,46 +61,52 @@ async function handle(
     }
   }
 
-  const mod = modules[resource];
   const query = new URL(req.url).searchParams;
-  const body: Record<string, unknown> = method === "GET" ? {} : await req.json().catch(() => ({}));
+  const payload: unknown = method === "GET" ? {} : await req.json().catch(() => ({}));
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return NextResponse.json({ ok: false, error: "Expected a JSON object" }, { status: 400 });
+  }
+  const body = payload as Record<string, unknown>;
 
   const base: Omit<Ctx, "id" | "action"> = { session, body, query, req };
 
-  const run = (fn: Handler, extra: Partial<Ctx> = {}): Promise<unknown> =>
-    fn({ ...base, ...extra } as Ctx);
+  const actionFor = (name: string) => mod.actions && Object.hasOwn(mod.actions, name) ? mod.actions[name] : undefined;
+  const run = (fn: Handler | undefined, extra: Partial<Ctx> = {}): Promise<unknown> => {
+    if (!fn) throw Object.assign(new Error("Not found"), { status: 404 });
+    return fn({ ...base, ...extra } as Ctx);
+  };
 
   try {
     let result: unknown;
     if (method === "GET") {
-      if (rest.length === 0) result = await run(mod.list!);
-      else if (rest.length === 1 && mod.actions?.[rest[0]!]) {
+      if (rest.length === 0) result = await run(mod.list);
+      else if (rest.length === 1 && actionFor(rest[0]!)) {
         // Named, non-id-scoped actions (e.g. "messages/notifications") can be
         // fetched via GET the same way they're invoked via POST — otherwise
         // this segment always falls through to mod.get() below and is
         // misread as a record id.
-        result = await run(mod.actions![rest[0]!]!, { action: rest[0] });
-      } else if (rest.length === 1) result = await run(mod.get!, { id: rest[0] });
+        result = await run(actionFor(rest[0]!), { action: rest[0] });
+      } else if (rest.length === 1) result = await run(mod.get, { id: rest[0] });
       else return NextResponse.json({ error: "Not found" }, { status: 404 });
     } else if (method === "POST") {
-      if (rest.length === 0) result = await run(mod.create!);
-      else if (rest.length === 1 && mod.actions?.[rest[0]!]) {
-        const action = mod.actions![rest[0]!]!;
+      if (rest.length === 0) result = await run(mod.create);
+      else if (rest.length === 1 && actionFor(rest[0]!)) {
+        const action = actionFor(rest[0]!);
         result = await run(action, { action: rest[0] });
-      } else if (rest.length === 2 && mod.actions?.[rest[1]!]) {
-        const action = mod.actions![rest[1]!]!;
+      } else if (rest.length === 2 && actionFor(rest[1]!)) {
+        const action = actionFor(rest[1]!);
         result = await run(action, { id: rest[0], action: rest[1] });
       } else {
         return NextResponse.json({ error: "Not found" }, { status: 404 });
       }
     } else if (method === "PATCH") {
-      if (rest.length === 1) result = await run(mod.update!, { id: rest[0] });
+      if (rest.length === 1) result = await run(mod.update, { id: rest[0] });
       // Self-scoped updates (profile, settings) target the logged-in user /
       // their own school, so no id is required.
-      else if (rest.length === 0) result = await run(mod.update!);
+      else if (rest.length === 0) result = await run(mod.update);
       else return NextResponse.json({ error: "Not found" }, { status: 404 });
     } else if (method === "DELETE") {
-      if (rest.length === 1) result = await run(mod.remove!, { id: rest[0] });
+      if (rest.length === 1) result = await run(mod.remove, { id: rest[0] });
       else return NextResponse.json({ error: "Not found" }, { status: 404 });
     } else {
       return NextResponse.json({ error: "Method not allowed" }, { status: 405 });

@@ -24,7 +24,7 @@ const VALID_TARGETS = ["ASSIGNMENT", "TEST", "CBT", "RESULTS"] as const;
 export async function assessmentWindowOpen(
   schoolId: string,
   targetType: (typeof VALID_TARGETS)[number],
-  opts: { classSubjectId?: string; section?: string | null } = {},
+  opts: { classSubjectId?: string; termId?: string | null; section?: string | null } = {},
 ): Promise<boolean> {
   const now = new Date();
   const windows = await prisma.calendarEvent.findMany({
@@ -32,14 +32,22 @@ export async function assessmentWindowOpen(
       schoolId,
       type: "ASSESSMENT_WINDOW",
       targetType,
-      ...(opts.classSubjectId ? { OR: [{ classSubjectId: opts.classSubjectId }, { classSubjectId: null }] } : { classSubjectId: null }),
+      AND: [
+        opts.classSubjectId ? { OR: [{ classSubjectId: opts.classSubjectId }, { classSubjectId: null }] } : { classSubjectId: null },
+        ...(opts.termId ? [{ OR: [{ termId: opts.termId }, { termId: null }] }] : []),
+      ],
     },
     select: { startDate: true, endDate: true, appliesToSection: true },
   });
   if (!windows.length) return true;
   const relevant = windows.filter((w) => !w.appliesToSection || !opts.section || w.appliesToSection === opts.section);
   if (!relevant.length) return true;
-  return relevant.some((w) => now >= w.startDate && now <= w.endDate);
+  return relevant.some((w) => {
+    const end = new Date(w.endDate);
+    // Calendar forms store date-only values at midnight UTC.
+    if (end.getTime() % 86400000 === 0) end.setUTCHours(23, 59, 59, 999);
+    return now >= w.startDate && now <= end;
+  });
 }
 
 export const calendarModule: Module = {

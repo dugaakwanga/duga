@@ -539,7 +539,7 @@ export const learningModule: Module = {
       await assertFeeAccess(ctx.session.user.schoolId, student, "assignments");
       const assignment = await prisma.assignment.findFirst({ where: { id: ctx.id, schoolId: ctx.session.user.schoolId, isPublished: true }, include: { classSubject: true } });
       if (!assignment || !isAssignedTo(assignment, student.id, student.currentClassGroupId)) throw new Error("Assignment not found");
-      const windowOpen = await assessmentWindowOpen(ctx.session.user.schoolId, "ASSIGNMENT", { classSubjectId: assignment.classSubjectId, section: student.section });
+      const windowOpen = await assessmentWindowOpen(ctx.session.user.schoolId, "ASSIGNMENT", { classSubjectId: assignment.classSubjectId, termId: assignment.termId, section: student.section });
       if (!windowOpen) throw new Error("The submission window for this assignment has closed.");
       const submissionContent = sanitizeLessonHtml(str(ctx.body.content));
       const submission = await prisma.assignmentSubmission.upsert({
@@ -599,7 +599,7 @@ export const learningModule: Module = {
       if (!test || !isAssignedTo(test, student.id, student.currentClassGroupId)) throw new Error("Test not found");
       if (test.startsAt && new Date() < test.startsAt) throw new Error("This test has not started yet");
       if (test.endsAt && new Date() > test.endsAt) throw new Error("This test has closed");
-      const windowOpen = await assessmentWindowOpen(ctx.session.user.schoolId, "CBT", { classSubjectId: test.classSubjectId, section: student.section });
+      const windowOpen = await assessmentWindowOpen(ctx.session.user.schoolId, "CBT", { classSubjectId: test.classSubjectId, termId: test.termId, section: student.section });
       if (!windowOpen) throw new Error("The exam window for this test has closed.");
 
       const answers = Array.isArray(ctx.body.answers) ? (ctx.body.answers as Array<{ questionId: string; selectedIndex: number }>) : [];

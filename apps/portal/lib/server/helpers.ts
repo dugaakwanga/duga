@@ -76,15 +76,16 @@ export function isStaff(role: string): boolean {
 // Explicit teacher sections are kept only when they match a school section the
 // owner created (legacy free-form values like "PRIMARY"/"SECONDARY" are dropped).
 export async function sectionsOfTeacher(teacherId: string): Promise<Section[]> {
-  const [teacher, rows] = await Promise.all([
+  const [teacher, rows, formClasses] = await Promise.all([
     prisma.teacher.findUnique({ where: { id: teacherId }, select: { sections: true, schoolId: true } }),
     prisma.classSubject.findMany({
-    where: { teacherId },
-    select: { classGroup: { select: { level: { select: { section: true } } } } },
-    distinct: ["classGroupId"],
+      where: { teacherId },
+      select: { classGroup: { select: { level: { select: { section: true } } } } },
+      distinct: ["classGroupId"],
     }),
+    prisma.classGroup.findMany({ where: { formTeacherId: teacherId }, select: { level: { select: { section: true } } } }),
   ]);
-  const fromClasses = rows.map((r) => r.classGroup.level.section);
+  const fromClasses = [...rows.map((r) => r.classGroup.level.section), ...formClasses.map((r) => r.level.section)];
   if (!teacher) return [...new Set(fromClasses)];
   const saved = await prisma.schoolSection.findMany({ where: { schoolId: teacher.schoolId }, select: { name: true } });
   const canonical = new Map(saved.map((s) => [s.name.trim().toLowerCase(), s.name]));
