@@ -398,6 +398,10 @@ export const resultsModule: Module = {
       const termId = str(ctx.body.termId);
       const rows = Array.isArray(ctx.body.rows) ? (ctx.body.rows as Array<{ studentId: string; scores?: Record<string, unknown> }>) : [];
       if (!classSubjectId || rows.length === 0 || !termId) throw new Error("classSubjectId, termId and rows required");
+      if (rows.some((row) => !row || typeof row.studentId !== "string") || new Set(rows.map((row) => row.studentId)).size !== rows.length) {
+        throw new Error("Provide one score row per student");
+      }
+      const studentIds = rows.map((row) => row.studentId);
 
       const classSubject = await prisma.classSubject.findFirst({
         where: { id: classSubjectId, schoolId },
@@ -407,16 +411,18 @@ export const resultsModule: Module = {
       const restricted = role !== "OWNER";
       if (restricted && !canTeachSubject(teacher?.id, classSubject)) throw new Error("You can only enter scores for subjects you teach");
       if (!(await prisma.term.findFirst({ where: { id: termId, schoolId }, select: { id: true } }))) throw new Error("Term not found");
-      const config = await getResultConfig(schoolId, classSubject.classGroup.level.section);
+      const section = classSubject.classGroup.level.section;
+      const [config, windowOpen] = await Promise.all([
+        getResultConfig(schoolId, section),
+        restricted ? assessmentWindowOpen(schoolId, "RESULTS", { classSubjectId, termId, section }) : true,
+      ]);
+      if (!windowOpen) throw new Error("The results entry window is closed for this term.");
       const result = await prisma.$transaction(async (tx) => {
         const roster = await tx.student.findMany({
-          where: { schoolId, currentClassGroupId: classSubject.classGroupId, status: "ACTIVE" },
+          where: { id: { in: studentIds }, schoolId, currentClassGroupId: classSubject.classGroupId, status: "ACTIVE" },
           select: { id: true, scoreEntryBlocked: true },
         });
         const rosterIds = new Set(roster.map((student) => student.id));
-        if (rows.some((row) => !row || typeof row.studentId !== "string") || new Set(rows.map((row) => row.studentId)).size !== rows.length) {
-          throw new Error("Provide one score row per student");
-        }
         const blockedIds = restricted ? new Set(roster.filter((s) => s.scoreEntryBlocked).map((s) => s.id)) : new Set<string>();
         const componentMax = new Map(config.components.map((c) => [c.name, c.max]));
         const locked = restricted ? new Set((await tx.assessmentLock.findMany({ where: { classSubjectId, termId }, select: { component: true } })).map((lock) => lock.component)) : new Set<string>();
@@ -424,13 +430,11 @@ export const resultsModule: Module = {
           if (componentMax.size > 0 && [...componentMax.keys()].every((n) => locked.has(n))) {
             throw new Error("These scores are locked. Ask an admin to reopen them.");
           }
-          const windowOpen = await assessmentWindowOpen(schoolId, "RESULTS", { classSubjectId, termId, section: classSubject.classGroup.level.section });
-          if (!windowOpen) throw new Error("The results entry window is closed for this term.");
         }
 
         // Keep existing values for untouched cells and locked components.
         const patch = ctx.body.patch === true;
-        const existing = await tx.subjectScore.findMany({ where: { schoolId, classSubjectId, termId } });
+        const existing = await tx.subjectScore.findMany({ where: { schoolId, classSubjectId, termId, studentId: { in: studentIds } } });
         const existingByStudent = new Map(existing.map((row) => [row.studentId, row]));
 
         const skipped: string[] = [];
