@@ -143,15 +143,19 @@ const COMPRESSIBLE_IMAGE_MIME = new Set(["image/jpeg", "image/png", "image/webp"
  */
 async function compressIfImage(mime: string, buffer: Buffer): Promise<{ mime: string; buffer: Buffer }> {
   if (!COMPRESSIBLE_IMAGE_MIME.has(mime)) return { mime, buffer };
+  const { default: sharp } = await import("sharp").catch((cause: unknown) => {
+    console.error("[upload] Could not load sharp", cause);
+    throw Object.assign(new Error("Photo processing is temporarily unavailable. Please try again later."), { status: 503 });
+  });
   try {
-    const sharp = (await import("sharp")).default;
     const out = await sharp(buffer)
       .rotate()
       .resize({ width: 1920, height: 1920, fit: "inside", withoutEnlargement: true })
       .webp({ quality: 82 })
       .toBuffer();
     return { mime: "image/webp", buffer: out };
-  } catch {
+  } catch (cause) {
+    console.warn("[upload] Image processing failed", { mime, bytes: buffer.length, cause });
     // sharp couldn't decode this as a real image despite the claimed
     // image/* mime type — the client-supplied Content-Type is attacker-
     // controlled, so a decode failure means the bytes aren't actually what

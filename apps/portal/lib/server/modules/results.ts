@@ -417,7 +417,7 @@ export const resultsModule: Module = {
         restricted ? assessmentWindowOpen(schoolId, "RESULTS", { classSubjectId, termId, section }) : true,
       ]);
       if (!windowOpen) throw new Error("The results entry window is closed for this term.");
-      const result = await prisma.$transaction(async (tx) => {
+      const save = () => prisma.$transaction(async (tx) => {
         const roster = await tx.student.findMany({
           where: { id: { in: studentIds }, schoolId, currentClassGroupId: classSubject.classGroupId, status: "ACTIVE" },
           select: { id: true, scoreEntryBlocked: true },
@@ -476,6 +476,10 @@ export const resultsModule: Module = {
         await Promise.all(writes);
         return { count: writes.length, skipped, ignoredComponents: [...ignoredComponents] };
       }, { isolationLevel: "Serializable" });
+      const result = await save().catch(async (error: unknown) => {
+        if (!error || typeof error !== "object" || !("code" in error) || error.code !== "P2034") throw error;
+        return save();
+      });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "results.scoresEntered", entityType: "ClassSubject", entityId: classSubjectId, meta: { termId, rows: rows.length, skipped: result.skipped.length } });
       return result;
     },

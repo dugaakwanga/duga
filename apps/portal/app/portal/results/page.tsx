@@ -546,11 +546,19 @@ export default function ResultsPage() {
             rows: changes.map(([studentId, scores]) => ({ studentId, scores })),
           },
         });
-        if (result.skipped.length || result.ignoredComponents?.length) {
-          throw new Error("Some scores could not be saved because the roster or assessment locks changed. Discard the remaining edits and reopen the sheet to see the current setup.");
-        }
+        const skipped = new Set(result.skipped);
+        const ignored = new Set(result.ignoredComponents);
         for (const [studentId, scores] of changes) {
-          if (dirtyScores.current.get(studentId) === scores) dirtyScores.current.delete(studentId);
+          const pending = dirtyScores.current.get(studentId);
+          if (!pending || skipped.has(studentId)) continue;
+          const remaining = Object.fromEntries(Object.entries(pending).filter(([component, value]) =>
+            ignored.has(component) || !Object.hasOwn(scores, component) || scores[component] !== value,
+          ));
+          if (Object.keys(remaining).length) dirtyScores.current.set(studentId, remaining);
+          else dirtyScores.current.delete(studentId);
+        }
+        if (skipped.size || ignored.size) {
+          throw new Error("Some marks were skipped because the roster or assessment locks changed. Reopen the sheet to see the current setup. Marks already saved will be kept.");
         }
         setAutoSaveStatus(dirtyScores.current.size ? "pending" : "saved");
         return true;
