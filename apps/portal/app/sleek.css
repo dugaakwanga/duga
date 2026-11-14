@@ -46,6 +46,7 @@
   box-shadow: 0 6px 20px -20px rgba(23,33,58,.42);
 }
 .portal-topbar__title { font-family: var(--font-montserrat), var(--duga-font-sans); font-size: 16px; font-weight: 750; letter-spacing: -.025em; }
+.portal-topbar__heading { display: flex; align-items: center; gap: 14px; flex: 1 1 auto; min-width: 0; }
 .portal-topbar__user-name { font-size: 12px; font-weight: 700; }
 .portal-topbar__user-role { font-size: 10px; }
 .portal-content { max-width: 1320px; padding: 28px; }
@@ -184,6 +185,9 @@
 .results-page .duga-card__header { flex-wrap: wrap; }
 .results-page .duga-card__header > div { min-width: 0; flex-wrap: wrap; }
 .results-sheet-scroll { overflow-x: auto; max-width: 100%; }
+.results-entry-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.results-entry-actions > * { flex: 0 0 auto; white-space: nowrap; }
+.results-score-input { width: 100%; padding: 6px 8px; border: 1px solid var(--duga-border); border-radius: 8px; font-size: 16px; }
 .results-sheet-tools { display: grid; gap: 12px; margin-bottom: 16px; }
 .results-sheet-tools progress { width: 100%; }
 .results-workbook-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
@@ -193,6 +197,13 @@
 .duga-global-loader__box { width: auto; height: auto; padding: 8px 14px; background: white; border-radius: 8px; }
 .duga-global-loader__box video { width: 72px; height: 72px; }
 .results-config-component { display: grid; grid-template-columns: minmax(0, 1fr) 130px 110px auto; gap: 8px; margin: 0 0 8px; align-items: center; }
+@media (max-width: 560px) {
+  .portal-topbar { height: auto; min-height: 56px; padding: 8px 14px; align-items: stretch; flex-direction: column; gap: 6px; }
+  .portal-topbar__title { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+  .portal-topbar__actions { flex-wrap: wrap; justify-content: flex-start; }
+  .portal-topbar__actions .duga-section-switcher__select { max-width: 100%; }
+  .results-entry-card .duga-card__header { flex-direction: column; align-items: stretch; }
+}
 @media (max-width: 480px) {
   .results-page { padding-bottom: 72px; }
   .results-page .duga-card__pad { padding: 12px; }

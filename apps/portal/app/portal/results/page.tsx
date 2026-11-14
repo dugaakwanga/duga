@@ -830,9 +830,10 @@ export default function ResultsPage() {
       {/* Staff can open score sheets from their teaching assignments or the submissions overview. */}
       {(role === "TEACHER" || role === "ADMIN" || role === "OWNER") && sheet && (
         <Card
+          className="results-entry-card"
           title={`${sheet.classSubject.subject} — ${sheet.classSubject.class} · ${terms.find((term) => term.id === sheet.termId)?.name ?? "Selected term"}`}
           actions={
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div className="results-entry-actions">
               {role === "TEACHER" && (
                 <>
 
@@ -952,7 +953,7 @@ export default function ResultsPage() {
                               max={c.max}
                               disabled={workbookBusy || saving || !sheet.windowOpen || sheet.lockedComponents.includes(c.name) || !sheet.canEdit || r.blocked}
                               aria-label={`${c.name} for ${r.name}, out of ${c.max}`}
-                              style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--duga-border)", borderRadius: 8, fontSize: 14 }}
+                              className="results-score-input"
                               value={r.scores[c.name] ?? ""}
                               onChange={(e) => setRow(r, c.name, e.target.value)}
                             />

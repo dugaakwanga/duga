@@ -473,6 +473,7 @@ function SectionSwitcher({ role }: { role?: string }) {
 
 export function PortalShell({ user, children }: { user: ShellUser; children: React.ReactNode }) {
   const pathname = usePathname();
+  const isResultsPage = pathname === "/portal/results";
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -633,12 +634,7 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
 
       <div className="portal-main">
         <header className="portal-topbar">
-          {/* flex + minWidth:0 so this row itself stretches to fill the
-          space .portal-topbar's space-between leaves it — without it, the
-          title inside (which shrinks/ellipsizes via CSS) has no actual
-          space to shrink FROM, since its immediate parent was sizing to
-          content instead of the row, and the title collapsed to 0 width. */}
-          <div style={{ display: "flex", alignItems: "center", gap: 14, flex: "1 1 auto", minWidth: 0 }}>
+          <div className="portal-topbar__heading">
             <button className="duga-btn duga-btn--ghost duga-btn--sm portal-mobile-toggle" onClick={() => setSidebarOpen((v) => !v)} aria-label="Toggle menu">
               <Icon name="menu" size={18} />
             </button>
@@ -686,6 +682,9 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
                 </div>
               )}
             </div>
+            {isResultsPage && (
+              <button className="duga-btn duga-btn--ghost duga-btn--sm" onClick={() => setAiOpen(true)} aria-label="Open AI assistant">AI</button>
+            )}
             <button className="duga-btn duga-btn--ghost duga-btn--sm portal-topbar__signout" onClick={logout} title="Sign out" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
               <Icon name="logout" size={18} />
               <span>Sign out</span>
@@ -779,7 +778,7 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
             </form>
           </>
         )}
-        {!aiOpen && (
+        {!aiOpen && !isResultsPage && (
           <button className="duga-ai__fab" onClick={() => setAiOpen(true)} aria-label="Open AI assistant">
             <Icon name="notes" size={20} /> AI
           </button>
