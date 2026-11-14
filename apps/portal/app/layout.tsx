@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Montserrat } from "next/font/google";
-import { LoadingOverlay, RouteLoader } from "@/components/LoadingOverlay";
+import { LoadingOverlay } from "@/components/LoadingOverlay";
 import "./globals.css";
 import "./sleek.css";
 
@@ -26,7 +26,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${montserrat.variable}`}>
       <body className="portal-body">
-        <RouteLoader />
         <LoadingOverlay />
         {children}
       </body>

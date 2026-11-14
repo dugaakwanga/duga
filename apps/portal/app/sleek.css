@@ -179,3 +179,25 @@
   .portal-content { padding: 15px; }
   .portal-content .duga-card { border-radius: 10px; }
 }
+/* Keep wide score tables inside their cards on small screens. */
+.results-page, .results-page .duga-card, .results-page .duga-card__pad { min-width: 0; }
+.results-page .duga-card__header { flex-wrap: wrap; }
+.results-page .duga-card__header > div { min-width: 0; flex-wrap: wrap; }
+.results-sheet-scroll { overflow-x: auto; max-width: 100%; }
+.results-sheet-tools { display: grid; gap: 12px; margin-bottom: 16px; }
+.results-sheet-tools progress { width: 100%; }
+.results-workbook-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.results-workbook-actions label, .results-workbook-actions input { max-width: 100%; }
+.results-workbook-actions input { display: block; margin-top: 4px; }
+.duga-global-loader { inset: auto 12px 12px auto; pointer-events: none; background: transparent; }
+.duga-global-loader__box { width: auto; height: auto; padding: 8px 14px; background: white; border-radius: 8px; }
+.duga-global-loader__box video { width: 72px; height: 72px; }
+.results-config-component { display: grid; grid-template-columns: minmax(0, 1fr) 130px 110px auto; gap: 8px; margin: 0 0 8px; align-items: center; }
+@media (max-width: 480px) {
+  .results-page { padding-bottom: 72px; }
+  .results-page .duga-card__pad { padding: 12px; }
+  .results-page .duga-card__header { padding: 12px; }
+  .results-page .duga-card__title { width: 100%; overflow-wrap: anywhere; }
+  .results-page .duga-page-header > div { min-width: 0; flex-wrap: wrap; }
+  .results-page .results-config-component { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}

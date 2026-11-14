@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { computeGrade } from "../grading";
+import { computeScoreTotals } from "../results/scoreTotals";
 import { getDefaultGradingScale, computeDaysSchoolOpened, schoolFeeLedgerFor } from "./school";
 
 // Hand-written, minimal row shapes (only the fields this file actually
@@ -146,23 +147,7 @@ export async function getResultConfig(schoolId: string, section?: string): Promi
   };
 }
 
-// Compute CA/EXAM/total from a component->score map, capped by the config.
-export function computeScoreTotals(
-  config: ResultConfigShape,
-  scores: Record<string, number | null | undefined>,
-): { ca: number; exam: number; total: number } {
-  let ca = 0;
-  let exam = 0;
-  for (const comp of config.components) {
-    const raw = scores?.[comp.name];
-    const v = typeof raw === "number" && Number.isFinite(raw) ? Math.max(0, Math.min(raw, comp.max)) : 0;
-    if (comp.category === "EXAM") exam += v;
-    else ca += v;
-  }
-  ca = Math.min(ca, config.caCap);
-  exam = Math.min(exam, config.examCap);
-  return { ca, exam, total: ca + exam };
-}
+export { computeScoreTotals } from "../results/scoreTotals";
 
 export interface CollateOptions {
   schoolId: string;
@@ -200,6 +185,7 @@ export async function collateReportCards(opts: CollateOptions) {
   // Grading scale: use the school's default scheme, or fall back to the
   // standard WAEC-style scale when none is configured so grades are never empty.
   const scale = await getDefaultGradingScale(schoolId, classGroup.level.section);
+  const resultConfig = await getResultConfig(schoolId, classGroup.level.section);
 
   // Next term (same session, next termNumber) — used for "next term's fees"
   // and the "payable on or before" date. Left null past the last term of a
@@ -272,8 +258,7 @@ export async function collateReportCards(opts: CollateOptions) {
   }
 
   // Subject score matrix built from per-student SubjectScore rows, keeping
-  // the full row (not just its total) so ca/exam/component breakdown can be
-  // snapshotted onto the report exactly as entered, not re-derived.
+  // Keep component marks so regenerated reports use the current section weights.
   const subjectScoreRows: Record<string, Map<string, { ca: number; exam: number; total: number; scores: unknown }>> = {};
   const studentTotals: Record<string, number> = {};
   const studentCount: Record<string, number> = {};
@@ -289,7 +274,13 @@ export async function collateReportCards(opts: CollateOptions) {
     const byStudent = new Map<string, { ca: number; exam: number; total: number; scores: unknown }>(
       rows.map((r: SubjectScoreRow): [string, { ca: number; exam: number; total: number; scores: unknown }] => [
         r.studentId,
-        { ca: r.caTotal, exam: r.examTotal, total: r.total, scores: r.scores },
+        {
+          ...(r.scores && typeof r.scores === "object" &&
+              resultConfig.components.some((component) => Object.hasOwn(r.scores as object, component.name))
+            ? computeScoreTotals(resultConfig, r.scores as Record<string, number>)
+            : { ca: r.caTotal, exam: r.examTotal, total: r.total }),
+          scores: r.scores,
+        },
       ]),
     );
     subjectScoreRows[key] = byStudent;

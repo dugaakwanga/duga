@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { PageHeader, Card, Badge, Table, Alert, Spinner, EmptyState, Button, Field, Select, Input, Textarea, Modal, ProgressBar, Icon } from "@duga/ui";
+import { computeScoreTotals } from "@duga/core";
 import { api } from "@/lib/client/api";
+import { downloadScoreWorkbook, readScoreWorkbook } from "@/lib/client/scoreWorkbook";
 import { useSection } from "@/components/SectionContext";
 import {
   downloadReportCardPdf,
@@ -135,20 +137,6 @@ interface EntrySheet {
   rows: EntryRow[];
 }
 
-function computeTotals(r: EntryRow, config: ResultConfig) {
-  let ca = 0;
-  let exam = 0;
-  for (const c of config.components) {
-    const raw = r.scores[c.name];
-    const v = raw == null ? 0 : Math.max(0, Math.min(raw, c.max));
-    if (c.category === "EXAM") exam += v;
-    else ca += v;
-  }
-  ca = Math.min(ca, config.caCap);
-  exam = Math.min(exam, config.examCap);
-  return { ca, exam, total: ca + exam };
-}
-
 // Orders class names like "Primary 1 A", "Primary 10 A" the way a human
 // would (numerically), rather than the lexicographic sort that would put
 // "Primary 10" before "Primary 2".
@@ -242,6 +230,41 @@ export default function ResultsPage() {
   const [scoreError, setScoreError] = useState<string | null>(null);
   const dirtyScores = useRef(new Map<string, Record<string, number | null>>());
   const saveInFlight = useRef<Promise<boolean> | null>(null);
+  const [workbookBusy, setWorkbookBusy] = useState(false);
+
+  async function handleWorkbook(file?: File) {
+    if (!sheet || !sheet.canEdit || !sheet.windowOpen || workbookBusy || saving || sheetLoading) return;
+    setWorkbookBusy(true);
+    setScoreError(null);
+    try {
+      if (!file) {
+        await downloadScoreWorkbook(sheet);
+        return;
+      }
+      const changes = await readScoreWorkbook(file, sheet);
+      if (!(await persistScores())) return;
+      const result = await api<{ count: number }>("results/saveScores", {
+        method: "POST",
+        loading: false,
+        body: {
+          classSubjectId: sheet.classSubject.id,
+          termId: sheet.termId,
+          patch: true,
+          requireAll: true,
+          components: sheet.config.components,
+          rows: Array.from(changes, ([studentId, scores]) => ({ studentId, scores })),
+        },
+      });
+      setSheet({ ...sheet, rows: sheet.rows.map((row) => ({
+        ...row, scores: { ...row.scores, ...changes.get(row.studentId) },
+      })) });
+      setRankMsg(`Saved Excel marks for ${result.count} students.`);
+    } catch (error) {
+      setScoreError(error instanceof Error ? error.message : "Could not process the Excel workbook.");
+    } finally {
+      setWorkbookBusy(false);
+    }
+  }
 
   async function downloadPdf(rc: ReportCard) {
     if (!school || !reportCardConfig) return alert("Report card settings are still loading — try again in a moment.");
@@ -771,8 +794,14 @@ export default function ResultsPage() {
     }, new Map<string, SubmissionRow[]>()),
   ).sort(([a], [b]) => classNameCompare(a, b));
 
+  const savedStudents = sheet?.rows.filter((row) =>
+    !dirtyScores.current.has(row.studentId) && sheet.config.components.every((component) => typeof row.scores[component.name] === "number"),
+  ).length ?? 0;
+  const studentCount = sheet?.rows.length ?? 0;
+  const savedPercent = studentCount ? Math.round(100 * savedStudents / studentCount) : 0;
+
   return (
-    <div>
+    <div className="results-page" aria-busy={workbookBusy}>
       <PageHeader
         title={role === "PARENT" ? "Results & Report Cards" : role === "STUDENT" ? "My Results" : "Results"}
         subtitle={
@@ -814,7 +843,7 @@ export default function ResultsPage() {
                 sheet.submitted ? (
                   <Badge tone="success">Fully locked</Badge>
                 ) : (
-                  <Button variant="accent" size="sm" onClick={submitSheet} disabled={saving || sheetLoading}>
+                  <Button variant="accent" size="sm" onClick={submitSheet} disabled={workbookBusy || saving || sheetLoading}>
                     {saving ? "Locking…" : "Lock all"}
                   </Button>
                 )
@@ -823,11 +852,11 @@ export default function ResultsPage() {
                 <>
                   {autoSaveStatus === "saved" && <span role="status">Saved</span>}
                   {autoSaveStatus !== "idle" && autoSaveStatus !== "saved" && (
-                    <Button size="sm" loading={autoSaveStatus === "saving"} disabled={saving || sheetLoading} onClick={() => void persistScores()}>Save scores</Button>
+                    <Button size="sm" loading={autoSaveStatus === "saving"} disabled={workbookBusy || saving || sheetLoading} onClick={() => void persistScores()}>Save scores</Button>
                   )}
                 </>
               )}
-              <Button variant="outline" size="sm" disabled={saving || sheetLoading} onClick={() => void closeSheet()}>Close</Button>
+              <Button variant="outline" size="sm" disabled={workbookBusy || saving || sheetLoading} onClick={() => void closeSheet()}>Close</Button>
             </div>
           }
           style={{ marginBottom: 24 }}
@@ -835,6 +864,25 @@ export default function ResultsPage() {
           {rankMsg && <Alert tone={rankMsg.includes("Saved") || rankMsg.includes("Submitted") || rankMsg.includes("updated") ? "success" : "info"}>{rankMsg}</Alert>}
           {!sheet.windowOpen && <Alert tone="warning">The results entry window is closed for this term.</Alert>}
           {scoreError && <Alert tone="danger">{scoreError}</Alert>}
+          <div className="results-sheet-tools">
+            <div role="status">
+              <progress max={100} value={savedPercent} aria-label="Students with all marks saved" />
+              <div>{savedStudents} of {studentCount} students fully saved ({savedPercent}%). {studentCount - savedStudents} remaining.</div>
+            </div>
+            {sheet.canEdit && sheet.windowOpen && !sheet.submitted && (
+              <div className="results-workbook-actions">
+                <Button size="sm" variant="outline" disabled={workbookBusy || saving} onClick={() => void handleWorkbook()}>Download Excel template</Button>
+                <label>
+                  Upload completed Excel sheet
+                  <input type="file" accept=".xlsx" disabled={workbookBusy || saving} onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    if (file) void handleWorkbook(file);
+                  }} />
+                </label>
+              </div>
+            )}
+          </div>
           {scoreError && autoSaveStatus === "error" && (
             <Button variant="outline" size="sm" onClick={() => {
               if (!window.confirm("Discard unsaved score edits and close this sheet?")) return;
@@ -846,7 +894,7 @@ export default function ResultsPage() {
           {sheetLoading ? (
             <Spinner size={24} />
           ) : (
-            <div style={{ overflowX: "auto" }}>
+            <div className="results-sheet-scroll" tabIndex={0} aria-label="Score sheet, scroll horizontally for more columns">
               <table className="duga-table" style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
                 <thead>
                   <tr>
@@ -862,14 +910,14 @@ export default function ResultsPage() {
                               <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                                 <span style={{ fontSize: 10, fontWeight: 700, color: "var(--duga-muted)" }}>🔒 Locked</span>
                                 {(role === "ADMIN" || role === "OWNER") && (
-                                  <button className="duga-btn duga-btn--sm duga-btn--ghost" style={{ fontSize: 10, padding: "0 4px" }} disabled={saving || sheetLoading} onClick={() => reopenComponent(c.name)}>
+                                  <button className="duga-btn duga-btn--sm duga-btn--ghost" style={{ fontSize: 10, padding: "0 4px" }} disabled={workbookBusy || saving || sheetLoading} onClick={() => reopenComponent(c.name)}>
                                     Reopen
                                   </button>
                                 )}
                               </span>
                             ) : (
                               (role === "ADMIN" || role === "OWNER") && (
-                                <button className="duga-btn duga-btn--sm duga-btn--ghost" style={{ fontSize: 10, padding: "0 4px" }} disabled={saving || sheetLoading} onClick={() => lockComponent(c.name)}>
+                                <button className="duga-btn duga-btn--sm duga-btn--ghost" style={{ fontSize: 10, padding: "0 4px" }} disabled={workbookBusy || saving || sheetLoading} onClick={() => lockComponent(c.name)}>
                                   Lock
                                 </button>
                               )
@@ -878,12 +926,12 @@ export default function ResultsPage() {
                         </th>
                       );
                     })}
-                    <th>Total</th>
+                    <th>CA / {sheet.config.caCap}</th><th>Exam / {sheet.config.examCap}</th><th>Total / {sheet.config.caCap + sheet.config.examCap}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sheet.rows.map((r, i) => {
-                    const totals = computeTotals(r, sheet.config);
+                    const totals = computeScoreTotals(sheet.config, r.scores);
                     return (
                       <tr key={r.studentId}>
                         <td>{i + 1}</td>
@@ -902,21 +950,22 @@ export default function ResultsPage() {
                               type="number"
                               min={0}
                               max={c.max}
-                              disabled={saving || !sheet.windowOpen || sheet.lockedComponents.includes(c.name) || !sheet.canEdit || r.blocked}
+                              disabled={workbookBusy || saving || !sheet.windowOpen || sheet.lockedComponents.includes(c.name) || !sheet.canEdit || r.blocked}
+                              aria-label={`${c.name} for ${r.name}, out of ${c.max}`}
                               style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--duga-border)", borderRadius: 8, fontSize: 14 }}
                               value={r.scores[c.name] ?? ""}
                               onChange={(e) => setRow(r, c.name, e.target.value)}
                             />
                           </td>
                         ))}
-                        <td style={{ fontWeight: 700 }}>{Object.values(r.scores).some((score) => score !== null) ? totals.total : "—"}</td>
+                        <td>{totals.ca}</td><td>{totals.exam}</td><td style={{ fontWeight: 700 }}>{Object.values(r.scores).some((score) => score !== null) ? totals.total : "—"}</td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
               <div style={{ marginTop: 10, fontSize: 12.5, color: "var(--duga-muted)" }}>
-                CA ties at {sheet.config.caCap} across its components; Exam at {sheet.config.examCap}. {role === "TEACHER" ? "An admin locks each component when it's ready — you can keep entering scores into any component until then." : "Lock a component independently, or reopen one you've already locked — the rest stay untouched either way."}
+                CA marks are weighted to {sheet.config.caCap}. Exam marks are weighted to {sheet.config.examCap}. {role === "TEACHER" ? "An admin locks each component when it's ready — you can keep entering scores into any component until then." : "Lock a component independently, or reopen one you've already locked — the rest stay untouched either way."}
               </div>
             </div>
           )}
@@ -927,7 +976,7 @@ export default function ResultsPage() {
       {role === "TEACHER" && (
         <div style={{ marginBottom: 20 }}>
           <Field label="Active term" hint="Entered scores are recorded against this term.">
-            <Select value={activeTermId} disabled={saving || sheetLoading} onChange={(e) => void closeSheet(e.target.value)}>
+            <Select value={activeTermId} disabled={workbookBusy || saving || sheetLoading} onChange={(e) => void closeSheet(e.target.value)}>
               {terms.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name} · {t.session.name}{t.status === "ACTIVE" ? " (active)" : ""}
@@ -970,7 +1019,7 @@ export default function ResultsPage() {
                           <span style={{ color: "var(--duga-danger)", fontWeight: 600 }}>{remaining} remaining</span>
                         )}
                       </div>
-                      <Button variant="outline" size="sm" disabled={saving || sheetLoading} onClick={() => openSheet(cs.id)}>
+                      <Button variant="outline" size="sm" disabled={workbookBusy || saving || sheetLoading} onClick={() => openSheet(cs.id)}>
                         <Icon name="assignment" size={14} /> {status.allSubmitted ? "View scores" : status.entered > 0 ? "Continue entering scores" : "Enter scores"}
                       </Button>
                     </Card>
@@ -1032,7 +1081,7 @@ export default function ResultsPage() {
                           <td>
                             <div style={{ display: "flex", gap: 6 }}>
                               {row.status.entered > 0 && (
-                                <Button size="sm" variant="outline" disabled={saving || sheetLoading} onClick={() => openSheet(row.classSubjectId, activeTermId)}>View</Button>
+                                <Button size="sm" variant="outline" disabled={workbookBusy || saving || sheetLoading} onClick={() => openSheet(row.classSubjectId, activeTermId)}>View</Button>
                               )}
                               {row.status.submitted > 0 && (
                                 <Button size="sm" variant="ghost" onClick={() => reopenSubject(row.classSubjectId)}>Reopen</Button>
@@ -1189,13 +1238,13 @@ export default function ResultsPage() {
               : "Editing the school-wide default configuration, used by any section without its own override. Switch to a specific section above to configure it independently."}
           </Alert>
           <Alert tone="info">
-            These are the score columns teachers enter and the maximums allowed. The totals are capped at the CA and Exam ceilings below.
+            These are the score columns teachers enter and the maximums allowed. Marks are weighted to the CA and Exam maximums below.
           </Alert>
           <div className="duga-form-grid" style={{ marginTop: 14 }}>
-            <Field label="CA ceiling (max)" hint={`Sum of all CA components is capped here (default 40).`}>
+            <Field label="CA ceiling (max)" hint={`Full marks in the CA columns earn this many points.`}>
               <Input type="number" min={0} value={String(draft.caCap)} onChange={(e) => setDraft({ ...draft, caCap: Number(e.target.valueAsNumber ?? 0) })} />
             </Field>
-            <Field label="Exam ceiling (max)" hint={`Sum of all Exam components is capped here (default 60).`}>
+            <Field label="Exam ceiling (max)" hint={`Full marks in the Exam columns earn this many points.`}>
               <Input type="number" min={0} value={String(draft.examCap)} onChange={(e) => setDraft({ ...draft, examCap: Number(e.target.valueAsNumber ?? 0) })} />
             </Field>
           </div>
@@ -1203,7 +1252,7 @@ export default function ResultsPage() {
             Components
           </div>
           {draft.components.map((c, idx) => (
-            <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 130px 110px auto", gap: 8, marginBottom: 8, alignItems: "center" }}>
+            <div key={idx} className="results-config-component">
               <Input value={c.name} placeholder="Name (e.g. CA2)" onChange={(e) => setDraft({ ...draft, components: draft.components.map((x, i) => (i === idx ? { ...x, name: e.target.value } : x)) })} />
               <Select value={c.category} onChange={(e) => setDraft({ ...draft, components: draft.components.map((x, i) => (i === idx ? { ...x, category: e.target.value as "CA" | "EXAM" } : x)) })}>
                 <option value="CA">CA</option>

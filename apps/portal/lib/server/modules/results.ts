@@ -417,6 +417,10 @@ export const resultsModule: Module = {
         restricted ? assessmentWindowOpen(schoolId, "RESULTS", { classSubjectId, termId, section }) : true,
       ]);
       if (!windowOpen) throw new Error("The results entry window is closed for this term.");
+      const requireAll = ctx.body.requireAll === true;
+      if (requireAll && JSON.stringify(ctx.body.components) !== JSON.stringify(config.components)) {
+        throw new Error("The scoring format changed. Download a fresh Excel template.");
+      }
       const save = () => prisma.$transaction(async (tx) => {
         const roster = await tx.student.findMany({
           where: { id: { in: studentIds }, schoolId, currentClassGroupId: classSubject.classGroupId, status: "ACTIVE" },
@@ -472,6 +476,9 @@ export const resultsModule: Module = {
             update: { scores: scores as never, caTotal: ca, examTotal: exam, total, enteredByTeacherId: teacher?.id },
             create: { schoolId, classSubjectId, studentId: r.studentId, termId, scores: scores as never, caTotal: ca, examTotal: exam, total, enteredByTeacherId: teacher?.id },
           }));
+        }
+        if (requireAll && (skipped.length || ignoredComponents.size)) {
+          throw new Error("The roster or assessment locks changed. Reopen the score sheet and download a fresh template.");
         }
         await Promise.all(writes);
         return { count: writes.length, skipped, ignoredComponents: [...ignoredComponents] };

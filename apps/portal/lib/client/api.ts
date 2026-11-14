@@ -77,15 +77,23 @@ export async function postForm(
   url: string,
   body: unknown,
 ): Promise<{ ok: boolean; error?: string; user?: LoginUser; [k: string]: unknown }> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 5000);
   beginLoading();
   try {
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal: controller.signal,
     });
-    return res.json();
+    return await res.json();
+  } catch {
+    return { ok: false, error: controller.signal.aborted
+      ? "The sign-in server did not respond in time. Please try again."
+      : "Could not sign in. Check your connection and try again." };
   } finally {
+    window.clearTimeout(timeout);
     endLoading();
   }
 }
