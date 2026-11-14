@@ -1,6 +1,6 @@
 import { prisma } from "./prisma";
 import { computeGrade } from "../grading";
-import { computeScoreTotals } from "../results/scoreTotals";
+import { computeScoreTotals, scoreMaximums } from "../results/scoreTotals";
 import { getDefaultGradingScale, computeDaysSchoolOpened, schoolFeeLedgerFor } from "./school";
 
 // Hand-written, minimal row shapes (only the fields this file actually
@@ -63,9 +63,6 @@ export const DEFAULT_RESULT_COMPONENTS: ResultComponent[] = [
   { name: "Assignment", category: "CA", max: 10, order: 5 },
   { name: "Exam", category: "EXAM", max: 60, order: 6 },
 ];
-
-export const DEFAULT_CA_CAP = 40;
-export const DEFAULT_EXAM_CAP = 60;
 
 // The seven traits on the school's printed behavioral-assessment grid,
 // graded A-E. Seeded onto a report card's `psychomotor` field when it's
@@ -138,12 +135,12 @@ export async function getResultConfig(schoolId: string, section?: string): Promi
     ? (await prisma.resultConfig.findUnique({ where: { schoolId_section: { schoolId, section } } })) ??
       (await prisma.resultConfig.findUnique({ where: { schoolId_section: { schoolId, section: "" } } }))
     : await prisma.resultConfig.findUnique({ where: { schoolId_section: { schoolId, section: "" } } });
+  const components = row ? normalizeComponents(row.components) : DEFAULT_RESULT_COMPONENTS;
   return {
     id: row?.id ?? "",
     schoolId,
-    caCap: row?.caCap ?? DEFAULT_CA_CAP,
-    examCap: row?.examCap ?? DEFAULT_EXAM_CAP,
-    components: row ? normalizeComponents(row.components) : DEFAULT_RESULT_COMPONENTS,
+    ...scoreMaximums(components),
+    components,
   };
 }
 

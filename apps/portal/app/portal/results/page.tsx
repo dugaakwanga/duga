@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { PageHeader, Card, Badge, Table, Alert, Spinner, EmptyState, Button, Field, Select, Input, Textarea, Modal, ProgressBar, Icon } from "@duga/ui";
-import { computeScoreTotals } from "@duga/core";
+import { computeScoreTotals, scoreMaximums } from "@duga/core";
 import { api } from "@/lib/client/api";
 import { downloadScoreWorkbook, readScoreWorkbook } from "@/lib/client/scoreWorkbook";
 import { useSection } from "@/components/SectionContext";
@@ -212,7 +212,7 @@ export default function ResultsPage() {
 
   // Admin: mark all draft report cards ready (flag to show publish buttons)
   const [configOpen, setConfigOpen] = useState(false);
-  const [draft, setDraft] = useState<{ caCap: number; examCap: number; components: ResultComponent[] }>({ caCap: 40, examCap: 60, components: [] });
+  const [draft, setDraft] = useState<{ components: ResultComponent[] }>({ components: [] });
 
   // Report card builder: which sections render on the downloaded PDF, plus
   // the school letterhead needed to render it.
@@ -692,7 +692,7 @@ export default function ResultsPage() {
   // ---- Admin: config editor ----
   function openConfig() {
     if (!config) return;
-    setDraft({ caCap: config.caCap, examCap: config.examCap, components: config.components.map((c) => ({ ...c })) });
+    setDraft({ components: config.components.map((c) => ({ ...c })) });
     setConfigOpen(true);
   }
 
@@ -702,7 +702,7 @@ export default function ResultsPage() {
     try {
       await api("results/saveConfig", {
         method: "POST",
-        body: { section: section ?? "", caCap: draft.caCap, examCap: draft.examCap, components: draft.components.map((c, i) => ({ ...c, order: i })) },
+        body: { section: section ?? "", components: draft.components.map((c, i) => ({ ...c, order: i })) },
       });
       setConfigOpen(false);
       const d = await api<{ config: ResultConfig }>("results");
@@ -794,6 +794,7 @@ export default function ResultsPage() {
     }, new Map<string, SubmissionRow[]>()),
   ).sort(([a], [b]) => classNameCompare(a, b));
 
+  const draftMaximums = scoreMaximums(draft.components);
   const savedStudents = sheet?.rows.filter((row) =>
     !dirtyScores.current.has(row.studentId) && sheet.config.components.every((component) => typeof row.scores[component.name] === "number"),
   ).length ?? 0;
@@ -959,14 +960,14 @@ export default function ResultsPage() {
                             />
                           </td>
                         ))}
-                        <td>{totals.ca}</td><td>{totals.exam}</td><td style={{ fontWeight: 700 }}>{Object.values(r.scores).some((score) => score !== null) ? totals.total : "—"}</td>
+                        <td>{sheet.config.components.some((c) => c.category === "CA" && typeof r.scores[c.name] === "number") ? totals.ca : "—"}</td><td>{sheet.config.components.some((c) => c.category === "EXAM" && typeof r.scores[c.name] === "number") ? totals.exam : "—"}</td><td style={{ fontWeight: 700 }}>{Object.values(r.scores).some((score) => score !== null) ? totals.total : "—"}</td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
               <div style={{ marginTop: 10, fontSize: 12.5, color: "var(--duga-muted)" }}>
-                CA marks are weighted to {sheet.config.caCap}. Exam marks are weighted to {sheet.config.examCap}. {role === "TEACHER" ? "An admin locks each component when it's ready — you can keep entering scores into any component until then." : "Lock a component independently, or reopen one you've already locked — the rest stay untouched either way."}
+                Marks are added directly. CA is out of {sheet.config.caCap} and exam is out of {sheet.config.examCap}. {role === "TEACHER" ? "An admin locks each component when it's ready — you can keep entering scores into any component until then." : "Lock a component independently, or reopen one you've already locked — the rest stay untouched either way."}
               </div>
             </div>
           )}
@@ -1239,16 +1240,9 @@ export default function ResultsPage() {
               : "Editing the school-wide default configuration, used by any section without its own override. Switch to a specific section above to configure it independently."}
           </Alert>
           <Alert tone="info">
-            These are the score columns teachers enter and the maximums allowed. Marks are weighted to the CA and Exam maximums below.
+            Set the maximum for each score column. The CA and exam maximums are the sums of their columns.
           </Alert>
-          <div className="duga-form-grid" style={{ marginTop: 14 }}>
-            <Field label="CA ceiling (max)" hint={`Full marks in the CA columns earn this many points.`}>
-              <Input type="number" min={0} value={String(draft.caCap)} onChange={(e) => setDraft({ ...draft, caCap: Number(e.target.valueAsNumber ?? 0) })} />
-            </Field>
-            <Field label="Exam ceiling (max)" hint={`Full marks in the Exam columns earn this many points.`}>
-              <Input type="number" min={0} value={String(draft.examCap)} onChange={(e) => setDraft({ ...draft, examCap: Number(e.target.valueAsNumber ?? 0) })} />
-            </Field>
-          </div>
+          <p>CA maximum: {draftMaximums.caCap} · Exam maximum: {draftMaximums.examCap} · Total maximum: {draftMaximums.caCap + draftMaximums.examCap}</p>
           <div style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--duga-muted)", marginTop: 16, marginBottom: 8 }}>
             Components
           </div>

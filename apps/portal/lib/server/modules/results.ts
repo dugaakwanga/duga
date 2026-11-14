@@ -1,4 +1,5 @@
 import { prisma } from "@duga/core/server";
+import { scoreMaximums } from "@duga/core";
 import { collateReportCards, resolveResultsAccess, logAudit, dispatchToMany, getDefaultGradingScale } from "@duga/core/server";
 import { getResultConfig, computeScoreTotals, type ResultComponent } from "@duga/core/server";
 import type { Module } from ".";
@@ -591,8 +592,6 @@ export const resultsModule: Module = {
       can(ctx, "results:publish");
       const schoolId = ctx.session.user.schoolId;
       const section = str(ctx.body.section) ?? "";
-      const caCap = Math.max(0, num(ctx.body.caCap) ?? 40);
-      const examCap = Math.max(0, num(ctx.body.examCap) ?? 60);
       const raw = Array.isArray(ctx.body.components) ? ctx.body.components : [];
       const components: ResultComponent[] = raw
         .map((c, i) => {
@@ -610,10 +609,11 @@ export const resultsModule: Module = {
       const hasCa = components.some((c) => c.category === "CA");
       const hasExam = components.some((c) => c.category === "EXAM");
       if (!components.length || !hasCa || !hasExam) throw new Error("Result needs at least one CA and one Exam component with a max score");
+      const { caCap, examCap } = scoreMaximums(components);
       const config = await prisma.resultConfig.upsert({
         where: { schoolId_section: { schoolId, section } },
-        update: { caCap, examCap, components: components as never },
-        create: { schoolId, section, caCap, examCap, components: components as never },
+        update: { components: components as never },
+        create: { schoolId, section, components: components as never },
       });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "results.configUpdated", entityType: "School", entityId: schoolId, meta: { section: section || "(school-wide)", caCap, examCap, count: components.length } });
       return config;
