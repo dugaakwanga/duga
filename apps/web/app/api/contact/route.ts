@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { checkRateLimit, clientIp } from "@duga/core/server";
+import { checkRateLimit, clientIp } from "@duga/core/server/rate-limit";
 import { portalUrl } from "@/lib/content";
 
 export async function POST(request: Request) {
