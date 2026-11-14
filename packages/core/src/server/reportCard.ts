@@ -55,15 +55,6 @@ export interface ResultConfigShape {
   components: ResultComponent[];
 }
 
-export const DEFAULT_RESULT_COMPONENTS: ResultComponent[] = [
-  { name: "CA1", category: "CA", max: 10, order: 1 },
-  { name: "CA2", category: "CA", max: 10, order: 2 },
-  { name: "CA3", category: "CA", max: 10, order: 3 },
-  { name: "Test", category: "CA", max: 10, order: 4 },
-  { name: "Assignment", category: "CA", max: 10, order: 5 },
-  { name: "Exam", category: "EXAM", max: 60, order: 6 },
-];
-
 // The seven traits on the school's printed behavioral-assessment grid,
 // graded A-E. Seeded onto a report card's `psychomotor` field when it's
 // first collated (left blank — "" — until the class teacher grades them);
@@ -111,7 +102,7 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
 }
 
 function normalizeComponents(value: unknown): ResultComponent[] {
-  if (!Array.isArray(value)) return DEFAULT_RESULT_COMPONENTS;
+  if (!Array.isArray(value)) return [];
   type RawComponent = { name?: unknown; category?: unknown; max?: unknown; order?: unknown };
   const comps = (value as RawComponent[])
     .filter((c: RawComponent) => typeof c.name === "string" && c.name && (c.category === "CA" || c.category === "EXAM"))
@@ -122,20 +113,18 @@ function normalizeComponents(value: unknown): ResultComponent[] {
       order: typeof c.order === "number" ? c.order : i,
     }))
     .filter((c: ResultComponent) => c.max > 0);
-  return comps.length ? comps : DEFAULT_RESULT_COMPONENTS;
+  return comps.sort((a, b) => a.order - b.order);
 }
 
 // Each school section (Primary, Secondary, ...) can have its own result
 // configuration. A section-specific row (section = e.g. "Primary") is
-// preferred; the school-wide row (section = "") is the fallback when a
-// section has no config of its own, and the hardcoded defaults are the
-// fallback below that.
+// preferred. Sections without their own configuration inherit the school-wide row.
 export async function getResultConfig(schoolId: string, section?: string): Promise<ResultConfigShape> {
   const row = section
     ? (await prisma.resultConfig.findUnique({ where: { schoolId_section: { schoolId, section } } })) ??
       (await prisma.resultConfig.findUnique({ where: { schoolId_section: { schoolId, section: "" } } }))
     : await prisma.resultConfig.findUnique({ where: { schoolId_section: { schoolId, section: "" } } });
-  const components = row ? normalizeComponents(row.components) : DEFAULT_RESULT_COMPONENTS;
+  const components = normalizeComponents(row?.components);
   return {
     id: row?.id ?? "",
     schoolId,

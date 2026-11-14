@@ -700,13 +700,12 @@ export default function ResultsPage() {
     setSaving(true);
     setError(null);
     try {
-      await api("results/saveConfig", {
+      const saved = await api<ResultConfig>("results/saveConfig", {
         method: "POST",
         body: { section: section ?? "", components: draft.components.map((c, i) => ({ ...c, order: i })) },
       });
       setConfigOpen(false);
-      const d = await api<{ config: ResultConfig }>("results");
-      setConfig(d.config);
+      setConfig(saved);
       setRankMsg("Result contents updated.");
     } catch (e) {
       setError((e as Error).message);
@@ -796,7 +795,8 @@ export default function ResultsPage() {
 
   const draftMaximums = scoreMaximums(draft.components);
   const savedStudents = sheet?.rows.filter((row) =>
-    !dirtyScores.current.has(row.studentId) && sheet.config.components.every((component) => typeof row.scores[component.name] === "number"),
+    sheet.config.components.length > 0 && !dirtyScores.current.has(row.studentId) &&
+    sheet.config.components.every((component) => typeof row.scores[component.name] === "number"),
   ).length ?? 0;
   const studentCount = sheet?.rows.length ?? 0;
   const savedPercent = studentCount ? Math.round(100 * savedStudents / studentCount) : 0;
@@ -866,12 +866,15 @@ export default function ResultsPage() {
           {rankMsg && <Alert tone={rankMsg.includes("Saved") || rankMsg.includes("Submitted") || rankMsg.includes("updated") ? "success" : "info"}>{rankMsg}</Alert>}
           {!sheet.windowOpen && <Alert tone="warning">The results entry window is closed for this term.</Alert>}
           {scoreError && <Alert tone="danger">{scoreError}</Alert>}
+          {!sheet.config.components.length && (
+            <Alert tone="warning">Ask an admin to configure assessment columns for this section.</Alert>
+          )}
           <div className="results-sheet-tools">
             <div role="status">
               <progress max={100} value={savedPercent} aria-label="Students with all marks saved" />
               <div>{savedStudents} of {studentCount} students fully saved ({savedPercent}%). {studentCount - savedStudents} remaining.</div>
             </div>
-            {sheet.canEdit && sheet.windowOpen && !sheet.submitted && (
+            {sheet.config.components.length > 0 && sheet.canEdit && sheet.windowOpen && !sheet.submitted && (
               <div className="results-workbook-actions">
                 <Button size="sm" variant="outline" disabled={workbookBusy || saving} onClick={() => void handleWorkbook()}>Download Excel template</Button>
                 <label>

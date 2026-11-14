@@ -3,7 +3,7 @@ import { scoreMaximums } from "@duga/core";
 import { collateReportCards, resolveResultsAccess, logAudit, dispatchToMany, getDefaultGradingScale } from "@duga/core/server";
 import { getResultConfig, computeScoreTotals, type ResultComponent } from "@duga/core/server";
 import type { Module } from ".";
-import { can, str, num, studentScope, resolveSection } from "../helpers";
+import { can, str, num, studentScope, resolveSection, schoolSections } from "../helpers";
 import { assessmentWindowOpen } from "./calendar";
 
 // Grade-point average for a card, derived from the school's grading scale.
@@ -418,6 +418,7 @@ export const resultsModule: Module = {
         restricted ? assessmentWindowOpen(schoolId, "RESULTS", { classSubjectId, termId, section }) : true,
       ]);
       if (!windowOpen) throw new Error("The results entry window is closed for this term.");
+      if (!config.components.length) throw new Error("Ask an admin to configure assessment columns for this section.");
       const requireAll = ctx.body.requireAll === true;
       if (requireAll && JSON.stringify(ctx.body.components) !== JSON.stringify(config.components)) {
         throw new Error("The scoring format changed. Download a fresh Excel template.");
@@ -591,24 +592,27 @@ export const resultsModule: Module = {
     saveConfig: async (ctx) => {
       can(ctx, "results:publish");
       const schoolId = ctx.session.user.schoolId;
-      const section = str(ctx.body.section) ?? "";
+      const section = (await resolveSection(ctx)) ?? "";
+      if (section && !(await schoolSections(schoolId)).includes(section)) {
+        throw new Error("Select an existing school section.");
+      }
       const raw = Array.isArray(ctx.body.components) ? ctx.body.components : [];
-      const components: ResultComponent[] = raw
-        .map((c, i) => {
+      if (!raw.length) throw new Error("Add at least one assessment column.");
+      const components: ResultComponent[] = raw.map((c, order) => {
+          if (!c || typeof c !== "object") throw new Error(`Invalid assessment in row ${order + 1}.`);
           const cc = c as Record<string, unknown>;
-          const category = cc.category === "EXAM" ? "EXAM" : "CA";
-          return {
-            name: String(cc.name ?? "").trim(),
-            category,
-            max: Math.max(0, num(cc.max) ?? 0),
-            order: typeof cc.order === "number" ? cc.order : i,
-          } as ResultComponent;
-        })
-        .filter((c) => c.name && c.max > 0);
-      if (new Set(components.map((c) => c.name)).size !== components.length) throw new Error("Assessment component names must be unique");
-      const hasCa = components.some((c) => c.category === "CA");
-      const hasExam = components.some((c) => c.category === "EXAM");
-      if (!components.length || !hasCa || !hasExam) throw new Error("Result needs at least one CA and one Exam component with a max score");
+          const name = str(cc.name);
+          const max = cc.max;
+          const category = cc.category;
+          if (!name || typeof max !== "number" || !Number.isFinite(max) || max <= 0 ||
+              (category !== "CA" && category !== "EXAM")) {
+            throw new Error(`Assessment row ${order + 1} needs a name, a positive maximum, and a valid category.`);
+          }
+          return { name, category, max, order };
+        });
+      if (new Set(components.map((c) => c.name.toLowerCase())).size !== components.length) {
+        throw new Error("Assessment names must be unique.");
+      }
       const { caCap, examCap } = scoreMaximums(components);
       const config = await prisma.resultConfig.upsert({
         where: { schoolId_section: { schoolId, section } },
@@ -616,7 +620,7 @@ export const resultsModule: Module = {
         create: { schoolId, section, components: components as never },
       });
       await logAudit({ schoolId, userId: ctx.session.user.id, action: "results.configUpdated", entityType: "School", entityId: schoolId, meta: { section: section || "(school-wide)", caCap, examCap, count: components.length } });
-      return config;
+      return { ...config, caCap, examCap, components };
     },
 
     // The report-card visual builder: which sections render on a printed

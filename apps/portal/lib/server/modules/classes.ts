@@ -203,6 +203,7 @@ export const classesModule: Module = {
       await prisma.$transaction([
         prisma.schoolSection.updateMany({ where: { schoolId, name: oldName }, data: { name: newName } }),
         prisma.classLevel.updateMany({ where: { schoolId, section: oldName }, data: { section: newName } }),
+        prisma.resultConfig.updateMany({ where: { schoolId, section: oldName }, data: { section: newName } }),
         prisma.subject.updateMany({ where: { schoolId, section: oldName }, data: { section: newName } }),
         prisma.student.updateMany({ where: { schoolId, section: oldName }, data: { section: newName } }),
       ]);
