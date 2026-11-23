@@ -65,7 +65,7 @@ export default function MySubjectsPage() {
               {active.code ? `Code: ${active.code} · ` : ""}{active.rows.length} class{active.rows.length === 1 ? "" : "es"}
             </span>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(100%, 280px),1fr))", gap: 16 }}>
             {active.rows.map((s) => (
               <Card key={s.id} title={`${s.classGroup.level.name} ${s.classGroup.name}`}>
                 <div style={{ fontSize: 13, color: "var(--duga-muted)", marginBottom: 10 }}>
@@ -82,7 +82,7 @@ export default function MySubjectsPage() {
           </div>
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(100%, 240px),1fr))", gap: 16 }}>
           {grouped.map((subj) => (
             <button key={subj.name} className="classes-drill-card" onClick={() => setOpenSubject(subj.name)}>
               <div className="classes-drill-card__icon"><Icon name="classes" size={20} /></div>

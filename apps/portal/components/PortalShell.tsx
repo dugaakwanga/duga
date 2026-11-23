@@ -120,7 +120,7 @@ const STAFF_NAV: NavSection[] = [
       { href: "/portal/announcements", label: "Announcements", icon: "announcements", perm: "announcements:view", feature: "messaging" },
       { href: "/portal/messages", label: "Messages", icon: "messages", perm: "messaging:use", feature: "messaging" },
       { href: "/portal/notifications", label: "Notifications", icon: "notifications", feature: "messaging" },
-      { href: "/portal/family-corner", label: "Family Corner", icon: "notes", perm: "familyCorner:manage" },
+      { href: "/portal/family-corner", label: "Family Corner", icon: "notes", perm: "familyCorner:view" },
     ],
   },
   {

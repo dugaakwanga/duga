@@ -163,7 +163,7 @@ export default function FamilyCornerPage() {
       ) : filtered.length === 0 ? (
         <EmptyState title="Nothing here yet" hint={isManager ? "Add the first piece of content with the button above." : "Check back soon — new content is added regularly."} />
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(100%, 260px),1fr))", gap: 16 }}>
           {filtered.map((item) => (
             <Card key={item.id} className="classes-card">
               {item.imageUrl && (

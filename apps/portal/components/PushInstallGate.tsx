@@ -4,23 +4,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Card, Button, Alert, Icon } from "@duga/ui";
 import { isStandalone, isIos, pushConfigured, requestPermissionAndRegister, preloadMessaging, startForegroundPushListener, wasPushGranted } from "@/lib/client/push";
+import { isMobileDevice, requiresMobileInstall } from "@/lib/client/device";
 
 interface InstallPromptEvent extends Event {
   prompt: () => void;
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
-// Roles forced through "install to Home Screen" + "turn on notifications" —
-// parents (gate clock-in/out alerts, the original reason push exists — see
-// notifyParents() in security.ts) and teachers. Students and staff who
-// manage the school (owner/admin/bursar) are exempt.
-const FORCED_ROLES = ["PARENT", "TEACHER"];
-
 // Re-checks on every mount/focus, so if the icon gets deleted, the next open
 // (necessarily back in a plain browser tab) fails the standalone check and
 // this reappears on its own — no separate "detect uninstall" logic needed.
 export function PushInstallGate({ role }: { role: string }) {
   const pathname = usePathname();
+  const [mobile, setMobile] = useState<boolean | null>(null);
   const [standalone, setStandalone] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission | "unsupported">("default");
   const [installEvent, setInstallEvent] = useState<InstallPromptEvent | null>(null);
@@ -31,10 +27,12 @@ export function PushInstallGate({ role }: { role: string }) {
   const registeredRef = useRef(false);
   const foregroundListenerRef = useRef(false);
 
-  // Don't gate: anyone not in FORCED_ROLES, the set-password form itself (so
-  // it isn't blocked before they can even set a password), or a school that
-  // hasn't configured Firebase yet — nothing here would work anyway.
-  const skip = !FORCED_ROLES.includes(role) || pathname.startsWith("/portal/set-password") || !pushConfigured();
+  const alertsConfigured = pushConfigured();
+  const skip = !requiresMobileInstall(role, mobile === true, pathname);
+
+  useEffect(() => {
+    setMobile(isMobileDevice(navigator));
+  }, []);
 
   const check = useCallback(() => {
     setStandalone(isStandalone());
@@ -49,7 +47,7 @@ export function PushInstallGate({ role }: { role: string }) {
     // reaches "Turn on alerts" (after doing Step 1), that work is already
     // done instead of adding a cold-fetch delay on top of the permission
     // prompt + token exchange.
-    preloadMessaging();
+    if (alertsConfigured) preloadMessaging();
     const onVisible = () => check();
     const onInstallPrompt = (e: Event) => {
       e.preventDefault();
@@ -58,29 +56,31 @@ export function PushInstallGate({ role }: { role: string }) {
     window.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);
     window.addEventListener("beforeinstallprompt", onInstallPrompt);
+    window.addEventListener("appinstalled", onVisible);
     return () => {
       window.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
       window.removeEventListener("beforeinstallprompt", onInstallPrompt);
+      window.removeEventListener("appinstalled", onVisible);
     };
-  }, [skip, check]);
+  }, [skip, check, alertsConfigured]);
 
   // Once both conditions are already met, keep the token fresh silently —
   // no need to re-prompt someone who already has everything turned on.
   useEffect(() => {
-    if (skip || !standalone || permission !== "granted" || registeredRef.current) return;
+    if (skip || !alertsConfigured || !standalone || permission !== "granted" || registeredRef.current) return;
     registeredRef.current = true;
     requestPermissionAndRegister();
-  }, [skip, standalone, permission]);
+  }, [skip, standalone, permission, alertsConfigured]);
 
   // FCM's service worker only shows a push while the app is in the
   // background — a message that arrives while a parent has the portal
   // actively open needs this listener instead, or it's silently dropped.
   useEffect(() => {
-    if (skip || !standalone || permission !== "granted" || foregroundListenerRef.current) return;
+    if (skip || !alertsConfigured || !standalone || permission !== "granted" || foregroundListenerRef.current) return;
     foregroundListenerRef.current = true;
     startForegroundPushListener();
-  }, [skip, standalone, permission]);
+  }, [skip, standalone, permission, alertsConfigured]);
 
   // Trust a confirmed past grant over a live read that came back "default"
   // instead of "granted" — seen on some Android WebAPK launches right after
@@ -90,7 +90,7 @@ export function PushInstallGate({ role }: { role: string }) {
   const effectivelyGranted = permission === "granted" || (permission !== "denied" && permission !== "unsupported" && wasPushGranted());
 
   if (skip) return null;
-  if (standalone && effectivelyGranted) return null;
+  if (standalone && (!alertsConfigured || effectivelyGranted)) return null;
   // iOS Safari doesn't expose the Notification API at all until the site is
   // actually running standalone (added to the Home Screen) — so "unsupported"
   // before that point just means "not installed yet," not "never possible."
@@ -143,10 +143,11 @@ export function PushInstallGate({ role }: { role: string }) {
         display: "grid",
         placeItems: "center",
         padding: 16,
+        overflowY: "auto",
       }}
     >
       <div style={{ width: "100%", maxWidth: 440, minWidth: 0 }}>
-        <Card title="One more step — instant alerts">
+        <Card title="Add the portal to your Home Screen">
           {/* gridTemplateColumns: "minmax(0,1fr)" (not just "grid") on every
           grid wrapper below — without it, a long line of text can size the
           column to its full unwrapped width instead of shrinking to fit a
@@ -217,7 +218,7 @@ export function PushInstallGate({ role }: { role: string }) {
               </div>
             )}
 
-            {standalone && permission !== "granted" && (
+            {alertsConfigured && standalone && permission !== "granted" && (
               <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr)", gap: 10 }}>
                 <div style={{ fontWeight: 600, fontSize: 13.5, display: "flex", alignItems: "center", gap: 6 }}>
                   <Icon name="attendance" size={16} /> Step 2: Turn on alerts

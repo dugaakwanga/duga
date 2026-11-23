@@ -353,7 +353,7 @@ export default function MyClassPage() {
 
           {data.subjects.length > 0 && (
             <Card title="Subject breakdown" style={{ marginTop: 18 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(100%, 240px),1fr))", gap: 12 }}>
                 {data.subjects.map((s) => (
                   <div key={s.name} style={{ border: "1px solid var(--duga-border)", borderRadius: 10, padding: "10px 12px" }}>
                     <div style={{ fontWeight: 700, fontSize: 13.5 }}>{s.name}</div>

@@ -246,7 +246,7 @@ export const dashboardModule: Module = {
           orderBy: { scheduledAt: "asc" },
           take: 5,
         }),
-        prisma.reportCard.findFirst({ where: { studentId: student.id }, orderBy: { createdAt: "desc" } }),
+        prisma.reportCard.findFirst({ where: { schoolId, studentId: student.id, isPublished: true }, orderBy: { createdAt: "desc" } }),
         financeOn
           ? prisma.invoice.findFirst({ where: { studentId: student.id }, orderBy: { createdAt: "desc" } })
           : Promise.resolve(null),

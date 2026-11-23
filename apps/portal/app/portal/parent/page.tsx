@@ -173,7 +173,7 @@ export default function ParentHomePage() {
                     )}
 
                     {s.feeBalance != null && Number(s.feeBalance) > 0 && (
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, background: "var(--duga-danger-soft)", borderRadius: 10, padding: "8px 12px" }}>
+                      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 8, background: "var(--duga-danger-soft)", borderRadius: 10, padding: "8px 12px" }}>
                         <span style={{ fontSize: 12.5, color: "var(--duga-danger)", fontWeight: 700 }}>Fees owing</span>
                         <span style={{ fontSize: 13.5, fontWeight: 800, color: "var(--duga-danger)" }}>{naira(s.feeBalance)}</span>
                       </div>

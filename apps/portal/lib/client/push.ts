@@ -34,7 +34,8 @@ export function isStandalone(): boolean {
 
 export function isIos(): boolean {
   if (typeof navigator === "undefined") return false;
-  return /iphone|ipad|ipod/i.test(navigator.userAgent);
+  return /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+    (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 }
 
 export function pushConfigured(): boolean {
