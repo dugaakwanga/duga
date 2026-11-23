@@ -1,4 +1,5 @@
 "use client";
+import { paymentDateInput } from "@/lib/paymentDate";
 
 import { useCallback, useEffect, useState } from "react";
 import { PageHeader, Card, Badge, Table, Alert, Spinner, EmptyState, Stat, Button, Icon, Modal, Field, Input, Select } from "@duga/ui";
@@ -155,7 +156,7 @@ export default function FeesPage() {
   const [schoolFeeStudents, setSchoolFeeStudents] = useState<SchoolFeeStudent[]>([]);
   const [byChild, setByChild] = useState<ChildFeeSummary[] | undefined>(undefined);
   const [payTarget, setPayTarget] = useState<string | null>(null);
-  const [payForm, setPayForm] = useState({ amount: "", method: "CASH", paidAt: new Date().toLocaleDateString("en-CA") });
+  const [payForm, setPayForm] = useState({ amount: "", method: "CASH", paidAt: paymentDateInput() });
   const [installmentTarget, setInstallmentTarget] = useState<Invoice | null>(null);
   const [installmentCount, setInstallmentCount] = useState("3");
   const [installmentBusy, setInstallmentBusy] = useState(false);
@@ -208,7 +209,18 @@ export default function FeesPage() {
     } catch (error) { setError((error as Error).message); }
     finally { setCorrectionBusy(false); }
   }
-  const [standaloneForm, setStandaloneForm] = useState({ amount: "", method: "CASH", paidAt: new Date().toLocaleDateString("en-CA") });
+  async function deleteRecordedPayment(payment: typeof editPayments[number]) {
+    if (!window.confirm("Delete this recorded payment? The student's balance will be recalculated and the deletion will appear in the audit log.")) return;
+    setCorrectionBusy(true);
+    setError(null);
+    try {
+      await api(`fees/${payment.id}/deleteManualPayment`, { method: "POST" });
+      setEditPayments((payments) => payments.filter((p) => p.id !== payment.id));
+      await load();
+    } catch (error) { setError((error as Error).message); }
+    finally { setCorrectionBusy(false); }
+  }
+  const [standaloneForm, setStandaloneForm] = useState({ amount: "", method: "CASH", paidAt: paymentDateInput() });
   const [standaloneBusy, setStandaloneBusy] = useState(false);
   const isStaff = role === "OWNER" || role === "BURSAR";
   const { section } = useSection();
@@ -306,7 +318,7 @@ export default function FeesPage() {
 
   function openRecordPayment(invoiceId: string) {
     setPayTarget(invoiceId);
-    setPayForm({ amount: "", method: "CASH", paidAt: new Date().toLocaleDateString("en-CA") });
+    setPayForm({ amount: "", method: "CASH", paidAt: paymentDateInput() });
   }
 
   async function submitRecordPayment() {
@@ -333,7 +345,7 @@ export default function FeesPage() {
     setStudentSearch("");
     setStudentResults([]);
     setStandaloneStudent(null);
-    setStandaloneForm({ amount: "", method: "CASH", paidAt: new Date().toLocaleDateString("en-CA") });
+    setStandaloneForm({ amount: "", method: "CASH", paidAt: paymentDateInput() });
   }
 
   async function searchStudentsForPayment() {
@@ -604,8 +616,11 @@ export default function FeesPage() {
         {editPayments.map((payment, index) => (
           <div key={payment.id} className="fee-payment-correction">
             <Field label="Amount received"><Input type="number" min={0.01} disabled={payment.gateway !== "MANUAL"} value={String(payment.amount)} onChange={(e) => setEditPayments(editPayments.map((p, i) => i === index ? { ...p, amount: e.target.value } : p))} /></Field>
-            <Field label="Date paid"><Input type="date" disabled={payment.gateway !== "MANUAL"} value={payment.paidAt?.slice(0, 10) ?? ""} onChange={(e) => setEditPayments(editPayments.map((p, i) => i === index ? { ...p, paidAt: e.target.value } : p))} /></Field>
-            {payment.gateway === "MANUAL" && <Button disabled={correctionBusy} onClick={() => void saveCorrection(payment)}>Save payment correction</Button>}
+            <Field label="Date paid"><Input type="date" disabled={payment.gateway !== "MANUAL"} value={paymentDateInput(payment.paidAt)} onChange={(e) => setEditPayments(editPayments.map((p, i) => i === index ? { ...p, paidAt: e.target.value } : p))} /></Field>
+            {payment.gateway === "MANUAL" && <div className="fee-student-actions">
+              <Button disabled={correctionBusy} onClick={() => void saveCorrection(payment)}>Save payment correction</Button>
+              <Button variant="danger" disabled={correctionBusy} onClick={() => void deleteRecordedPayment(payment)}>Delete payment</Button>
+            </div>}
           </div>
         ))}
       </Modal>
@@ -1052,7 +1067,7 @@ export default function FeesPage() {
           <Select value={payForm.method} onChange={(e) => setPayForm({ ...payForm, method: e.target.value })}>
             <option value="CASH">Cash</option>
             <option value="BANK_TRANSFER">Bank transfer</option>
-            <option value="TRANSFER">Transfer</option>
+            <option value="CARD">POS</option>
             <option value="USSD">USSD</option>
           </Select>
         </Field>
@@ -1113,7 +1128,7 @@ export default function FeesPage() {
               <Select value={standaloneForm.method} onChange={(e) => setStandaloneForm({ ...standaloneForm, method: e.target.value })}>
                 <option value="CASH">Cash</option>
                 <option value="BANK_TRANSFER">Bank transfer</option>
-                <option value="TRANSFER">Transfer</option>
+                <option value="CARD">POS</option>
                 <option value="USSD">USSD</option>
               </Select>
             </Field>

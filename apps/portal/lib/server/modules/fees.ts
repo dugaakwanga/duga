@@ -3,6 +3,7 @@ import { generateReference, formatNaira } from "@duga/core";
 import type { Module } from ".";
 import { can, str, num, studentScope, resolveSection, financeManager, otherFeesManager } from "../helpers";
 import { getSmsFeeReminderCopy } from "./emailTemplates";
+import { parsePaymentDate } from "@/lib/paymentDate";
 
 async function assertFinanceManager(ctx: { session: { user: { role: string; schoolId: string } } }) {
   if (!(await financeManager(ctx as Parameters<typeof financeManager>[0]))) {
@@ -446,39 +447,67 @@ export const feesModule: Module = {
       if (!student) throw new Error("Student not found");
       const payments = await prisma.payment.findMany({
         where: { schoolId: student.schoolId, studentId: student.id, invoiceId: null, status: "SUCCESS" },
-        select: { id: true, amount: true, paidAt: true, gateway: true, reference: true },
+        select: { id: true, amount: true, paidAt: true, createdAt: true, gateway: true, reference: true },
         orderBy: { paidAt: "desc" },
       });
-      return { feeAmount: Number(student.feeAmount), payments };
+      return { feeAmount: Number(student.feeAmount), payments: payments.map((p) => ({ ...p, paidAt: p.paidAt ?? p.createdAt })) };
     },
     correctStudentFee: async (ctx) => {
       await assertFinanceManager(ctx);
       const schoolId = ctx.session.user.schoolId;
       const amount = num(ctx.body.amount);
-      if (amount === undefined || amount < 0) throw new Error("Enter a valid fee amount");
+      if (amount === undefined || !Number.isFinite(amount) || amount < 0) throw new Error("Enter a valid fee amount");
       const student = await prisma.student.findFirst({ where: { id: ctx.id, schoolId } });
       if (!student) throw new Error("Student not found");
-      const updated = await prisma.student.updateMany({ where: { id: student.id, schoolId, feeAmount: student.feeAmount }, data: { feeAmount: amount } });
-      if (!updated.count) throw new Error("The fee changed while you were editing. Reopen the student and try again.");
+      await prisma.$transaction(async (tx) => {
+        const updated = await tx.student.updateMany({ where: { id: student.id, schoolId, feeAmount: student.feeAmount }, data: { feeAmount: amount } });
+        if (!updated.count) throw new Error("The fee changed while you were editing. Reopen the student and try again.");
+        await tx.auditLog.create({ data: { schoolId, userId: ctx.session.user.id, action: "fees.feeCorrected", entityType: "Student", entityId: student.id, meta: { before: Number(student.feeAmount), after: amount } } });
+      });
       await recomputeFeeAccess(schoolId, student.id);
-      await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.feeCorrected", entityType: "Student", entityId: student.id, meta: { before: Number(student.feeAmount), after: amount } });
       return { ok: true };
     },
     correctManualPayment: async (ctx) => {
       await assertFinanceManager(ctx);
       const schoolId = ctx.session.user.schoolId;
       const amount = num(ctx.body.amount);
-      const paidAt = new Date(String(ctx.body.paidAt));
-      if (amount === undefined || amount <= 0 || !Number.isFinite(paidAt.getTime())) throw new Error("Enter a positive payment and valid payment date");
+      const paidAt = parsePaymentDate(ctx.body.paidAt);
+      if (amount === undefined || !Number.isFinite(amount) || amount <= 0) throw new Error("Enter a positive payment amount");
       const payment = await prisma.payment.findFirst({ where: { id: ctx.id, schoolId, gateway: "MANUAL", invoiceId: null, status: "SUCCESS" } });
       if (!payment) throw new Error("Only manually recorded school-fee payments can be corrected here");
-      const updated = await prisma.payment.updateMany({
-        where: { id: payment.id, schoolId, gateway: "MANUAL", status: "SUCCESS", amount: payment.amount, paidAt: payment.paidAt },
-        data: { amount, paidAt },
+      await prisma.$transaction(async (tx) => {
+        const updated = await tx.payment.updateMany({
+          where: { id: payment.id, schoolId, gateway: "MANUAL", status: "SUCCESS", amount: payment.amount, paidAt: payment.paidAt },
+          data: { amount, paidAt },
+        });
+        if (!updated.count) throw new Error("The payment changed while you were editing. Reopen the student and try again.");
+        await tx.auditLog.create({ data: {
+          schoolId, userId: ctx.session.user.id, action: "fees.paymentCorrected",
+          entityType: "Payment", entityId: payment.id,
+          meta: { before: Number(payment.amount), after: amount, oldPaidAt: payment.paidAt?.toISOString() ?? null, paidAt: paidAt.toISOString() },
+        } });
       });
-      if (!updated.count) throw new Error("The payment changed while you were editing. Reopen the student and try again.");
       await recomputeFeeAccess(schoolId, payment.studentId);
-      await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.paymentCorrected", entityType: "Payment", entityId: payment.id, meta: { before: Number(payment.amount), after: amount, oldPaidAt: payment.paidAt?.toISOString(), paidAt: paidAt.toISOString() } });
+      return { ok: true };
+    },
+    deleteManualPayment: async (ctx) => {
+      await assertFinanceManager(ctx);
+      const schoolId = ctx.session.user.schoolId;
+      const payment = await prisma.payment.findFirst({
+        where: { id: ctx.id, schoolId, gateway: "MANUAL", invoiceId: null },
+      });
+      if (!payment) throw new Error("Manual school-fee payment not found");
+      await prisma.$transaction(async (tx) => {
+        const removed = await tx.payment.updateMany({
+          where: { id: payment.id, schoolId, gateway: "MANUAL", status: "SUCCESS" },
+          data: { status: "FAILED" },
+        });
+        if (removed.count) await tx.auditLog.create({
+          data: { schoolId, userId: ctx.session.user.id, action: "fees.manualPaymentDeleted", entityType: "Payment", entityId: payment.id,
+            meta: { studentId: payment.studentId, amount: Number(payment.amount), method: payment.method, reference: payment.reference, paidAt: payment.paidAt?.toISOString() ?? null } },
+        });
+      });
+      await recomputeFeeAccess(schoolId, payment.studentId);
       return { ok: true };
     },
     // Bursar/owner: generate invoices for all students of a class (or level) from fee structures
@@ -749,7 +778,7 @@ export const feesModule: Module = {
       const description = str(ctx.body.description);
       const amount = num(ctx.body.amount);
       if (!description) throw new Error("A description is required");
-      if (amount === undefined || amount <= 0) throw new Error("A positive amount is required");
+      if (amount === undefined || !Number.isFinite(amount) || amount <= 0) throw new Error("A positive amount is required");
 
       let invoiceId = str(ctx.body.invoiceId);
       if (!invoiceId) {
@@ -936,7 +965,7 @@ export const feesModule: Module = {
       if (!student) throw new Error("Student not found");
       const ledger = (await schoolFeeLedgerFor(schoolId, [student])).get(student.id)!;
       const amount = num(ctx.body.amount) ?? ledger.owing;
-      if (amount === undefined || amount <= 0) throw new Error("Nothing is currently owed on the school fee");
+      if (amount === undefined || !Number.isFinite(amount) || amount <= 0) throw new Error("Nothing is currently owed on the school fee");
       if (amount > ledger.owing) throw new Error("Amount cannot exceed the outstanding school-fee balance");
 
       const reference = generateReference("PYM");
@@ -994,8 +1023,7 @@ export const feesModule: Module = {
     // there's no invoice to apply it to — either way it still advances the
     // student's fee-access window via grantFeeAccessForPayment.
     recordManual: async (ctx) => {
-      const paidAt = ctx.body.paidAt ? new Date(String(ctx.body.paidAt)) : new Date();
-      if (!Number.isFinite(paidAt.getTime())) throw new Error("Invalid payment date");
+      const paidAt = ctx.body.paidAt === undefined ? new Date() : parsePaymentDate(ctx.body.paidAt);
       const schoolId = ctx.session.user.schoolId;
       const invoiceId = str(ctx.body.invoiceId) ?? ctx.id;
       // A payment against an invoice is an "other fees" collection (book
@@ -1005,7 +1033,7 @@ export const feesModule: Module = {
       if (invoiceId) await assertOtherFeesManager(ctx);
       else await assertFinanceManager(ctx);
       const amount = num(ctx.body.amount);
-      if (amount === undefined || amount <= 0) throw new Error("A positive amount is required");
+      if (amount === undefined || !Number.isFinite(amount) || amount <= 0) throw new Error("A positive amount is required");
 
       // Explicit installment coverage window, e.g. "this payment covers Term
       // 2" — when given, this overrides the proportional amount-based
@@ -1047,32 +1075,35 @@ export const feesModule: Module = {
       }
 
       const reference = generateReference("MAN");
-      const payment = await prisma.payment.create({
-        data: {
-          schoolId,
-          // An invoice, when given, belongs to exactly one student; never
-          // accept a client-supplied student id alongside an invoice, which
-          // could misapply fee access to the wrong student.
-          studentId,
-          invoiceId: invoiceRow?.id,
-          termId: invoiceRow?.termId ?? str(ctx.body.termId),
-          amount,
-          method: (str(ctx.body.method) as "CASH") ?? "CASH",
-          status: "SUCCESS",
-          reference,
-          gateway: "MANUAL",
-          paidAt,
-          receiptNumber: `RCPT-${reference.slice(-6)}`,
-          recordedByUserId: ctx.session.user.id,
-          coversFrom,
-          coversTo,
-          installmentId: installmentRow?.id,
-        },
+      const payment = await prisma.$transaction(async (tx) => {
+        const recorded = await tx.payment.create({
+          data: {
+            schoolId,
+            // An invoice, when given, belongs to exactly one student; never
+            // accept a client-supplied student id alongside an invoice, which
+            // could misapply fee access to the wrong student.
+            studentId,
+            invoiceId: invoiceRow?.id,
+            termId: invoiceRow?.termId ?? str(ctx.body.termId),
+            amount,
+            method: (str(ctx.body.method) as "CASH") ?? "CASH",
+            status: "SUCCESS",
+            reference,
+            gateway: "MANUAL",
+            paidAt,
+            receiptNumber: `RCPT-${reference.slice(-6)}`,
+            recordedByUserId: ctx.session.user.id,
+            coversFrom,
+            coversTo,
+            installmentId: installmentRow?.id,
+          },
+        });
+        await tx.auditLog.create({ data: { schoolId, userId: ctx.session.user.id, action: "fees.manualPayment", entityType: "Payment", entityId: recorded.id, meta: { studentId, amount, method: recorded.method, paidAt: paidAt.toISOString() } } });
+        return recorded;
       });
       const invoice = invoiceRow ? await refreshInvoice(invoiceRow.id) : null;
       const installment = installmentRow ? await refreshInstallment(installmentRow.id) : null;
       const access = await recomputeFeeAccess(schoolId, studentId);
-      await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.manualPayment", entityType: "Payment", entityId: payment.id, meta: { amount, coversTo: coversTo?.toISOString(), installmentId: installmentRow?.id } });
 
       // Confirm the amount just accepted (not just the generic "you still
       // owe" reminder) to both the student and the parent — a bursar
