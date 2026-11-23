@@ -473,7 +473,6 @@ function SectionSwitcher({ role }: { role?: string }) {
 
 export function PortalShell({ user, children }: { user: ShellUser; children: React.ReactNode }) {
   const pathname = usePathname();
-  const isResultsPage = ["/portal/results", "/portal/books", "/portal/fees"].includes(pathname);
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -682,9 +681,7 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
                 </div>
               )}
             </div>
-            {isResultsPage && (
               <button className="duga-btn duga-btn--ghost duga-btn--sm" onClick={() => setAiOpen(true)} aria-label="Open AI assistant">AI</button>
-            )}
             <button className="duga-btn duga-btn--ghost duga-btn--sm portal-topbar__signout" onClick={logout} title="Sign out" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
               <Icon name="logout" size={18} />
               <span>Sign out</span>
@@ -777,11 +774,6 @@ export function PortalShell({ user, children }: { user: ShellUser; children: Rea
               </button>
             </form>
           </>
-        )}
-        {!aiOpen && !isResultsPage && (
-          <button className="duga-ai__fab" onClick={() => setAiOpen(true)} aria-label="Open AI assistant">
-            <Icon name="notes" size={20} /> AI
-          </button>
         )}
       </div>
       </div>
