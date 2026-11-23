@@ -155,7 +155,7 @@ export default function FeesPage() {
   const [schoolFeeStudents, setSchoolFeeStudents] = useState<SchoolFeeStudent[]>([]);
   const [byChild, setByChild] = useState<ChildFeeSummary[] | undefined>(undefined);
   const [payTarget, setPayTarget] = useState<string | null>(null);
-  const [payForm, setPayForm] = useState({ amount: "", method: "CASH", coversTo: "" });
+  const [payForm, setPayForm] = useState({ amount: "", method: "CASH", paidAt: new Date().toLocaleDateString("en-CA") });
   const [installmentTarget, setInstallmentTarget] = useState<Invoice | null>(null);
   const [installmentCount, setInstallmentCount] = useState("3");
   const [installmentBusy, setInstallmentBusy] = useState(false);
@@ -178,7 +178,37 @@ export default function FeesPage() {
   const [studentResults, setStudentResults] = useState<Array<{ id: string; admissionNumber: string; user: { firstName: string; lastName: string } }>>([]);
   const [studentSearchBusy, setStudentSearchBusy] = useState(false);
   const [standaloneStudent, setStandaloneStudent] = useState<{ id: string; name: string } | null>(null);
-  const [standaloneForm, setStandaloneForm] = useState({ amount: "", method: "CASH", coversTo: "" });
+  const [editStudent, setEditStudent] = useState<SchoolFeeStudent | null>(null);
+  const [editAmount, setEditAmount] = useState("");
+  const [editPayments, setEditPayments] = useState<Array<{ id: string; amount: number | string; paidAt: string | null; gateway: string }>>([]);
+  const [correctionBusy, setCorrectionBusy] = useState(false);
+
+  async function openFeeCorrection(student: SchoolFeeStudent) {
+    setCorrectionBusy(true);
+    setError(null);
+    try {
+      const data = await api<{ feeAmount: number; payments: typeof editPayments }>(`fees/${student.id}/studentFinance`, { method: "POST" });
+      setEditAmount(String(data.feeAmount));
+      setEditPayments(data.payments);
+      setEditStudent(student);
+    } catch (error) { setError((error as Error).message); }
+    finally { setCorrectionBusy(false); }
+  }
+
+  async function saveCorrection(payment?: typeof editPayments[number]) {
+    if (!editStudent) return;
+    setCorrectionBusy(true);
+    try {
+      await api(payment ? `fees/${payment.id}/correctManualPayment` : `fees/${editStudent.id}/correctStudentFee`, {
+        method: "POST",
+        body: payment ? { amount: Number(payment.amount), paidAt: payment.paidAt } : { amount: Number(editAmount) },
+      });
+      await load();
+      setEditStudent(null);
+    } catch (error) { setError((error as Error).message); }
+    finally { setCorrectionBusy(false); }
+  }
+  const [standaloneForm, setStandaloneForm] = useState({ amount: "", method: "CASH", paidAt: new Date().toLocaleDateString("en-CA") });
   const [standaloneBusy, setStandaloneBusy] = useState(false);
   const isStaff = role === "OWNER" || role === "BURSAR";
   const { section } = useSection();
@@ -276,7 +306,7 @@ export default function FeesPage() {
 
   function openRecordPayment(invoiceId: string) {
     setPayTarget(invoiceId);
-    setPayForm({ amount: "", method: "CASH", coversTo: "" });
+    setPayForm({ amount: "", method: "CASH", paidAt: new Date().toLocaleDateString("en-CA") });
   }
 
   async function submitRecordPayment() {
@@ -287,7 +317,7 @@ export default function FeesPage() {
     try {
       await api(`fees/${payTarget}/recordManual`, {
         method: "POST",
-        body: { amount, method: payForm.method, coversTo: payForm.coversTo || undefined },
+        body: { amount, method: payForm.method, paidAt: payForm.paidAt },
       });
       setPayTarget(null);
       await load();
@@ -303,7 +333,7 @@ export default function FeesPage() {
     setStudentSearch("");
     setStudentResults([]);
     setStandaloneStudent(null);
-    setStandaloneForm({ amount: "", method: "CASH", coversTo: "" });
+    setStandaloneForm({ amount: "", method: "CASH", paidAt: new Date().toLocaleDateString("en-CA") });
   }
 
   async function searchStudentsForPayment() {
@@ -329,7 +359,7 @@ export default function FeesPage() {
     try {
       await api("fees/recordManual", {
         method: "POST",
-        body: { studentId: standaloneStudent.id, amount, method: standaloneForm.method, coversTo: standaloneForm.coversTo || undefined },
+        body: { studentId: standaloneStudent.id, amount, method: standaloneForm.method, paidAt: standaloneForm.paidAt },
       });
       setStandalonePayOpen(false);
       await load();
@@ -565,7 +595,20 @@ export default function FeesPage() {
   if (loading) return <Spinner size={28} />;
 
   return (
-    <div>
+    <div className="fees-page">
+      <Modal open={!!editStudent} onClose={() => setEditStudent(null)} title="Correct school fee and recorded payments">
+        {error && <Alert tone="danger">{error}</Alert>}
+        <Field label="School fee amount"><Input type="number" min={0} value={editAmount} onChange={(e) => setEditAmount(e.target.value)} /></Field>
+        <Button disabled={correctionBusy} onClick={() => void saveCorrection()}>Save fee</Button>
+        <h3>Recorded payments</h3>
+        {editPayments.map((payment, index) => (
+          <div key={payment.id} className="fee-payment-correction">
+            <Field label="Amount received"><Input type="number" min={0.01} disabled={payment.gateway !== "MANUAL"} value={String(payment.amount)} onChange={(e) => setEditPayments(editPayments.map((p, i) => i === index ? { ...p, amount: e.target.value } : p))} /></Field>
+            <Field label="Date paid"><Input type="date" disabled={payment.gateway !== "MANUAL"} value={payment.paidAt?.slice(0, 10) ?? ""} onChange={(e) => setEditPayments(editPayments.map((p, i) => i === index ? { ...p, paidAt: e.target.value } : p))} /></Field>
+            {payment.gateway === "MANUAL" && <Button disabled={correctionBusy} onClick={() => void saveCorrection(payment)}>Save payment correction</Button>}
+          </div>
+        ))}
+      </Modal>
       <PageHeader
         title={role === "PARENT" ? "Children's Fees" : role === "STUDENT" ? "My Fees" : "Fees & payments"}
         subtitle={
@@ -670,14 +713,14 @@ export default function FeesPage() {
                   {classOwing > 0 && <Badge tone="danger">{naira(classOwing)} owing</Badge>}
                 </summary>
                 <div style={{ marginTop: 8 }}>
-                  <Table headers={["Student", "Admission no.", "Fee", "Paid", "Owing", ""]}>
+                  <div className="fee-student-list"><Table headers={["Student", "Admission no.", "Fee", "Paid", "Owing", ""]}>
                     {rows.map((s) => (
                       <tr key={s.id}>
-                        <td>{s.user.firstName} {s.user.lastName}</td>
-                        <td>{s.admissionNumber}</td>
-                        <td>{naira(s.schoolFee.feeAmount)}</td>
-                        <td style={{ color: "var(--duga-success, #1a7f37)" }}>{naira(s.schoolFee.paid)}</td>
-                        <td>
+                        <td data-label="Student">{s.user.firstName} {s.user.lastName}</td>
+                        <td data-label="Admission number">{s.admissionNumber}</td>
+                        <td data-label="School fee">{naira(s.schoolFee.feeAmount)}</td>
+                        <td data-label="Paid" style={{ color: "var(--duga-success, #1a7f37)" }}>{naira(s.schoolFee.paid)}</td>
+                        <td data-label="Owing">
                           {s.schoolFee.owing > 0 ? (
                             <Badge tone="danger">{naira(s.schoolFee.owing)}</Badge>
                           ) : (
@@ -685,15 +728,19 @@ export default function FeesPage() {
                           )}
                         </td>
                         <td>
+                          <div className="fee-student-actions">
+                          <Button size="sm" variant="outline" disabled={correctionBusy} onClick={() => void openFeeCorrection(s)}>Edit fee / payments</Button>
+                          <Button size="sm" onClick={() => { openStandalonePayment(); setStandaloneStudent({ id: s.id, name: `${s.user.firstName} ${s.user.lastName}` }); }}>Record payment</Button>
                           {s.schoolFee.owing > 0 && (
                             <Button size="sm" variant="outline" onClick={() => openGrantOverride({ id: s.id, name: `${s.user.firstName} ${s.user.lastName}` })}>
                               Grant exception
                             </Button>
                           )}
+                          </div>
                         </td>
                       </tr>
                     ))}
-                  </Table>
+                  </Table></div>
                 </div>
               </details>
             );
@@ -1009,8 +1056,8 @@ export default function FeesPage() {
             <option value="USSD">USSD</option>
           </Select>
         </Field>
-        <Field label="This payment covers up to (optional)" hint="Declare exactly what period this installment covers, e.g. the end of a term. Leave blank to let the app work it out automatically from the amount and the student's fee plan.">
-          <Input type="date" value={payForm.coversTo} onChange={(e) => setPayForm({ ...payForm, coversTo: e.target.value })} />
+        <Field label="Date paid" hint="Declare exactly what period this installment covers, e.g. the end of a term. Leave blank to let the app work it out automatically from the amount and the student's fee plan.">
+          <Input type="date" value={payForm.paidAt} onChange={(e) => setPayForm({ ...payForm, paidAt: e.target.value })} />
         </Field>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <Button variant="ghost" onClick={() => setPayTarget(null)}>Cancel</Button>
@@ -1070,8 +1117,8 @@ export default function FeesPage() {
                 <option value="USSD">USSD</option>
               </Select>
             </Field>
-            <Field label="This payment covers up to (optional)" hint="Declare exactly what period this payment covers, e.g. the end of a term.">
-              <Input type="date" value={standaloneForm.coversTo} onChange={(e) => setStandaloneForm({ ...standaloneForm, coversTo: e.target.value })} />
+            <Field label="Date paid" hint="The date the money was received.">
+              <Input type="date" value={standaloneForm.paidAt} onChange={(e) => setStandaloneForm({ ...standaloneForm, paidAt: e.target.value })} />
             </Field>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
               <Button variant="ghost" onClick={() => setStandalonePayOpen(false)}>Cancel</Button>

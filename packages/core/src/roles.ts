@@ -249,6 +249,7 @@ const rolePermissions: Record<Role, Permission[]> = {
   // owner can narrow this further through the bursar permission setting in
   // Payroll.
   BURSAR: [
+    "familyCorner:view",
     "students:view",
     "classes:view",
     "fees:view",

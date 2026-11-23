@@ -219,7 +219,7 @@ export default function FamilyCornerPage() {
         )}
       </Modal>
 
-      <DocumentViewerModal url={viewerDoc?.url ?? null} name={viewerDoc?.name} onClose={() => setViewerDoc(null)} />
+      {viewerDoc && <DocumentViewerModal url={viewerDoc.url} name={viewerDoc.name} onClose={() => setViewerDoc(null)} />}
 
       <Modal open={open} onClose={() => setOpen(false)} title={editing ? "Edit content" : "Add content"} wide>
         <Field label="Category" required>

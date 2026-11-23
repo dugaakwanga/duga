@@ -212,3 +212,25 @@
   .results-page .duga-page-header > div { min-width: 0; flex-wrap: wrap; }
   .results-page .results-config-component { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
+.books-layout { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 16px; align-items: start; }
+.books-layout > *, .fees-page, .fees-page .duga-card, .fees-page .duga-card__pad { min-width: 0; }
+.fee-student-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.fee-payment-correction { border-top: 1px solid var(--duga-border); padding: 14px 0; }
+.fees-page .duga-card__header, .fees-page .duga-page-header { flex-wrap: wrap; }
+.fees-page .duga-card__header > div, .fees-page .duga-page-header > div { min-width: 0; flex-wrap: wrap; }
+@media (max-width: 700px) {
+  .books-layout { grid-template-columns: minmax(0, 1fr); }
+  .books-page .duga-card__header { flex-wrap: wrap; }
+  .fees-page .duga-btn, .books-page .duga-btn { white-space: normal; height: auto; min-height: 40px; }
+  .fee-student-list table { min-width: 0; }
+  .fee-student-list table thead { display: none; }
+  .fee-student-list table, .fee-student-list table tbody, .fee-student-list table tr, .fee-student-list table td { display: block; width: 100%; box-sizing: border-box; }
+  .fee-student-list table tr { padding: 12px 0; border-bottom: 1px solid var(--duga-border); }
+  .fee-student-list table td { padding: 5px 10px; overflow-wrap: anywhere; }
+}
+.fees-page .duga-page-head > div { min-width: 0; flex-wrap: wrap; }
+@media (max-width: 700px) {
+  .fees-page td[data-label]::before { content: attr(data-label); display: inline-block; min-width: 110px; font-weight: 700; margin-right: 8px; }
+  .fees-page .duga-page-head > div:last-child { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
+  .fees-page .duga-page-head .duga-btn { flex: 1 1 150px; }
+}

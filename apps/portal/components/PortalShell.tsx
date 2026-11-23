@@ -473,7 +473,7 @@ function SectionSwitcher({ role }: { role?: string }) {
 
 export function PortalShell({ user, children }: { user: ShellUser; children: React.ReactNode }) {
   const pathname = usePathname();
-  const isResultsPage = pathname === "/portal/results";
+  const isResultsPage = ["/portal/results", "/portal/books", "/portal/fees"].includes(pathname);
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);

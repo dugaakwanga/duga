@@ -352,14 +352,14 @@ export default function BooksPage() {
   if (loading) return <Spinner size={28} />;
 
   return (
-    <div>
+    <div className="books-page">
       <PageHeader
         title="Books"
         subtitle="Ledgers for the school's finances — auto-filled system books, plus your own custom books."
         actions={canManage ? <Button onClick={() => setNewBookOpen(true)}><Icon name="plus" size={16} /> New custom book</Button> : undefined}
       />
 
-      <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 16, alignItems: "start" }}>
+      <div className="books-layout">
         <div style={{ display: "grid", gap: 14 }}>
           <Card title="Your books" pad={false}>
             {books.length === 0 ? (

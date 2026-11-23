@@ -440,6 +440,47 @@ export const feesModule: Module = {
   },
 
   actions: {
+    studentFinance: async (ctx) => {
+      await assertFinanceManager(ctx);
+      const student = await prisma.student.findFirst({ where: { id: ctx.id, schoolId: ctx.session.user.schoolId } });
+      if (!student) throw new Error("Student not found");
+      const payments = await prisma.payment.findMany({
+        where: { schoolId: student.schoolId, studentId: student.id, invoiceId: null, status: "SUCCESS" },
+        select: { id: true, amount: true, paidAt: true, gateway: true, reference: true },
+        orderBy: { paidAt: "desc" },
+      });
+      return { feeAmount: Number(student.feeAmount), payments };
+    },
+    correctStudentFee: async (ctx) => {
+      await assertFinanceManager(ctx);
+      const schoolId = ctx.session.user.schoolId;
+      const amount = num(ctx.body.amount);
+      if (amount === undefined || amount < 0) throw new Error("Enter a valid fee amount");
+      const student = await prisma.student.findFirst({ where: { id: ctx.id, schoolId } });
+      if (!student) throw new Error("Student not found");
+      const updated = await prisma.student.updateMany({ where: { id: student.id, schoolId, feeAmount: student.feeAmount }, data: { feeAmount: amount } });
+      if (!updated.count) throw new Error("The fee changed while you were editing. Reopen the student and try again.");
+      await recomputeFeeAccess(schoolId, student.id);
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.feeCorrected", entityType: "Student", entityId: student.id, meta: { before: Number(student.feeAmount), after: amount } });
+      return { ok: true };
+    },
+    correctManualPayment: async (ctx) => {
+      await assertFinanceManager(ctx);
+      const schoolId = ctx.session.user.schoolId;
+      const amount = num(ctx.body.amount);
+      const paidAt = new Date(String(ctx.body.paidAt));
+      if (amount === undefined || amount <= 0 || !Number.isFinite(paidAt.getTime())) throw new Error("Enter a positive payment and valid payment date");
+      const payment = await prisma.payment.findFirst({ where: { id: ctx.id, schoolId, gateway: "MANUAL", invoiceId: null, status: "SUCCESS" } });
+      if (!payment) throw new Error("Only manually recorded school-fee payments can be corrected here");
+      const updated = await prisma.payment.updateMany({
+        where: { id: payment.id, schoolId, gateway: "MANUAL", status: "SUCCESS", amount: payment.amount, paidAt: payment.paidAt },
+        data: { amount, paidAt },
+      });
+      if (!updated.count) throw new Error("The payment changed while you were editing. Reopen the student and try again.");
+      await recomputeFeeAccess(schoolId, payment.studentId);
+      await logAudit({ schoolId, userId: ctx.session.user.id, action: "fees.paymentCorrected", entityType: "Payment", entityId: payment.id, meta: { before: Number(payment.amount), after: amount, oldPaidAt: payment.paidAt?.toISOString(), paidAt: paidAt.toISOString() } });
+      return { ok: true };
+    },
     // Bursar/owner: generate invoices for all students of a class (or level) from fee structures
     generateInvoices: async (ctx) => {
       await assertOtherFeesManager(ctx);
@@ -953,6 +994,8 @@ export const feesModule: Module = {
     // there's no invoice to apply it to — either way it still advances the
     // student's fee-access window via grantFeeAccessForPayment.
     recordManual: async (ctx) => {
+      const paidAt = ctx.body.paidAt ? new Date(String(ctx.body.paidAt)) : new Date();
+      if (!Number.isFinite(paidAt.getTime())) throw new Error("Invalid payment date");
       const schoolId = ctx.session.user.schoolId;
       const invoiceId = str(ctx.body.invoiceId) ?? ctx.id;
       // A payment against an invoice is an "other fees" collection (book
@@ -1018,7 +1061,7 @@ export const feesModule: Module = {
           status: "SUCCESS",
           reference,
           gateway: "MANUAL",
-          paidAt: new Date(),
+          paidAt,
           receiptNumber: `RCPT-${reference.slice(-6)}`,
           recordedByUserId: ctx.session.user.id,
           coversFrom,
