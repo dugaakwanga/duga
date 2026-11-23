@@ -787,7 +787,7 @@ export default function ClassesPage() {
             {assignableSubjects.map((s) => {
               const checked = assignSubjectIds.includes(s.id);
               return (
-                <div key={s.id} style={{ display: "grid", gridTemplateColumns: "auto 1fr 180px", gap: 8, alignItems: "center" }}>
+                <div key={s.id} className="portal-subject-editor">
                   <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, cursor: "pointer" }}>
                     <input
                       type="checkbox"

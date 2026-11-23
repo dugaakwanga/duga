@@ -404,7 +404,7 @@ export default function TimetablePage() {
         </div>
         <div style={{ display: "grid", gap: 10 }}>
           {periods.map((p, i) => (
-            <div key={i} style={{ display: "grid", gridTemplateColumns: "90px 1fr 1fr auto", gap: 10, alignItems: "end" }}>
+            <div key={i} className="portal-period-editor">
               <Field label="Period">
                 <Input type="number" min={1} max={12} value={p.number} onChange={(e) => updatePeriodRow(i, { number: Number(e.target.value) || 1 })} />
               </Field>

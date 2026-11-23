@@ -135,7 +135,7 @@ export default function ProfilePage() {
   return (
     <div>
       <PageHeader title="My profile" subtitle="Manage your account details." />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 18 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%, 320px), 1fr))", gap: 18 }}>
         <Card title="Account">
           <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18 }}>
             {photo ? (

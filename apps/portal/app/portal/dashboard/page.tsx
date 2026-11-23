@@ -248,7 +248,7 @@ export default function DashboardPage() {
       ) : null}
 
       {data.role === "PARENT" ? (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 18 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%, 320px), 1fr))", gap: 18 }}>
           <Card title="School fees">
             {data.children?.length ? (
               <Table headers={["Child", "Class", "Fee", "Paid", "Owing", ""]}>
@@ -316,7 +316,7 @@ export default function DashboardPage() {
       ) : null}
 
       {data.role === "STUDENT" ? (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 18 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%, 320px), 1fr))", gap: 18 }}>
           <Card title="My subjects">
             {data.classSubjects?.length ? (
               <Table headers={["Subject", "Teacher"]}>

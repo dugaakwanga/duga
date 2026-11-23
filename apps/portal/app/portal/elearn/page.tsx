@@ -241,7 +241,7 @@ export default function ElearnPage() {
               </div>
             </Card>
           )}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(100%, 320px), 1fr))", gap: 16 }}>
             {list.items.map((item) => {
               const prog = (item.myProgress ?? [])[0];
               return (

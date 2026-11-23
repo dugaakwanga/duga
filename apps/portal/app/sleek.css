@@ -234,3 +234,36 @@
   .fees-page .duga-page-head > div:last-child { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
   .fees-page .duga-page-head .duga-btn { flex: 1 1 150px; }
 }
+/* Mobile controls wrap within their available card or dialog width. */
+@media (max-width: 560px) {
+  .portal-content, .portal-content > *, .duga-modal .duga-card__body { min-width: 0; }
+  .portal-content .duga-page-head > div,
+  .portal-content .duga-card__header > div { min-width: 0; max-width: 100%; flex-wrap: wrap; }
+  .portal-content .duga-page-head > div:has(> .duga-btn) { width: 100%; }
+  .portal-content .duga-card__header { flex-wrap: wrap; align-items: flex-start; }
+  .portal-content .duga-card__title { flex: 1 1 100%; overflow-wrap: anywhere; }
+  .portal-content .duga-btn, .duga-modal .duga-btn {
+    flex-shrink: 0; max-width: 100%; white-space: normal; height: auto; min-height: 40px;
+  }
+  .portal-content .duga-btn svg { flex-shrink: 0; }
+  .portal-content input, .portal-content select, .portal-content textarea,
+  .duga-modal input, .duga-modal select, .duga-modal textarea {
+    min-width: 0; max-width: 100%; box-sizing: border-box; font-size: 16px;
+  }
+  .portal-content .duga-table-wrap { max-width: 100%; overflow-x: auto; }
+  .portal-content .duga-card:hover { transform: none; }
+  .portal-content .duga-form-row { grid-template-columns: minmax(0, 1fr) !important; flex-wrap: wrap; }
+  .results-page [style*="grid-template-columns: minmax(180px"] { grid-template-columns: minmax(0, 1fr) !important; }
+  .portal-topbar__actions { gap: 6px; }
+  .portal-topbar__actions .duga-section-switcher { flex: 1 1 100%; }
+}
+.portal-period-editor { display: grid; grid-template-columns: 90px minmax(0, 1fr) minmax(0, 1fr) auto; gap: 10px; align-items: end; }
+.portal-subject-editor { display: grid; grid-template-columns: auto minmax(0, 1fr) 180px; gap: 8px; align-items: center; }
+@media (max-width: 560px) {
+  .portal-period-editor, .portal-subject-editor { grid-template-columns: minmax(0, 1fr); }
+  .duga-modal .duga-card__header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+  .duga-modal .duga-card__title { overflow-wrap: anywhere; }
+  .duga-modal .duga-card__body { padding: 14px; }
+  .duga-modal .duga-card__body > div[style*="grid-template-columns: 1fr 1fr"] { grid-template-columns: minmax(0, 1fr) !important; }
+  .duga-modal .duga-card__body > div[style*="display: flex"] { flex-wrap: wrap; }
+}

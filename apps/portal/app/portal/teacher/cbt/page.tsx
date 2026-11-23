@@ -283,7 +283,7 @@ async function openResults(c: Cbt) {
       ) : items.length === 0 ? (
         <EmptyState title="No CBT exams yet" hint="Create one using the New CBT button." />
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(340px,1fr))", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(100%, 340px), 1fr))", gap: 16 }}>
           {items.map((c) => {
             const targeted = Array.isArray(c.targetStudentIds) ? (c.targetStudentIds as string[]) : [];
             return (

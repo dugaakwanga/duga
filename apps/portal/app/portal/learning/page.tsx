@@ -261,7 +261,7 @@ export default function LearningPage() {
       ) : items.length === 0 ? (
         <EmptyState title={`No ${kindLabel[kind]} yet`} hint={canManage ? "Use the New button to create one." : `${kindLabel[kind]} shared with you will appear here.`} />
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(100%, 320px), 1fr))", gap: 16 }}>
           {items.map((item) => (
             <Card key={item.id} title={item.topic ?? item.title ?? "Untitled"}>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>

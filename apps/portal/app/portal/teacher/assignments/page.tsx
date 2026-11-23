@@ -164,7 +164,7 @@ export default function TeacherAssignmentsPage() {
       ) : items.length === 0 ? (
         <EmptyState title="No assignments yet" hint="Create one using the New assignment button." />
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(340px,1fr))", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(100%, 340px), 1fr))", gap: 16 }}>
           {items.map((a) => {
             const targeted = Array.isArray(a.targetStudentIds) ? (a.targetStudentIds as string[]) : [];
             return (

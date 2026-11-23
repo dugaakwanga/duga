@@ -215,7 +215,10 @@ export function Modal({ open, onClose, title, children, footer, wide, maxWidth }
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="duga-card"
+        className="duga-card duga-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={typeof title === "string" ? title : undefined}
         style={{ width: "100%", maxWidth: maxWidth ?? (wide ? 820 : 520), maxHeight: "90vh", overflowY: "auto" }}
       >
         <div className="duga-card__header">

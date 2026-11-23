@@ -302,7 +302,7 @@ export default function ContentPage() {
         actions={<Button variant="danger" size="sm" onClick={reset}>Reset to defaults</Button>}
       />
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(340px,1fr))", gap: 18 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%, 340px), 1fr))", gap: 18 }}>
         <Card title="Scrolling ticker (top banner)">
           <Field label="Show the scrolling banner" hint="Turn the top announcement banner off or on.">
             <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>

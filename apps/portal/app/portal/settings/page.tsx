@@ -235,7 +235,7 @@ export default function SettingsPage() {
   return (
     <div>
       <PageHeader title="School settings" subtitle="Manage school profile, academic terms, calendar and restrictions." />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 18 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%, 320px), 1fr))", gap: 18 }}>
         <div>
           <Card title="School profile">
             <Field label="School logo" hint="Shown on ID cards, report cards, and the public site. Square images work best.">

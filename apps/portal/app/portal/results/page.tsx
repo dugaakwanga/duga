@@ -999,7 +999,7 @@ export default function ResultsPage() {
               <h2 style={{ fontSize: 16, margin: "0 0 10px", color: "var(--duga-primary-ink)" }}>
                 {cls.level.name} {cls.name}
               </h2>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(100%, 300px), 1fr))", gap: 16 }}>
                 {classSubjects.filter((cs) => cs.classGroup.id === classId).map((cs) => {
                   const status = submissions[cs.id] ?? { entered: 0, submitted: 0, total: cs.classGroup.students.length, allSubmitted: false };
                   const pct = status.total > 0 ? Math.round((status.entered / status.total) * 100) : 0;

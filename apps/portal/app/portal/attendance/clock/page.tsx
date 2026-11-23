@@ -209,7 +209,7 @@ export default function StaffClockPage() {
       {loading ? (
         <Spinner size={28} />
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 18 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%, 320px), 1fr))", gap: 18 }}>
           <Card title="Clock in / out">
             <div style={{ display: "grid", gap: 14 }}>
               <Field label="Clock for">

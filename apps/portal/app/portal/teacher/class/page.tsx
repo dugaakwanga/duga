@@ -337,7 +337,7 @@ export default function MyClassPage() {
             </Link>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(340px,1fr))", gap: 18 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%, 340px), 1fr))", gap: 18 }}>
             <Card title="Attendance rate (last 7 days)">
               <BarChart points={data.attendance} color="var(--duga-info, #0d6efd)" format={(v) => `${v}%`} />
             </Card>

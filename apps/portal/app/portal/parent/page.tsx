@@ -100,7 +100,7 @@ export default function ParentHomePage() {
           </div>
 
           {/* Children cards */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(100%, 300px), 1fr))", gap: 16 }}>
             {children.map((c) => {
               const s = c.student;
               const firstName = s.user?.firstName ?? s.firstName ?? "";
@@ -194,7 +194,7 @@ export default function ParentHomePage() {
           </div>
 
           {/* Two-column: outstanding fees + announcements */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%, 320px), 1fr))", gap: 16 }}>
             <Card title="Outstanding fees">
               {openInvoices.length === 0 ? (
                 <EmptyState title="All fees are settled" hint="Great — there is nothing owing on your children's accounts." />

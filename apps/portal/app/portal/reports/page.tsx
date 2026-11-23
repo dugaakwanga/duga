@@ -48,7 +48,7 @@ export default function ReportsPage() {
         <Stat label="Outstanding" value={naira(data.feeSummary._sum.balance)} tone="danger" />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 18 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%, 320px), 1fr))", gap: 18 }}>
         <Card title="Invoices by status">
           {data.byStatus.length === 0 ? (
             <EmptyState title="No invoices" />

@@ -140,7 +140,7 @@ export default function ProgressPage() {
         </Card>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(340px,1fr))", gap: 18 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%, 340px), 1fr))", gap: 18 }}>
         {data.fees && (
           <Card title="Fees collected (last 6 months)">
             <BarChart points={data.fees.series} color="var(--duga-success, #1a8754)" format={naira} />

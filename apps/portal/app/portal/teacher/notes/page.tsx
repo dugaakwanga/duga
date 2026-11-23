@@ -238,7 +238,7 @@ export default function TeacherNotesPage() {
       ) : notes.length === 0 ? (
         <EmptyState title="No lesson notes yet" hint="Create one using the New note button." />
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(100%, 320px), 1fr))", gap: 16 }}>
           {notes.map((n) => (
             <Card key={n.id} title={n.topic}>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
